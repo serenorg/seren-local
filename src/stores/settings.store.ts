@@ -3,7 +3,7 @@
 
 import { createStore } from "solid-js/store";
 import type { McpServerConfig, McpSettings } from "@/lib/mcp/types";
-import { isTauriRuntime } from "@/lib/bridge";
+import { isTauriRuntime } from "@/lib/tauri-bridge";
 
 const SETTINGS_STORE = "settings.json";
 const MCP_SETTINGS_KEY = "mcp";

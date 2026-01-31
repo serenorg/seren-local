@@ -17,7 +17,7 @@ import {
   type PublisherOAuthProviderResponse,
   type UserOAuthConnectionResponse,
 } from "@/api";
-import { listenForOAuthCallback } from "@/lib/bridge";
+import { listenForOAuthCallback } from "@/lib/tauri-bridge";
 import {
   connectPublisher,
   disconnectPublisher,

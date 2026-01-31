@@ -8,7 +8,7 @@ import {
   type UserOAuthConnectionResponse,
 } from "@/api";
 import { apiBase } from "@/lib/config";
-import { getToken } from "@/lib/bridge";
+import { getToken } from "@/lib/tauri-bridge";
 
 /**
  * Start OAuth flow for a publisher provider.

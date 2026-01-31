@@ -15,7 +15,7 @@ import {
   getProviderKey,
   isTauriRuntime,
   storeProviderKey,
-} from "@/lib/bridge";
+} from "@/lib/tauri-bridge";
 
 const PROVIDER_SETTINGS_STORE = "provider-settings.json";
 const PROVIDER_SETTINGS_KEY = "provider-settings";

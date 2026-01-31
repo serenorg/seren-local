@@ -3,7 +3,7 @@
 
 import { open } from "@tauri-apps/plugin-dialog";
 import { type Component, createSignal, Show } from "solid-js";
-import { type FileEntry, listDirectory } from "@/lib/bridge";
+import { type FileEntry, listDirectory } from "@/lib/tauri-bridge";
 import {
   type FileNode,
   fileTreeState,

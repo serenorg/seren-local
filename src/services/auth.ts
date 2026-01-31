@@ -13,7 +13,7 @@ import {
   storeDefaultOrganizationId,
   storeRefreshToken,
   storeToken,
-} from "@/lib/bridge";
+} from "@/lib/tauri-bridge";
 
 export interface LoginResponse {
   data: {

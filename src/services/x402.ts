@@ -2,7 +2,7 @@
 // ABOUTME: Supports both SerenBucks (prepaid) and crypto wallet payment methods.
 
 import { createRoot, createSignal } from "solid-js";
-import { getCryptoWalletAddress, signX402Payment } from "@/lib/bridge";
+import { getCryptoWalletAddress, signX402Payment } from "@/lib/tauri-bridge";
 import {
   formatUsdcAmount,
   getChainName,

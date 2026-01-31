@@ -1,7 +1,7 @@
 // ABOUTME: Provider registry and unified API for multi-provider chat.
 // ABOUTME: Routes requests to the appropriate provider based on settings.
 
-import { getOAuthCredentials } from "@/lib/bridge";
+import { getOAuthCredentials } from "@/lib/tauri-bridge";
 import { needsRefresh, refreshOAuthToken } from "@/services/oauth";
 import { providerStore } from "@/stores/provider.store";
 import { anthropicProvider } from "./anthropic";
@@ -74,7 +74,7 @@ async function getAuthToken(
           credentials.refreshToken,
         );
         // Store refreshed credentials
-        const { storeOAuthCredentials } = await import("@/lib/bridge");
+        const { storeOAuthCredentials } = await import("@/lib/tauri-bridge");
         await storeOAuthCredentials(providerId, JSON.stringify(refreshed));
         return { token: refreshed.accessToken, isOAuth: true };
       } catch (error) {

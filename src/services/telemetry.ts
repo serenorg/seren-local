@@ -5,7 +5,7 @@ import { API_BASE } from "@/lib/config";
 import { appFetch } from "@/lib/fetch";
 import { getErrorKey, RateLimiter } from "@/lib/rate-limiter";
 import { scrubSensitive } from "@/lib/scrub-sensitive";
-import { getToken } from "@/lib/bridge";
+import { getToken } from "@/lib/tauri-bridge";
 
 export interface ErrorReport {
   message: string;

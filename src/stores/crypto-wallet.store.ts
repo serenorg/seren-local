@@ -7,7 +7,7 @@ import {
   getCryptoUsdcBalance,
   getCryptoWalletAddress,
   storeCryptoPrivateKey,
-} from "@/lib/bridge";
+} from "@/lib/tauri-bridge";
 
 interface CryptoWalletState {
   address: string | null;

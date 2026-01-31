@@ -3,7 +3,7 @@
 
 import { createStore } from "solid-js/store";
 import { addSerenDbServer, removeSerenDbServer } from "@/lib/mcp/serendb";
-import { clearSerenApiKey, getSerenApiKey, storeSerenApiKey } from "@/lib/bridge";
+import { clearSerenApiKey, getSerenApiKey, storeSerenApiKey } from "@/lib/tauri-bridge";
 import { logout as authLogout, isLoggedIn, createApiKey } from "@/services/auth";
 import { initializeGateway, resetGateway } from "@/services/mcp-gateway";
 
