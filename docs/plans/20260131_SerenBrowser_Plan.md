@@ -14,16 +14,18 @@
 3. [What Dies and What Improves](#3-what-dies-and-what-improves)
 4. [Key Decisions](#4-key-decisions)
 5. [Source Codebase Reference](#5-source-codebase-reference)
-6. [Phase 1: Browser SPA (Chat + Gateway MCP)](#6-phase-1-browser-spa)
-7. [Phase 2: Local Runtime Server](#7-phase-2-local-runtime-server)
-8. [Phase 3: Install Scripts](#8-phase-3-install-scripts)
-9. [Phase 4: ACP Agent Support via Local Runtime](#9-phase-4-acp-agent-support)
-10. [Phase 5: OpenClaw via Local Runtime](#10-phase-5-openclaw-via-local-runtime)
-11. [Phase 6: Crypto Wallet (x402)](#11-phase-6-crypto-wallet)
-12. [What Gets Deleted / Not Ported](#12-what-gets-deleted)
-13. [Testing Strategy](#13-testing-strategy)
-14. [Deployment](#14-deployment)
-15. [Risk Register](#15-risk-register)
+6. [Security Requirements](#6-security-requirements)
+7. [Phase 1: Browser SPA (Chat + Gateway MCP)](#7-phase-1-browser-spa)
+8. [Phase 2: Local Runtime Server](#8-phase-2-local-runtime-server)
+9. [Phase 3: Install Scripts](#9-phase-3-install-scripts)
+10. [Phase 4: ACP Agent Support via Local Runtime](#10-phase-4-acp-agent-support)
+11. [Phase 5: OpenClaw via Local Runtime](#11-phase-5-openclaw-via-local-runtime)
+12. [Phase 6: Crypto Wallet (x402)](#12-phase-6-crypto-wallet)
+13. [What Gets Deleted / Not Ported](#13-what-gets-deleted)
+14. [Testing Strategy](#14-testing-strategy)
+15. [Deployment](#15-deployment)
+16. [Risk Register](#16-risk-register)
+17. [Final Audit Checklist](#17-final-audit-checklist)
 
 ---
 
@@ -183,51 +185,23 @@ seren-desktop/
 │   │   ├── sidebar/              # File explorer, database (14 files)
 │   │   └── wallet/               # Wallet/billing UI (4 files)
 │   ├── services/                 # Business logic (22 files)
-│   │   ├── acp.ts                # ACP agent commands — TAURI DEPENDENT
-│   │   ├── auth.ts               # Login/logout/refresh — USES tauri-bridge
-│   │   ├── chat.ts               # Chat with tool loop — PURE WEB
-│   │   ├── mcp-gateway.ts        # Gateway MCP — USES tauri-bridge for API key
-│   │   ├── mcp-oauth.ts          # MCP OAuth flows
-│   │   ├── openclaw-agent.ts     # OpenClaw agent — TAURI DEPENDENT
-│   │   ├── publisher-oauth.ts    # Publisher OAuth — TAURI DEPENDENT
-│   │   ├── wallet.ts             # Wallet balance
-│   │   ├── x402.ts               # x402 payment handling
-│   │   └── ... (others)
 │   ├── stores/                   # SolidJS reactive stores (17 files)
-│   │   ├── auth.store.ts         # Auth state — USES tauri-bridge
-│   │   ├── chat.store.ts         # Chat state — PURE
-│   │   ├── openclaw.store.ts     # OpenClaw state — TAURI DEPENDENT
-│   │   ├── provider.store.ts     # Provider selection — USES tauri-bridge
-│   │   ├── settings.store.ts     # App settings — USES tauri-bridge
-│   │   ├── sync.store.ts         # File watcher — TAURI DEPENDENT
-│   │   ├── updater.store.ts      # Auto-updater — DELETE ENTIRELY
-│   │   └── ... (others)
 │   ├── lib/                      # Core utilities (30 files)
 │   │   ├── tauri-bridge.ts       # CRITICAL: All Tauri IPC (830 LOC)
-│   │   ├── fetch.ts              # Fetch wrapper — TAURI FALLBACK EXISTS
+│   │   ├── fetch.ts              # Fetch wrapper
 │   │   ├── config.ts             # API URL config — PURE
-│   │   ├── mcp/                  # MCP client (6 files) — TAURI DEPENDENT
-│   │   ├── files/                # File operations — TAURI DEPENDENT
-│   │   ├── tools/                # Tool executor — PARTIAL TAURI
+│   │   ├── mcp/                  # MCP client (6 files)
+│   │   ├── files/                # File operations
+│   │   ├── tools/                # Tool executor
 │   │   ├── providers/            # AI provider routing — PURE WEB
-│   │   ├── indexing/             # Code indexing — TAURI DEPENDENT
-│   │   └── ... (others)
+│   │   └── ...
 │   └── api/                      # Generated API client (@hey-api/openapi-ts)
 │       └── generated/            # DO NOT MODIFY — auto-generated
 ├── src-tauri/                    # Rust backend — WILL NOT BE PORTED
-│   └── src/
-│       ├── lib.rs                # 693 LOC — token storage, settings
-│       ├── acp.rs                # 1,411 LOC — agent spawning
-│       ├── openclaw.rs           # 1,473 LOC — process management
-│       ├── mcp.rs                # 563 LOC — MCP server spawning
-│       ├── commands/files.rs     # 127 LOC — filesystem operations
-│       ├── commands/chat.rs      # 298 LOC — conversation SQLite
-│       ├── wallet/commands.rs    # wallet operations
-│       └── ... (others)
-├── package.json                  # Dependencies (includes @tauri-apps/*)
-├── vite.config.ts                # Vite config (has Tauri-specific settings)
-├── biome.json                    # Linting config
-└── tsconfig.json                 # TypeScript config
+├── package.json
+├── vite.config.ts
+├── biome.json
+└── tsconfig.json
 ```
 
 ### The Tauri Bridge Pattern
@@ -264,34 +238,46 @@ Operations that **throw errors without Tauri** (need new implementations):
 - `signX402Payment` (crypto wallet signing)
 - `getCryptoUsdcBalance` (blockchain query)
 
-### Files That Import `@tauri-apps/api` Directly
+### Files That Import `@tauri-apps/*` Directly
 
-These files bypass `tauri-bridge.ts` and import Tauri APIs directly. They need refactoring:
+These 21 files bypass `tauri-bridge.ts` and import Tauri APIs directly. **Each one must be individually rewritten.** This is the hardest part of Phase 1.
 
-| File | Tauri Import | What It Does |
-|------|-------------|--------------|
-| `src/services/acp.ts` | `invoke`, `listen` | All ACP agent commands + event subscriptions |
-| `src/services/publisher-oauth.ts` | `invoke`, `openUrl` | OAuth redirect URL + open browser |
-| `src/services/openclaw-agent.ts` | `invoke`, `listen` | OpenClaw agent lifecycle |
-| `src/stores/openclaw.store.ts` | `invoke`, `listen` | OpenClaw process state + events |
-| `src/stores/sync.store.ts` | `invoke`, `listen` | File watcher start/stop |
-| `src/stores/updater.store.ts` | `relaunch`, `check` | Auto-updater (DELETE) |
-| `src/stores/acp.store.ts` | `listen` | ACP event subscriptions |
-| `src/lib/mcp/client.ts` | `invoke` | MCP connect/disconnect/call |
-| `src/lib/files/service.ts` | `invoke`, `open` | File operations + file picker |
-| `src/lib/images/attachments.ts` | `open` | Image file picker |
-| `src/lib/tools/executor.ts` | `invoke` | Tool execution |
-| `src/lib/indexing/orchestrator.ts` | `invoke` | Code indexing |
-| `src/lib/external-link.ts` | `openUrl` | Open links in system browser |
-| `src/components/sidebar/FileExplorerPanel.tsx` | `open` | Folder picker dialog |
-| `src/components/editor/ImageViewer.tsx` | asset URL conversion | Image display |
-| `src/components/settings/OpenClawApproval.tsx` | `invoke`, `listen` | Approval dialog IPC |
-| `src/components/common/AboutDialog.tsx` | app info | Version display |
-| `src/index.tsx` | `attachConsole` | Tauri logger (DELETE) |
+| File | Tauri Import | What It Does | Rewrite Strategy |
+|------|-------------|--------------|------------------|
+| `src/services/acp.ts` (451 LOC) | `invoke`, `listen`, `UnlistenFn` | ACP agent commands + events | Stub all exports → runtime-required error |
+| `src/services/openclaw-agent.ts` | `invoke`, `listen`, `UnlistenFn` | OpenClaw agent lifecycle | Stub → runtime-required error |
+| `src/services/publisher-oauth.ts` | `openUrl` from plugin-opener | OAuth redirect + open browser | Replace with `window.open()` |
+| `src/services/mcp-oauth.ts` | `invoke` | MCP OAuth flows | Replace invoke with bridge |
+| `src/services/indexing.ts` | `invoke` | Code indexing IPC | Stub → runtime-required error |
+| `src/stores/openclaw.store.ts` (389 LOC) | `invoke`, `listen`, `UnlistenFn` | OpenClaw process state | Stub all actions → no-op or runtime error |
+| `src/stores/sync.store.ts` (165 LOC) | `invoke`, `listen`, `UnlistenFn` | File watcher start/stop | Stub → runtime-required error |
+| `src/stores/acp.store.ts` | `UnlistenFn` (type only) | ACP event subscriptions | Remove type import, use local type |
+| `src/stores/fileTree.ts` | `invoke` | Directory listing | Replace invoke with `listDirectory` from bridge |
+| `src/lib/mcp/client.ts` | `invoke` | MCP connect/disconnect/call | Stub stdio, rewrite HTTP to use fetch |
+| `src/lib/files/service.ts` | `invoke`, `open`, `save` from plugin-dialog | File ops + file picker | Stub FS, replace dialog with HTML input |
+| `src/lib/images/attachments.ts` | `invoke`, `open` from plugin-dialog | Image file picker | Replace with HTML `<input type="file">` |
+| `src/lib/tools/executor.ts` | `invoke`, `listen`, `UnlistenFn` | Tool execution routing | Replace invoke with bridge, stub local tools |
+| `src/lib/indexing/orchestrator.ts` | `invoke` | Code indexing | Stub → runtime-required error |
+| `src/lib/external-link.ts` | ~~(already rewritten)~~ | Open links in browser | Done — uses `window.open` |
+| `src/components/sidebar/FileExplorerPanel.tsx` | `open` from plugin-dialog | Folder picker dialog | Replace with HTML input or runtime check |
+| `src/components/sidebar/FileTree.tsx` | `invoke` | File tree context menu ops | Replace invoke with bridge functions |
+| `src/components/editor/ImageViewer.tsx` | `convertFileSrc` | Image display | Replace with standard URL/blob |
+| `src/components/settings/OpenClawApproval.tsx` | `invoke`, `listen`, `UnlistenFn` | Approval dialog IPC | Stub → no-op (requires runtime) |
+| `src/components/common/AboutDialog.tsx` | `invoke`, `listen` | Version display | Hardcode version from env var |
+| `src/lib/commands/registry.ts` | `emit` (line 242) | About dialog trigger | Replace with `window.dispatchEvent` |
+
+### Broken Imports from bridge.ts
+
+The current `bridge.ts` does NOT export `isTauriRuntime()`, but 3 files import it:
+- `src/services/oauth.ts` (lines 7, 46, 103)
+- `src/stores/settings.store.ts` (lines 6, 20)
+- `src/stores/provider.store.ts` (lines 16, 30)
+
+**These are bugs from incomplete migration.** Each file needs `isTauriRuntime()` replaced with the correct browser-only logic.
 
 ### The Fetch Pattern
 
-`src/lib/fetch.ts` wraps `fetch()` to use Tauri's HTTP plugin (which bypasses CORS) when in Tauri, and falls back to browser `fetch()` otherwise. **The browser fallback already works.** The only concern is CORS — the Seren Gateway API at `api.serendb.com` must have appropriate CORS headers for browser requests. If it doesn't today, that's a server-side fix (add `Access-Control-Allow-Origin` headers).
+`src/lib/fetch.ts` wraps `fetch()` to use Tauri's HTTP plugin (which bypasses CORS) when in Tauri, and falls back to browser `fetch()` otherwise. **This has already been rewritten** — just uses browser fetch with 401 auto-refresh.
 
 ### The MCP Client Pattern
 
@@ -307,7 +293,7 @@ These files bypass `tauri-bridge.ts` and import Tauri APIs directly. They need r
 - `sendPrompt(sessionId, prompt)` — sends a message to the agent
 - `cancelPrompt(sessionId)` — cancels current prompt
 - `terminateSession(sessionId)` — kills the agent
-- `subscribeToSession(sessionId, callback)` — listens for 10 event types (message chunks, tool calls, diffs, permissions, etc.)
+- `subscribeToSession(sessionId, callback)` — listens for 10 event types
 
 The event types are:
 - `acp://message-chunk` — streaming text from agent
@@ -337,419 +323,929 @@ In the Rust backend (`src-tauri/src/openclaw.rs`, 1,473 LOC), this spawns the Op
 
 ---
 
-## 6. Phase 1: Browser SPA
+## 6. Security Requirements
+
+**READ THIS SECTION BEFORE WRITING ANY CODE.** Every task in this plan has security implications. If you skip these, you will ship vulnerabilities.
+
+### Token Storage
+
+- **Browser-only mode uses localStorage.** This is standard for SPAs (same as GitHub, Vercel, etc.) but you MUST understand the tradeoffs:
+  - localStorage is accessible to any JS running on the page. If we have an XSS vulnerability, tokens are stolen.
+  - NEVER use `innerHTML` with user-supplied data. Use `textContent` or the `escapeHtml()` utility from `src/lib/security.ts`.
+  - NEVER eval() or `new Function()` with user data.
+  - NEVER store tokens in cookies without `HttpOnly`, `Secure`, and `SameSite=Strict` flags.
+
+### CORS and API Communication
+
+- All Gateway API calls go to `https://api.serendb.com`. The browser enforces CORS.
+- The Gateway MUST return these headers for browser requests:
+  ```
+  Access-Control-Allow-Origin: https://app.seren.com
+  Access-Control-Allow-Headers: Authorization, Content-Type
+  Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS
+  Access-Control-Allow-Credentials: true
+  ```
+- **DO NOT use `Access-Control-Allow-Origin: *`** — this disables credential-based CORS.
+- **DO NOT disable CORS checks** in production. If you're tempted, you're doing something wrong.
+
+### Local Runtime Security
+
+- The local runtime binds to `127.0.0.1` ONLY. Never `0.0.0.0`.
+- The runtime exposes file system read/write. This is intentional — the user installed it. But:
+  - **Validate all file paths** — no path traversal (`../../../etc/passwd`). Use `path.resolve()` and verify the resolved path is within the user's home directory or an explicitly allowed directory.
+  - **Never execute user-supplied commands** without sanitization.
+  - **Set a maximum file size** for reads (e.g., 50MB) to prevent OOM.
+
+### Input Validation Checklist (for every API boundary)
+
+1. **User input → API:** Sanitize before sending. Escape HTML in chat messages before rendering.
+2. **API response → UI:** Never trust API responses. Validate types before using.
+3. **WebSocket messages:** Validate JSON-RPC structure before processing. Reject malformed messages.
+4. **File paths from runtime:** Always resolve and validate. Never pass user strings directly to `fs` operations.
+5. **OAuth parameters:** Validate `state` parameter matches what you sent. This prevents CSRF.
+
+### Common Vulnerabilities to Avoid
+
+| Vulnerability | How You'll Introduce It | Prevention |
+|--------------|------------------------|------------|
+| **XSS** | Using `innerHTML` to render chat messages or tool output | Always use `textContent` or a sanitizer like DOMPurify. Marked.js output must be sanitized. |
+| **Token Theft** | Logging tokens to console, including in error messages | NEVER log tokens. Search for `console.log` that includes token values before each commit. |
+| **Open Redirect** | OAuth callback doesn't validate redirect URL | Validate the redirect URL is on your domain before redirecting. |
+| **CSRF** | OAuth flow without state parameter | Always generate a random state, store it, and verify it on callback. |
+| **Path Traversal** | Runtime file handler accepts `../../etc/passwd` | Use `path.resolve()`, verify result starts with allowed prefix. |
+| **Prototype Pollution** | Spreading untrusted JSON into objects | Validate JSON structure before spreading. Don't use `Object.assign` with untrusted input. |
+| **Secrets in Source** | Hardcoding API keys or tokens | Use env vars. Check `.env` is in `.gitignore`. Run `git diff --cached` before every commit. |
+
+---
+
+## 7. Phase 1: Browser SPA
 
 **Goal:** A working browser app with AI chat and 90+ Gateway MCP tools. Zero install. Deploy as static site.
 
-### Task 1.1: Initialize Project from seren-desktop
+### Getting Started Checklist
 
-**What:** Copy the frontend source from `seren-desktop` into `seren-browser`. Strip all Tauri dependencies.
+Before writing any code, complete these checks. **Do not skip any.**
+
+1. [ ] **Verify CORS on api.serendb.com** — Run this in a browser console on any page:
+   ```javascript
+   fetch("https://api.serendb.com/auth/me", { headers: { "Content-Type": "application/json" } })
+     .then(r => console.log("CORS OK:", r.status))
+     .catch(e => console.error("CORS BLOCKED:", e));
+   ```
+   If you see a CORS error, **STOP. File a ticket with the backend team.** This is the #1 blocker.
+
+2. [ ] **Verify MCP Gateway CORS** — Same test for `https://mcp.serendb.com/mcp`.
+
+3. [ ] **Verify OAuth redirect URIs** — Confirm `https://app.seren.com/oauth/callback` (or your domain) is registered with GitHub and Google OAuth apps.
+
+4. [ ] **Read this entire document.** Don't skim. You will miss critical details and introduce bugs.
+
+5. [ ] **Read `seren-desktop/src/lib/tauri-bridge.ts`** — All 830 lines. This is the file you're replacing. If you don't understand every function in it, you will break things.
+
+---
+
+### Task 1.1: Initialize Project
+
+**What:** Create `seren-browser` repo from `seren-desktop` frontend source. Strip all Tauri dependencies.
 
 **Steps:**
 
-1. Copy these directories/files from `seren-desktop` to `seren-browser`:
+1. Copy these from `seren-desktop` to `seren-browser`:
    ```
    src/                    # All frontend source
-   public/                 # Static assets (if any)
+   public/                 # Static assets
    index.html              # HTML entry point
    vite.config.ts          # Vite config
    tsconfig.json           # TypeScript config
    biome.json              # Linting config
    openapi/                # API client generation config
+   tests/                  # Existing tests
    ```
 
 2. **DO NOT copy:**
    ```
-   src-tauri/              # Rust backend — not needed
-   build/                  # Platform runtime scripts — not needed
-   scripts/                # Build scripts for sidecars — not needed
-   embedded-runtime/       # Bundled Node.js/Git — not needed
+   src-tauri/              # Rust backend
+   build/                  # Platform runtime scripts
+   scripts/                # Build scripts for sidecars
+   embedded-runtime/       # Bundled Node.js/Git
    ```
 
-3. Create a new `package.json` based on `seren-desktop/package.json` but:
+3. Create `package.json`. Copy from `seren-desktop/package.json` and:
    - Change `name` to `"seren-browser"`
-   - Remove ALL `@tauri-apps/*` dependencies (both `dependencies` and `devDependencies`)
-   - Remove `@tauri-apps/cli` from devDependencies
-   - Remove all `prepare:runtime:*` scripts
-   - Remove `tauri:dev`, `build:openclaw`, `build:sidecar` scripts
-   - Keep: `solid-js`, `monaco-editor`, `@monaco-editor/loader`, `marked`, `highlight.js`, `pdfjs-dist`, `tailwindcss`, `@tailwindcss/vite`, `tailwind-merge`
-   - Keep all devDependencies except `@tauri-apps/cli`
-   - Add `"start": "vite"`, `"build": "vite build"`, `"preview": "vite preview"`
+   - **Remove ALL of these dependencies** (search for each one):
+     - `@tauri-apps/api`
+     - `@tauri-apps/cli`
+     - `@tauri-apps/plugin-dialog`
+     - `@tauri-apps/plugin-http`
+     - `@tauri-apps/plugin-log`
+     - `@tauri-apps/plugin-opener`
+     - `@tauri-apps/plugin-process`
+     - `@tauri-apps/plugin-store`
+     - `@tauri-apps/plugin-updater`
+     - Any other package starting with `@tauri-apps/`
+   - Remove scripts: `tauri:dev`, `build:openclaw`, `build:sidecar`, all `prepare:runtime:*`
+   - Add scripts: `"start": "vite"`, `"build": "vite build"`, `"preview": "vite preview"`
+   - **Keep:** `solid-js`, `monaco-editor`, `@monaco-editor/loader`, `marked`, `highlight.js`, `pdfjs-dist`, `tailwindcss`, `@tailwindcss/vite`, `tailwind-merge`, and all devDependencies except Tauri ones
+   - Add `"fake-indexeddb": "^6.0.0"` to devDependencies (needed for IndexedDB tests)
 
 4. Update `vite.config.ts`:
-   - Remove the `TAURI_DEV_HOST` environment variable usage
-   - Remove the `server.host` Tauri-specific logic
-   - Remove the comment about "Vite options tailored for Tauri"
+   - Remove the `TAURI_DEV_HOST` / `TAURI_PLATFORM` environment variable usage
+   - Remove `server.host` Tauri-specific logic
+   - Change `server.port` to `3000`
    - Keep: SolidJS plugin, Tailwind plugin, Monaco optimization, path aliases
 
-**Files to modify:**
-- `package.json` (new, based on seren-desktop's)
-- `vite.config.ts` (strip Tauri-specific config)
+5. Update `tsconfig.json`:
+   - Remove `"references": [{ "path": "./tsconfig.node.json" }]` if present
 
-**How to test:**
+**How to verify:**
+
 ```bash
 pnpm install
+pnpm exec tsc --noEmit 2>&1 | head -5
+# EXPECTED: TypeScript errors from @tauri-apps imports. That's correct — we fix those next.
+# UNEXPECTED: "Cannot find module 'solid-js'" — means you removed a required dep.
+
+grep -r "@tauri-apps" package.json
+# EXPECTED: No output (zero Tauri deps in package.json)
+
 pnpm dev
-# Should start Vite dev server. Will have TypeScript errors from Tauri imports — that's expected, we fix those next.
+# EXPECTED: Vite starts. Browser shows errors from missing Tauri modules. That's expected.
 ```
 
 **Commit:** `"Initialize seren-browser from seren-desktop frontend"`
 
+**Security check before commit:**
+```bash
+git diff --cached | grep -i "secret\|password\|token\|api_key\|private"
+# EXPECTED: No sensitive values. If you see any, unstage that file.
+```
+
 ---
 
-### Task 1.2: Replace tauri-bridge.ts with bridge.ts
+### Task 1.2: Create bridge.ts (TDD)
 
-**What:** Create `src/lib/bridge.ts` to replace `src/lib/tauri-bridge.ts`. This is the single most impactful file. It must provide the same exported functions but use browser-native APIs instead of Tauri IPC.
+**What:** Create `src/lib/bridge.ts` — the single abstraction layer that replaces `tauri-bridge.ts`. This is the most critical file in the entire migration. **It must be written test-first.**
 
-**The bridge has two modes:**
-1. **Browser-only:** localStorage for tokens/settings, IndexedDB for conversations
-2. **Runtime-connected:** WebSocket to localhost for everything
+**Why TDD for this file:**
+- Every service and store in the app depends on bridge.ts
+- A bug here cascades to the entire application
+- The localStorage operations look simple but have subtle edge cases (null vs empty string, JSON parse errors)
+- The IndexedDB operations are async and race-condition-prone
+- The WebSocket connection/reconnection logic is inherently stateful and error-prone
 
-**Steps:**
+**Step 1: Write the tests FIRST**
 
-1. Create `src/lib/bridge.ts` with the same exports as `tauri-bridge.ts`:
+Create `tests/lib/bridge.test.ts`:
 
-   ```typescript
-   // src/lib/bridge.ts
-   // ABOUTME: Runtime bridge for browser and optional local runtime.
-   // ABOUTME: Routes commands to localStorage/IndexedDB or localhost WebSocket.
-   ```
+```typescript
+// tests/lib/bridge.test.ts
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import "fake-indexeddb/auto";
 
-2. Implement token/settings storage using localStorage (copy the existing browser fallbacks from `tauri-bridge.ts` — they're already written and tested):
-   - `storeToken(token)` → `localStorage.setItem("seren_token", token)`
-   - `getToken()` → `localStorage.getItem("seren_token")`
-   - `clearToken()` → `localStorage.removeItem("seren_token")`
-   - Same pattern for refresh token, API key, org ID, provider keys, OAuth credentials
+// We'll import from bridge.ts once it exists
 
-3. Add runtime detection:
-   ```typescript
-   let runtimeWs: WebSocket | null = null;
-   let runtimeAvailable = false;
+describe("bridge: token storage", () => {
+  beforeEach(() => localStorage.clear());
 
-   const RUNTIME_PORT = 19420;
-   const RUNTIME_URL = `ws://localhost:${RUNTIME_PORT}`;
+  it("stores and retrieves a token", async () => {
+    await storeToken("test-token-123");
+    const token = await getToken();
+    expect(token).toBe("test-token-123");
+  });
 
-   export function isRuntimeConnected(): boolean {
-     return runtimeAvailable && runtimeWs?.readyState === WebSocket.OPEN;
-   }
+  it("returns null when no token stored", async () => {
+    const token = await getToken();
+    expect(token).toBeNull();
+  });
 
-   export async function connectToRuntime(): Promise<boolean> {
-     // Try to connect to local runtime via WebSocket
-     // Returns true if connected, false if not available
-   }
-   ```
+  it("clears a stored token", async () => {
+    await storeToken("test-token");
+    await clearToken();
+    const token = await getToken();
+    expect(token).toBeNull();
+  });
 
-4. Add a `runtimeInvoke()` function that sends JSON-RPC commands over WebSocket:
-   ```typescript
-   async function runtimeInvoke<T>(command: string, args?: Record<string, unknown>): Promise<T> {
-     // Send { jsonrpc: "2.0", method: command, params: args, id: requestId }
-     // Wait for response with matching id
-     // Return result or throw error
-   }
-   ```
+  it("overwrites existing token", async () => {
+    await storeToken("old-token");
+    await storeToken("new-token");
+    const token = await getToken();
+    expect(token).toBe("new-token");
+  });
+});
 
-5. For operations that need the runtime (file system, ACP, MCP local, OpenClaw), check `isRuntimeConnected()` and either invoke via WebSocket or throw a clear error:
-   ```typescript
-   export async function listDirectory(path: string): Promise<FileEntry[]> {
-     if (!isRuntimeConnected()) {
-       throw new Error("Local runtime required for file system access. Install with: curl -fsSL https://seren.com/install | sh");
-     }
-     return runtimeInvoke<FileEntry[]>("list_directory", { path });
-   }
-   ```
+describe("bridge: refresh token storage", () => {
+  beforeEach(() => localStorage.clear());
 
-6. Keep the same TypeScript interfaces (`FileEntry`, `Conversation`, `StoredMessage`, `SignX402Response`, etc.) — they're already defined in `tauri-bridge.ts`.
+  it("stores and retrieves refresh token separately from access token", async () => {
+    await storeToken("access-token");
+    await storeRefreshToken("refresh-token");
+    expect(await getToken()).toBe("access-token");
+    expect(await getRefreshToken()).toBe("refresh-token");
+  });
 
-7. Remove `isTauriRuntime()` — replace with `isRuntimeConnected()`.
+  it("clearing access token does not clear refresh token", async () => {
+    await storeToken("access");
+    await storeRefreshToken("refresh");
+    await clearToken();
+    expect(await getToken()).toBeNull();
+    expect(await getRefreshToken()).toBe("refresh");
+  });
+});
 
-8. Remove `listenForOAuthCallback()` — OAuth in browser uses standard redirect, not deep links.
+describe("bridge: API key storage", () => {
+  beforeEach(() => localStorage.clear());
+
+  it("stores and retrieves Seren API key", async () => {
+    await storeSerenApiKey("sk-test-123");
+    expect(await getSerenApiKey()).toBe("sk-test-123");
+  });
+
+  it("clears API key", async () => {
+    await storeSerenApiKey("sk-test");
+    await clearSerenApiKey();
+    expect(await getSerenApiKey()).toBeNull();
+  });
+});
+
+describe("bridge: provider key storage", () => {
+  beforeEach(() => localStorage.clear());
+
+  it("stores keys for different providers", async () => {
+    await storeProviderKey("openai", "sk-openai-123");
+    await storeProviderKey("anthropic", "sk-ant-456");
+    expect(await getProviderKey("openai")).toBe("sk-openai-123");
+    expect(await getProviderKey("anthropic")).toBe("sk-ant-456");
+  });
+
+  it("lists configured providers", async () => {
+    await storeProviderKey("openai", "key1");
+    await storeProviderKey("anthropic", "key2");
+    const providers = await getConfiguredProviders();
+    expect(providers).toContain("openai");
+    expect(providers).toContain("anthropic");
+    expect(providers.length).toBe(2);
+  });
+
+  it("clearing a provider key removes it from configured list", async () => {
+    await storeProviderKey("openai", "key1");
+    await storeProviderKey("anthropic", "key2");
+    await clearProviderKey("openai");
+    const providers = await getConfiguredProviders();
+    expect(providers).not.toContain("openai");
+    expect(providers).toContain("anthropic");
+  });
+});
+
+describe("bridge: OAuth credentials", () => {
+  beforeEach(() => localStorage.clear());
+
+  it("stores and retrieves OAuth credentials as JSON string", async () => {
+    const creds = JSON.stringify({ access_token: "abc", refresh_token: "def" });
+    await storeOAuthCredentials("github", creds);
+    expect(await getOAuthCredentials("github")).toBe(creds);
+  });
+
+  it("lists OAuth providers", async () => {
+    await storeOAuthCredentials("github", "{}");
+    await storeOAuthCredentials("google", "{}");
+    const providers = await getOAuthProviders();
+    expect(providers).toContain("github");
+    expect(providers).toContain("google");
+  });
+});
+
+describe("bridge: runtime detection", () => {
+  it("returns false when no runtime is running", () => {
+    expect(isRuntimeConnected()).toBe(false);
+  });
+});
+
+describe("bridge: file operations require runtime", () => {
+  it("listDirectory throws when runtime not connected", async () => {
+    await expect(listDirectory("/tmp")).rejects.toThrow(/runtime/i);
+  });
+
+  it("readFile throws when runtime not connected", async () => {
+    await expect(readFile("/tmp/test.txt")).rejects.toThrow(/runtime/i);
+  });
+
+  it("writeFile throws when runtime not connected", async () => {
+    await expect(writeFile("/tmp/test.txt", "content")).rejects.toThrow(/runtime/i);
+  });
+});
+
+describe("bridge: IndexedDB conversation storage", () => {
+  beforeEach(async () => {
+    await clearAllHistory();
+  });
+
+  it("creates and retrieves a conversation", async () => {
+    const conv = await createConversation("conv-1", "Test Chat", "claude-3", "anthropic");
+    expect(conv.id).toBe("conv-1");
+    expect(conv.title).toBe("Test Chat");
+
+    const retrieved = await getConversation("conv-1");
+    expect(retrieved).not.toBeNull();
+    expect(retrieved!.title).toBe("Test Chat");
+    expect(retrieved!.selected_model).toBe("claude-3");
+  });
+
+  it("lists conversations excluding archived, newest first", async () => {
+    await createConversation("conv-1", "First");
+    await createConversation("conv-2", "Second");
+    await archiveConversation("conv-1");
+
+    const convs = await getConversations();
+    expect(convs.length).toBe(1);
+    expect(convs[0].id).toBe("conv-2");
+  });
+
+  it("updates conversation title", async () => {
+    await createConversation("conv-1", "Old Title");
+    await updateConversation("conv-1", "New Title");
+    const conv = await getConversation("conv-1");
+    expect(conv!.title).toBe("New Title");
+  });
+
+  it("deletes conversation and its messages", async () => {
+    await createConversation("conv-1", "Test");
+    await saveMessage("msg-1", "conv-1", "user", "Hello", null, Date.now());
+    await saveMessage("msg-2", "conv-1", "assistant", "Hi", "claude-3", Date.now());
+
+    await deleteConversation("conv-1");
+
+    expect(await getConversation("conv-1")).toBeNull();
+    const msgs = await getMessages("conv-1", 100);
+    expect(msgs.length).toBe(0);
+  });
+
+  it("saves and retrieves messages in order", async () => {
+    await createConversation("conv-1", "Test");
+    const t1 = 1000;
+    const t2 = 2000;
+    await saveMessage("msg-1", "conv-1", "user", "First", null, t1);
+    await saveMessage("msg-2", "conv-1", "assistant", "Second", "claude-3", t2);
+
+    const msgs = await getMessages("conv-1", 100);
+    expect(msgs.length).toBe(2);
+    expect(msgs[0].content).toBe("First");
+    expect(msgs[1].content).toBe("Second");
+  });
+
+  it("respects message limit", async () => {
+    await createConversation("conv-1", "Test");
+    for (let i = 0; i < 10; i++) {
+      await saveMessage(`msg-${i}`, "conv-1", "user", `Message ${i}`, null, i * 1000);
+    }
+
+    const msgs = await getMessages("conv-1", 5);
+    expect(msgs.length).toBe(5);
+  });
+
+  it("clears conversation history without deleting the conversation", async () => {
+    await createConversation("conv-1", "Test");
+    await saveMessage("msg-1", "conv-1", "user", "Hello", null, Date.now());
+
+    await clearConversationHistory("conv-1");
+
+    expect(await getConversation("conv-1")).not.toBeNull();
+    const msgs = await getMessages("conv-1", 100);
+    expect(msgs.length).toBe(0);
+  });
+
+  it("clearAllHistory removes everything", async () => {
+    await createConversation("conv-1", "Test");
+    await saveMessage("msg-1", "conv-1", "user", "Hello", null, Date.now());
+
+    await clearAllHistory();
+
+    const convs = await getConversations();
+    expect(convs.length).toBe(0);
+  });
+});
+```
+
+**Step 2: Run tests — they should ALL FAIL**
+
+```bash
+pnpm test tests/lib/bridge.test.ts
+# EXPECTED: All tests fail (bridge.ts exports don't exist yet)
+```
+
+**Step 3: Implement bridge.ts**
+
+Create `src/lib/bridge.ts` with these sections:
+
+1. **Types** — Copy `FileEntry`, `Conversation`, `StoredMessage`, `SignX402Response`, `UsdcBalanceResponse` from `tauri-bridge.ts`. Keep the EXACT same interfaces.
+
+2. **Runtime connection** — WebSocket to `ws://localhost:19420`:
+   - `isRuntimeConnected()` → boolean
+   - `connectToRuntime()` → Promise<boolean>
+   - `disconnectRuntime()` → void
+   - `runtimeInvoke<T>(method, params?)` → Promise<T> with 30s timeout
+   - `onRuntimeEvent(event, callback)` → () => void (unsubscribe)
+
+3. **Token storage** — All use localStorage:
+   - `storeToken`, `getToken`, `clearToken`
+   - `storeRefreshToken`, `getRefreshToken`, `clearRefreshToken`
+   - Keys: `"seren_token"`, `"seren_refresh_token"`
+
+4. **API key / org ID** — localStorage:
+   - `storeSerenApiKey`, `getSerenApiKey`, `clearSerenApiKey` → key: `"seren_api_key"`
+   - `storeDefaultOrganizationId`, `getDefaultOrganizationId`, `clearDefaultOrganizationId` → key: `"seren_default_org_id"`
+
+5. **Provider keys** — localStorage with prefix `seren_provider_key_`:
+   - `storeProviderKey(provider, key)`, `getProviderKey(provider)`, `clearProviderKey(provider)`
+   - `getConfiguredProviders()` — iterate localStorage keys matching prefix
+
+6. **OAuth credentials** — localStorage with prefix `seren_oauth_`:
+   - `storeOAuthCredentials(provider, creds)`, `getOAuthCredentials(provider)`, `clearOAuthCredentials(provider)`
+   - `getOAuthProviders()` — iterate keys
+   - `listenForOAuthCallback()` — no-op in browser (returns empty cleanup fn)
+
+7. **File system** — All require runtime, throw descriptive error if not connected:
+   - `listDirectory`, `readFile`, `writeFile`, `pathExists`, `isDirectory`
+   - `createFile`, `createDirectory`, `deletePath`, `renamePath`
+
+8. **Crypto wallet** — Require runtime:
+   - `storeCryptoPrivateKey`, `getCryptoWalletAddress`, `clearCryptoWallet`
+   - `signX402Payment`, `getCryptoUsdcBalance`
+
+9. **Conversations** — IndexedDB (browser-only mode):
+   - DB name: `"seren"`, version: 1
+   - Object stores: `"conversations"` (keyPath: `"id"`), `"messages"` (keyPath: `"id"`, index on `"conversation_id"`)
+   - Implement: `createConversation`, `getConversations`, `getConversation`, `updateConversation`, `archiveConversation`, `deleteConversation`
+   - Implement: `saveMessage`, `getMessages`, `clearConversationHistory`, `clearAllHistory`
+
+**CRITICAL: What NOT to export:**
+- Do NOT export `isTauriRuntime()` — this function doesn't exist anymore. Files that import it need to be fixed separately (Task 1.4).
+
+**Step 4: Run tests — they should ALL PASS**
+
+```bash
+pnpm test tests/lib/bridge.test.ts
+# EXPECTED: All green
+```
+
+**Step 5: Delete old file, update imports**
+
+```bash
+rm src/lib/tauri-bridge.ts
+
+# Find and replace all imports
+grep -rl "@/lib/tauri-bridge" src/ | xargs sed -i '' 's|@/lib/tauri-bridge|@/lib/bridge|g'
+# On Linux, use: sed -i 's|...|...|g'
+
+# Verify
+grep -r "tauri-bridge" src/
+# EXPECTED: No output
+```
 
 **Files to create:**
-- `src/lib/bridge.ts` (replaces `tauri-bridge.ts`)
+- `tests/lib/bridge.test.ts`
+- `src/lib/bridge.ts`
 
 **Files to delete:**
 - `src/lib/tauri-bridge.ts`
 
-**Files to update (find-and-replace imports):**
-Every file that imports from `@/lib/tauri-bridge` must be updated to import from `@/lib/bridge`. Use your editor's find-and-replace:
-```
-Old: from "@/lib/tauri-bridge"
-New: from "@/lib/bridge"
-```
+**How to verify:**
 
-Files affected (from `tauri-bridge.ts` import search):
-- `src/services/auth.ts`
-- `src/services/mcp-gateway.ts`
-- `src/services/publisher-oauth.ts`
-- `src/services/wallet.ts`
-- `src/services/x402.ts`
-- `src/stores/auth.store.ts`
-- `src/stores/provider.store.ts`
-- `src/stores/settings.store.ts`
-- `src/lib/fetch.ts`
-- `src/lib/tools/executor.ts`
-- Any other file importing from `tauri-bridge`
-
-**How to test:**
 ```bash
-# TypeScript compilation
-pnpm exec tsc --noEmit
-
-# Unit test for bridge.ts
-# Write a test that:
-# 1. Calls storeToken("test-token")
-# 2. Calls getToken() and asserts it returns "test-token"
-# 3. Calls clearToken()
-# 4. Calls getToken() and asserts it returns null
-# 5. Verifies isRuntimeConnected() returns false when no runtime is running
+pnpm test tests/lib/bridge.test.ts  # All pass
+grep -r "tauri-bridge" src/          # Zero results
+grep -r "isTauriRuntime" src/lib/bridge.ts  # Zero results (it's NOT exported)
 ```
 
-**TDD: Write tests first for:**
-- Token storage/retrieval/clear cycle
-- API key storage/retrieval/clear cycle
-- Runtime detection (returns false when nothing is listening)
-- `runtimeInvoke()` timeout handling (should reject after N seconds)
+**Commit:** `"Replace tauri-bridge.ts with browser-native bridge.ts (TDD)"`
 
-**Commit:** `"Replace tauri-bridge.ts with browser-native bridge.ts"`
+**Security check:** Search bridge.ts for token logging:
+```bash
+grep -n "console.log.*token\|console.log.*key\|console.log.*secret" src/lib/bridge.ts
+# EXPECTED: No output
+```
 
 ---
 
-### Task 1.3: Replace Tauri Fetch with Browser Fetch
+### Task 1.3: Simplify fetch.ts
 
-**What:** Simplify `src/lib/fetch.ts` to use browser `fetch()` directly. Remove the Tauri HTTP plugin import.
+**What:** Simplify `src/lib/fetch.ts` to use browser-native `fetch()`. Remove all Tauri HTTP plugin references.
 
-**Steps:**
+**Current state:** This file was already rewritten in the previous attempt. **Verify it's correct by reading it.**
 
-1. Rewrite `src/lib/fetch.ts`:
-   ```typescript
-   // ABOUTME: Fetch wrapper with auto-refresh on 401.
-   // ABOUTME: Uses browser fetch. Handles token refresh transparently.
+**The correct implementation:**
 
-   import { getToken } from "./bridge";
+```typescript
+// ABOUTME: Fetch wrapper with automatic token refresh on 401.
+// ABOUTME: Uses browser-native fetch. No Tauri dependency.
 
-   const NO_REFRESH_ENDPOINTS = ["/auth/login", "/auth/refresh", "/auth/signup"];
+import { getToken } from "./bridge";
 
-   function shouldSkipRefresh(input: RequestInfo | URL): boolean {
-     const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
-     return NO_REFRESH_ENDPOINTS.some((endpoint) => url.includes(endpoint));
-   }
+const NO_REFRESH_ENDPOINTS = ["/auth/login", "/auth/refresh", "/auth/signup"];
 
-   export async function appFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
-     const response = await fetch(input, init);
+function shouldSkipRefresh(input: RequestInfo | URL): boolean {
+  const url =
+    typeof input === "string"
+      ? input
+      : input instanceof URL
+        ? input.href
+        : input.url;
+  return NO_REFRESH_ENDPOINTS.some((endpoint) => url.includes(endpoint));
+}
 
-     if (response.status === 401 && !shouldSkipRefresh(input)) {
-       const { refreshAccessToken } = await import("@/services/auth");
-       const refreshed = await refreshAccessToken();
-       if (refreshed) {
-         const newToken = await getToken();
-         const retryInit: RequestInit = {
-           ...init,
-           headers: { ...init?.headers, Authorization: `Bearer ${newToken}` },
-         };
-         return fetch(input, retryInit);
-       }
-     }
+export async function appFetch(
+  input: RequestInfo | URL,
+  init?: RequestInit,
+): Promise<Response> {
+  const response = await fetch(input, init);
 
-     return response;
-   }
-   ```
-
-2. Remove `isTauriRuntime` import.
-3. Remove Tauri HTTP plugin dynamic import.
-4. Remove `tauriFetch` variable.
-
-**CORS NOTE:** If `api.serendb.com` doesn't currently return CORS headers, this will break. The Seren backend team must add:
-```
-Access-Control-Allow-Origin: https://app.seren.com (or your domain)
-Access-Control-Allow-Headers: Authorization, Content-Type
-Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS
-Access-Control-Allow-Credentials: true
-```
-This is a **blocker** for Phase 1. Verify this before starting.
-
-**Files to modify:**
-- `src/lib/fetch.ts`
-
-**How to test:**
-```bash
-# Manual test: Open browser, try to login
-# If CORS error appears in console, the backend needs CORS headers
-# Unit test: Mock fetch, verify 401 triggers refresh
-```
-
-**Commit:** `"Simplify fetch wrapper for browser environment"`
-
----
-
-### Task 1.4: Strip Direct Tauri Imports from Services
-
-**What:** Remove or replace all direct `@tauri-apps/*` imports from service files and stores.
-
-**Steps (for each file):**
-
-**`src/services/publisher-oauth.ts`:**
-- Remove `import { openUrl } from "@tauri-apps/plugin-opener"`
-- Remove `import { invoke } from "@tauri-apps/api/core"`
-- Replace `openUrl(location)` with `window.open(location, "_blank")`
-- Replace the `invoke("get_oauth_redirect_url", ...)` call with a direct `fetch()` call using `redirect: "manual"`:
-  ```typescript
-  const response = await fetch(authUrl, {
-    headers: { Authorization: `Bearer ${token}` },
-    redirect: "manual",
-  });
-  const location = response.headers.get("Location");
-  ```
-  **NOTE:** `redirect: "manual"` in browser fetch returns an opaque redirect response (status 0). You may need to change the backend to return the redirect URL in the response body instead of as a 302 redirect. This is a potential blocker — check the Gateway behavior.
-
-**`src/services/acp.ts`:**
-- This file is 100% Tauri-dependent. Do NOT try to make it work in Phase 1.
-- Create a stub that throws clear errors:
-  ```typescript
-  export async function spawnAgent(): Promise<never> {
-    throw new Error("ACP agents require the local runtime. Install: curl -fsSL https://seren.com/install | sh");
+  if (response.status === 401 && !shouldSkipRefresh(input)) {
+    const { refreshAccessToken } = await import("@/services/auth");
+    const refreshed = await refreshAccessToken();
+    if (refreshed) {
+      const newToken = await getToken();
+      const retryInit: RequestInit = {
+        ...init,
+        headers: { ...init?.headers, Authorization: `Bearer ${newToken}` },
+      };
+      return fetch(input, retryInit);
+    }
   }
-  // ... same for all other exports
+
+  return response;
+}
+```
+
+**Verify:**
+
+```bash
+grep -n "@tauri-apps" src/lib/fetch.ts
+# EXPECTED: No output
+
+grep -n "isTauriRuntime" src/lib/fetch.ts
+# EXPECTED: No output
+```
+
+**Commit** (if changes needed): `"Simplify fetch wrapper for browser environment"`
+
+---
+
+### Task 1.4: Strip Tauri Imports — File by File
+
+**What:** Rewrite each of the 21 files that import `@tauri-apps/*` directly. This is the most tedious task but also where most bugs will be introduced. **Do each file individually. Commit after every 2-3 files. Run `tsc --noEmit` after each file.**
+
+**General rules for every file:**
+- Remove ALL `@tauri-apps/*` imports
+- Replace `invoke(command, args)` with `runtimeInvoke(command, args)` from `@/lib/bridge`
+- Replace `listen(event, callback)` with `onRuntimeEvent(event, callback)` from `@/lib/bridge`
+- Replace `type UnlistenFn` with `type UnlistenFn = () => void` (local type)
+- Replace `open()` from `@tauri-apps/plugin-dialog` with HTML `<input type="file">` or runtime check
+- Replace `openUrl()` with `window.open(url, "_blank", "noopener,noreferrer")`
+
+**Order matters.** Do these in dependency order so TypeScript catches errors early:
+
+#### Group A: Simple Replacements (commit after this group)
+
+**File 1: `src/lib/external-link.ts`** — Already done. Verify:
+```bash
+grep "@tauri-apps" src/lib/external-link.ts  # Should be empty
+```
+
+**File 2: `src/index.tsx`** — Already done. Verify:
+```bash
+grep "@tauri-apps" src/index.tsx  # Should be empty
+```
+
+**File 3: `src/stores/updater.store.ts`** — Already done. Verify:
+```bash
+grep "@tauri-apps" src/stores/updater.store.ts  # Should be empty
+```
+
+**File 4: `src/api/client-config.ts`** — Already done. Verify:
+```bash
+grep "@tauri-apps" src/api/client-config.ts  # Should be empty
+```
+
+**File 5: `src/components/common/AboutDialog.tsx`**
+- Remove `invoke` and `listen` from `@tauri-apps/api/core`
+- Replace the `BuildInfo` type and `invoke("get_build_info")` call with hardcoded or env-based version info:
+  ```typescript
+  const buildInfo = {
+    app_version: import.meta.env.VITE_APP_VERSION ?? "0.1.0",
+    build_type: import.meta.env.DEV ? "development" : "production",
+    platform: "browser",
+  };
   ```
-- The real implementation comes in Phase 4.
+- Replace the `listen("open-about", ...)` event with `window.addEventListener("open-about", ...)`
+- Replace the `UnlistenFn` type with `() => void`
 
-**`src/services/openclaw-agent.ts`:**
-- Same as ACP — stub with clear errors. Real implementation in Phase 5.
+**File 6: `src/lib/commands/registry.ts`** (only line 242)
+- Replace `import { emit } from "@tauri-apps/api/event"` with `window.dispatchEvent(new CustomEvent("open-about"))`
 
-**`src/stores/openclaw.store.ts`:**
-- Remove `invoke` and `listen` imports
-- Stub all actions to no-op or throw runtime-required errors
-- Keep the store shape and type definitions (they're used by UI)
+**Commit:** `"Strip Tauri from AboutDialog, commands registry"`
 
-**`src/stores/sync.store.ts`:**
-- Remove entirely or stub. File watching requires local runtime.
+**Security check:**
+```bash
+pnpm exec tsc --noEmit 2>&1 | grep "error" | wc -l
+# Note the count — it should be decreasing with each group
+```
 
-**`src/stores/updater.store.ts`:**
-- Delete this file entirely. Web apps auto-update via CDN.
-- Remove the `updaterStore.initUpdater()` call from `App.tsx`.
+#### Group B: Fix Broken `isTauriRuntime` Imports (commit after this group)
 
-**`src/stores/acp.store.ts`:**
-- Stub event subscriptions. Real implementation in Phase 4.
+These 3 files import `isTauriRuntime` from bridge, but bridge.ts doesn't export it. Replace with the correct browser logic.
 
-**`src/lib/mcp/client.ts`:**
+**File 7: `src/services/oauth.ts`**
+- Remove `import { isTauriRuntime } from "@/lib/bridge"`
+- Every `if (isTauriRuntime())` block was for Tauri deep-link OAuth. Replace:
+  - The Tauri branch (invoke + deep link) → delete entirely
+  - Keep only the browser branch (standard redirect)
+- **SECURITY: OAuth state parameter MUST be validated.** When starting OAuth:
+  ```typescript
+  const state = crypto.randomUUID();
+  sessionStorage.setItem("oauth_state", state);
+  ```
+  When handling callback:
+  ```typescript
+  const expectedState = sessionStorage.getItem("oauth_state");
+  if (params.get("state") !== expectedState) {
+    throw new Error("OAuth state mismatch — possible CSRF attack");
+  }
+  sessionStorage.removeItem("oauth_state");
+  ```
+
+**File 8: `src/stores/settings.store.ts`**
+- Remove `import { isTauriRuntime } from "@/lib/bridge"`
+- The `isTauriRuntime()` check was for using Tauri store vs localStorage. In browser, always use localStorage.
+- Replace `if (!isTauriRuntime()) { /* use localStorage */ }` with just the localStorage path.
+
+**File 9: `src/stores/provider.store.ts`**
+- Remove `isTauriRuntime` from the import
+- Same pattern as settings.store.ts — always use the localStorage path
+
+**Commit:** `"Fix broken isTauriRuntime imports in oauth, settings, provider stores"`
+
+#### Group C: Runtime-Dependent Stubs (commit after this group)
+
+These files are 100% Tauri-dependent and won't work in browser-only mode. Create clean stubs that throw descriptive errors.
+
+**File 10: `src/services/acp.ts`** (451 LOC)
+- Remove `invoke` and `listen` from `@tauri-apps/api/core`
+- Import `runtimeInvoke`, `onRuntimeEvent`, `isRuntimeConnected` from `@/lib/bridge`
+- **Keep all type definitions and interfaces** — they're used by acp.store.ts and components
+- Replace every function body:
+  ```typescript
+  function requireRuntime(): void {
+    if (!isRuntimeConnected()) {
+      throw new Error("ACP agents require the local runtime. Install: curl -fsSL https://seren.com/install | sh");
+    }
+  }
+
+  export async function spawnAgent(agentType: AgentType, cwd: string, sandboxMode?: string): Promise<AcpSessionInfo> {
+    requireRuntime();
+    return runtimeInvoke<AcpSessionInfo>("acp_spawn", { agentType, cwd, sandboxMode: sandboxMode ?? null });
+  }
+
+  // ... same pattern for all other functions
+  ```
+- For `subscribeToEvent` and `subscribeToSession`, replace `listen()` with `onRuntimeEvent()`:
+  ```typescript
+  export async function subscribeToEvent<T extends { sessionId: string }>(
+    eventType: EventType,
+    callback: (data: T) => void,
+  ): Promise<() => void> {
+    const channel = EVENT_CHANNELS[eventType];
+    return onRuntimeEvent(channel, (data) => callback(data as T));
+  }
+  ```
+- The `UnlistenFn` type was from Tauri. Replace with `() => void` everywhere.
+
+**File 11: `src/services/openclaw-agent.ts`**
+- Same pattern as acp.ts — import from bridge, check `isRuntimeConnected()`, replace invoke/listen
+
+**File 12: `src/services/indexing.ts`**
+- Replace `invoke` with `runtimeInvoke` from bridge
+- Add runtime check
+
+**File 13: `src/services/mcp-oauth.ts`**
+- Replace `invoke` with `runtimeInvoke` from bridge
+- This may need to work without runtime if it's used for Gateway MCP OAuth — check the usage
+
+**Commit:** `"Stub ACP, OpenClaw, indexing, MCP-OAuth services for browser"`
+
+#### Group D: Store Rewrites (commit after this group)
+
+**File 14: `src/stores/openclaw.store.ts`** (389 LOC)
+- Remove `invoke` and `listen` from `@tauri-apps/api/core`
+- Import `runtimeInvoke`, `onRuntimeEvent`, `isRuntimeConnected` from `@/lib/bridge`
+- Keep ALL type definitions (`ProcessStatus`, `ChannelStatus`, `OpenClawChannel`, etc.)
+- Keep the store shape and getters (they're used by UI components)
+- Stub `setupEventListeners()`:
+  ```typescript
+  async function setupEventListeners() {
+    if (!isRuntimeConnected()) return;
+    // Only set up listeners when runtime is available
+    unlistenStatus = onRuntimeEvent("openclaw://status-changed", (payload) => {
+      const data = payload as { status: ProcessStatus };
+      setState("processStatus", data.status);
+    });
+    // ... same for other events
+  }
+  ```
+- Stub all invoke calls with runtime checks:
+  ```typescript
+  async start() {
+    if (!isRuntimeConnected()) {
+      console.warn("[OpenClaw Store] Runtime not connected, cannot start");
+      return;
+    }
+    await runtimeInvoke("openclaw_start");
+    // ...
+  }
+  ```
+- The `init()` method should call `setupEventListeners()` silently (no error if no runtime)
+- Replace `invoke("get_setting", ...)` with `localStorage.getItem("openclaw_setup_complete")`
+- Replace `invoke("set_setting", ...)` with `localStorage.setItem("openclaw_setup_complete", "true")`
+
+**File 15: `src/stores/sync.store.ts`** (165 LOC)
+- Remove all Tauri imports
+- Import `runtimeInvoke`, `onRuntimeEvent`, `isRuntimeConnected` from `@/lib/bridge`
+- Add runtime checks to `startWatching`, `stopWatching`, `refresh`
+- Stub event listeners — only set up when runtime connected
+
+**File 16: `src/stores/acp.store.ts`**
+- Remove `import type { UnlistenFn } from "@tauri-apps/api/event"`
+- Add local type: `type UnlistenFn = () => void;`
+- The rest of the file uses `acpService.*` which we already stubbed in File 10
+
+**File 17: `src/stores/fileTree.ts`**
 - Remove `import { invoke } from "@tauri-apps/api/core"`
-- The stdio MCP methods (`connect`, `disconnect`, `listTools`, `callTool`, etc.) need the local runtime. Stub them.
-- The HTTP MCP methods (`connectHttp`, `disconnectHttp`, `listToolsHttp`, `callToolHttp`) currently go through Tauri's Rust HTTP client. Rewrite them to use browser `fetch()` directly. The MCP HTTP streaming transport is standard HTTP/SSE — this should be straightforward.
+- Import `listDirectory` from `@/lib/bridge`
+- Replace `invoke<FileEntry[]>("list_directory", { path })` with `listDirectory(path)`:
+  ```typescript
+  export async function refreshDirectory(path: string): Promise<void> {
+    try {
+      const entries = await listDirectory(path);
+      const children = entries.map(entryToNode);
+      if (path === fileTreeState.rootPath) {
+        setNodes(children);
+      } else {
+        setNodeChildren(path, children);
+      }
+    } catch (err) {
+      console.error("Failed to refresh directory:", err);
+    }
+  }
+  ```
 
-**`src/lib/files/service.ts`:**
-- Stub file operations. File system requires local runtime.
+**Commit:** `"Rewrite stores to use bridge instead of Tauri IPC"`
 
-**`src/lib/images/attachments.ts`:**
-- Replace `open` from `@tauri-apps/plugin-dialog` with an HTML `<input type="file">` trigger.
+#### Group E: Library Rewrites (commit after this group)
 
-**`src/lib/tools/executor.ts`:**
-- Check what tools it executes. Gateway tools should work. Local tools (file system) need the runtime.
+**File 18: `src/lib/mcp/client.ts`**
+- Remove `import { invoke } from "@tauri-apps/api/core"`
+- Import `runtimeInvoke`, `isRuntimeConnected` from `@/lib/bridge`
+- **Stdio MCP methods** (`connect`, `disconnect`, `listTools`, `callTool`, etc.):
+  - Add runtime check
+  - Replace `invoke("mcp_connect", ...)` with `runtimeInvoke("mcp_connect", ...)`
+  - Same for all other stdio operations
+- **HTTP MCP methods** (`connectHttp`, `disconnectHttp`, `listToolsHttp`, `callToolHttp`):
+  - These currently go through Tauri's Rust HTTP client
+  - **Rewrite to use browser `fetch()` directly** — MCP HTTP transport is standard JSON-RPC over HTTP
+  - This is covered in detail in Task 1.7
 
-**`src/lib/indexing/orchestrator.ts`:**
-- Stub. Indexing requires local file access.
+**File 19: `src/lib/files/service.ts`**
+- Remove `import { invoke } from "@tauri-apps/api/core"`
+- Remove `import { open, save } from "@tauri-apps/plugin-dialog"`
+- Import `readFile`, `writeFile`, `listDirectory`, `createFile`, `createDirectory`, `deletePath`, `renamePath`, `isRuntimeConnected` from `@/lib/bridge`
+- Replace all `invoke("read_file", { path })` with `readFile(path)` etc.
+- Replace `open()` file dialog with a helper that uses `<input type="file">`:
+  ```typescript
+  export function pickFile(accept?: string): Promise<File | null> {
+    return new Promise((resolve) => {
+      const input = document.createElement("input");
+      input.type = "file";
+      if (accept) input.accept = accept;
+      input.onchange = () => resolve(input.files?.[0] ?? null);
+      input.click();
+    });
+  }
 
-**`src/lib/external-link.ts`:**
-- Replace `openUrl` from Tauri with `window.open(url, "_blank")`.
+  export function pickDirectory(): Promise<string | null> {
+    if (!isRuntimeConnected()) {
+      console.warn("Directory picker requires local runtime");
+      return Promise.resolve(null);
+    }
+    // With runtime, use a runtime command to show native dialog
+    return runtimeInvoke<string | null>("pick_directory");
+  }
+  ```
+- Replace `save()` dialog similarly
 
-**`src/components/sidebar/FileExplorerPanel.tsx`:**
-- Replace `open` from `@tauri-apps/plugin-dialog` with `<input type="file">` or disable the folder picker in browser-only mode.
+**File 20: `src/lib/images/attachments.ts`**
+- Remove `import { invoke } from "@tauri-apps/api/core"`
+- Remove `import { open } from "@tauri-apps/plugin-dialog"`
+- Replace `pickImageFiles()` with HTML file input:
+  ```typescript
+  export function pickImageFiles(): Promise<File[]> {
+    return new Promise((resolve) => {
+      const input = document.createElement("input");
+      input.type = "file";
+      input.multiple = true;
+      input.accept = SUPPORTED_EXTENSIONS.map(ext => `.${ext}`).join(",");
+      input.onchange = () => resolve(Array.from(input.files ?? []));
+      input.click();
+    });
+  }
+  ```
+- Replace `readImageAttachment(path)` with `readImageFile(file: File)`:
+  ```typescript
+  export async function readImageFile(file: File): Promise<ImageAttachment> {
+    const ext = getExtension(file.name);
+    const mimeType = MIME_TYPES[ext];
+    if (!mimeType) throw new Error(`Unsupported image format: .${ext}`);
 
-**`src/components/editor/ImageViewer.tsx`:**
-- Replace Tauri asset URL conversion with standard browser image loading.
+    const buffer = await file.arrayBuffer();
+    const base64 = btoa(String.fromCharCode(...new Uint8Array(buffer)));
+    if (base64.length > MAX_BASE64_SIZE) throw new Error("Image too large (max 20MB)");
 
-**`src/components/settings/OpenClawApproval.tsx`:**
-- Stub. OpenClaw approval requires local runtime.
+    return { name: file.name, mimeType, base64 };
+  }
+  ```
+- **NOTE:** This changes the API from path-based to File-based. Check all callers and update them.
 
-**`src/components/common/AboutDialog.tsx`:**
-- Remove Tauri app info. Use a hardcoded version or fetch from package.json.
+**File 21: `src/lib/tools/executor.ts`**
+- Remove `import { invoke } from "@tauri-apps/api/core"` and `listen`/`UnlistenFn`
+- Import `runtimeInvoke`, `onRuntimeEvent`, `isRuntimeConnected` from `@/lib/bridge`
+- Replace invoke calls with runtimeInvoke
+- Gateway tool calls should work without runtime (they use HTTP)
+- Local tool calls (file operations) need runtime checks
 
-**`src/index.tsx`:**
-- Remove `import { attachConsole } from "@tauri-apps/plugin-log"`.
-- Remove the `attachConsole()` call.
+**File 22: `src/lib/indexing/orchestrator.ts`**
+- Remove `import { invoke } from "@tauri-apps/api/core"`
+- Import `runtimeInvoke`, `isRuntimeConnected` from `@/lib/bridge`
+- Add runtime check at top of main function
 
-**Files to modify:** ~18 files (see list above)
-**Files to delete:** `src/stores/updater.store.ts`
+**Commit:** `"Rewrite MCP client, file service, attachments, tools, indexing for browser"`
 
-**How to test:**
+#### Group F: Component Rewrites (commit after this group)
+
+**File 23: `src/components/sidebar/FileTree.tsx`**
+- Remove `import { invoke } from "@tauri-apps/api/core"`
+- Import needed functions from `@/lib/bridge` or `@/lib/files/service`
+- Replace invoke calls in context menu handlers (rename, delete, new file, new folder) with bridge functions
+
+**File 24: `src/components/sidebar/FileExplorerPanel.tsx`**
+- Remove `import { open } from "@tauri-apps/plugin-dialog"`
+- The folder picker needs runtime. When no runtime, show a message instead of a picker.
+
+**File 25: `src/components/editor/ImageViewer.tsx`**
+- Remove `import { convertFileSrc } from "@tauri-apps/api/core"`
+- Replace with standard URL handling. If the image is a local file, it needs the runtime to read it and convert to a data URL.
+
+**File 26: `src/components/settings/OpenClawApproval.tsx`**
+- Remove `invoke` and `listen` from `@tauri-apps/api/core`
+- Import from bridge
+- Add runtime checks — component should render nothing if no runtime
+
+**File 27: `src/services/publisher-oauth.ts`**
+- Remove `import { openUrl } from "@tauri-apps/plugin-opener"`
+- Replace `openUrl(location)` with `window.open(location, "_blank", "noopener,noreferrer")`
+- Replace any remaining `invoke()` calls with appropriate bridge functions
+
+**Commit:** `"Strip Tauri from all remaining components and services"`
+
+#### Verification (MUST PASS before moving on)
+
 ```bash
-# After all changes:
-pnpm exec tsc --noEmit    # Zero TypeScript errors
-pnpm dev                   # Vite dev server starts
-# Open browser → should see the app with no Tauri errors
-# Chat should work if Gateway CORS is configured
-# File explorer and ACP will show "runtime required" messages
+# Zero Tauri imports remaining
+grep -r "@tauri-apps" src/ --include="*.ts" --include="*.tsx"
+# EXPECTED: No output
+
+# TypeScript compiles
+pnpm exec tsc --noEmit
+# EXPECTED: Zero errors (or only errors unrelated to Tauri)
+
+# Biome passes
+pnpm check
+# EXPECTED: Clean
+
+# Tests pass
+pnpm test
+# EXPECTED: All pass
+
+# Dev server starts
+pnpm dev
+# EXPECTED: Vite serves on localhost:3000
+
+# Build succeeds
+pnpm build
+# EXPECTED: dist/ directory with working static build
 ```
 
-**Commit:** `"Remove all Tauri dependencies from frontend"`
+**If any check fails, fix it before proceeding. Do not move to the next task.**
 
 ---
 
-### Task 1.5: Implement IndexedDB Conversation Storage
-
-**What:** The Tauri backend stores conversations in SQLite via Rust commands (`create_conversation`, `get_conversations`, `save_message`, etc.). In browser-only mode, we need a replacement. IndexedDB is the right choice.
-
-**Steps:**
-
-1. Create `src/lib/storage/conversations.ts`:
-   - Open an IndexedDB database called `"seren"` with version 1
-   - Create two object stores: `"conversations"` (keyPath: `"id"`) and `"messages"` (keyPath: `"id"`, index on `"conversation_id"`)
-   - Implement all functions from the conversation/message section of `tauri-bridge.ts`:
-     - `createConversation(id, title, selectedModel?, selectedProvider?)` → puts a record in `conversations` store
-     - `getConversations()` → gets all non-archived conversations, sorted by `created_at` descending
-     - `getConversation(id)` → gets single conversation
-     - `updateConversation(id, title?, selectedModel?, selectedProvider?)` → updates fields
-     - `archiveConversation(id)` → sets `is_archived = true`
-     - `deleteConversation(id)` → deletes conversation + its messages
-     - `saveMessage(id, conversationId, role, content, model, timestamp)` → puts a record in `messages` store
-     - `getMessages(conversationId, limit)` → gets messages for conversation, ordered by timestamp, limited
-     - `clearConversationHistory(conversationId)` → deletes all messages for conversation
-     - `clearAllHistory()` → deletes all conversations and messages
-
-2. Use the same TypeScript interfaces as `tauri-bridge.ts`:
-   ```typescript
-   interface Conversation {
-     id: string;
-     title: string;
-     created_at: number;
-     selected_model: string | null;
-     selected_provider: string | null;
-     is_archived: boolean;
-   }
-
-   interface StoredMessage {
-     id: string;
-     conversation_id: string | null;
-     role: string;
-     content: string;
-     model: string | null;
-     timestamp: number;
-   }
-   ```
-
-3. Update `src/lib/bridge.ts` to use these IndexedDB functions for conversation operations when no runtime is connected.
-
-**Files to create:**
-- `src/lib/storage/conversations.ts`
-
-**Files to modify:**
-- `src/lib/bridge.ts` (wire up conversation functions)
-
-**TDD: Write tests first for:**
-- Create conversation → get it back → verify fields match
-- Save messages → get messages → verify order and content
-- Archive conversation → getConversations() excludes it
-- Delete conversation → its messages are also deleted
-- clearAllHistory() → everything is gone
-
-**How to test:**
-```bash
-pnpm test   # Should pass all conversation storage tests
-```
-
-**Commit:** `"Implement IndexedDB conversation storage for browser mode"`
-
----
-
-### Task 1.6: Implement Browser OAuth Flow
+### Task 1.5: Implement Browser OAuth Flow
 
 **What:** Replace Tauri deep link OAuth with standard browser redirect OAuth.
 
@@ -760,34 +1256,30 @@ pnpm test   # Should pass all conversation storage tests
 4. Extracts tokens from callback URL
 
 **New flow (browser):**
-1. App redirects to auth URL: `window.location.href = authUrl`
-2. After auth, provider redirects back to `https://app.seren.com/oauth/callback?code=...`
-3. App's router picks up the callback, exchanges code for tokens
-4. Stores tokens via `bridge.ts`
+1. App builds the auth URL with `redirect_uri=https://app.seren.com/oauth/callback`
+2. Navigates: `window.location.href = authUrl`
+3. After auth, provider redirects back to `/oauth/callback?code=...&state=...`
+4. App detects the callback URL params on page load, exchanges code for tokens
 
 **Steps:**
 
 1. Update `src/services/oauth.ts`:
-   - Remove deep link and Tauri invoke usage
-   - Use `redirect_uri` pointing to your deployed domain's `/oauth/callback` path
-   - Use `window.location.href` to navigate to auth URL
-   - Handle the callback in the app's route handler
+   - Remove all Tauri code (already done in Task 1.4 File 7)
+   - Ensure OAuth state parameter is generated and validated (CSRF protection)
+   - Use `window.location.href = authUrl` to navigate
 
-2. Create `src/lib/oauth-callback.ts`:
-   - Parses `window.location.search` on page load
-   - If URL contains `code` and `state` parameters, completes the OAuth exchange
-   - Calls the token endpoint with the authorization code
-   - Stores tokens via `bridge.ts`
-   - Redirects to the main app view
-
-3. Update `App.tsx` to check for OAuth callback parameters on mount:
+2. Create or update OAuth callback handling in `App.tsx`:
    ```typescript
    onMount(async () => {
      // Check if this is an OAuth callback
      const params = new URLSearchParams(window.location.search);
      if (params.has("code") && params.has("state")) {
-       await handleOAuthCallback(params);
-       // Clear URL params
+       try {
+         await handleOAuthCallback(params);
+       } catch (e) {
+         console.error("[OAuth] Callback error:", e);
+       }
+       // Clear URL params so refresh doesn't re-trigger
        window.history.replaceState({}, "", "/");
        return;
      }
@@ -795,8 +1287,12 @@ pnpm test   # Should pass all conversation storage tests
    });
    ```
 
-**Files to create:**
-- `src/lib/oauth-callback.ts`
+3. **SECURITY REQUIREMENTS for OAuth:**
+   - Generate `state` parameter using `crypto.randomUUID()` before redirect
+   - Store state in `sessionStorage` (NOT localStorage — sessionStorage is tab-scoped)
+   - On callback, validate `state` matches before exchanging code
+   - NEVER log the authorization code or tokens
+   - Clear `state` from sessionStorage after use
 
 **Files to modify:**
 - `src/services/oauth.ts`
@@ -804,120 +1300,139 @@ pnpm test   # Should pass all conversation storage tests
 - `src/App.tsx`
 
 **How to test:**
-- Manual test: Click "Login with GitHub" → should redirect to GitHub → should redirect back with code → should be logged in
-- This requires the Seren Gateway to support the new redirect URI
+- Manual: Click "Login with GitHub" → should redirect → should come back logged in
+- Check browser console for CORS errors during token exchange
+- Verify: If you tamper with the `state` parameter, login should FAIL
 
-**Commit:** `"Implement browser-native OAuth flow"`
+**Commit:** `"Implement browser-native OAuth flow with CSRF protection"`
 
 ---
 
-### Task 1.7: Rewrite MCP HTTP Client for Browser
+### Task 1.6: Rewrite MCP HTTP Client for Browser
 
-**What:** The MCP Gateway client (`src/lib/mcp/client.ts`) currently routes HTTP MCP calls through Tauri's Rust backend. Rewrite the HTTP MCP methods to use browser `fetch()` directly.
+**What:** The MCP Gateway client currently routes HTTP calls through Tauri's Rust backend. Rewrite HTTP MCP methods to use browser `fetch()`.
+
+**Background:** MCP (Model Context Protocol) over HTTP uses JSON-RPC. Each call is a POST with a JSON body. The Seren Gateway at `mcp.serendb.com/mcp` accepts these requests with Bearer token auth.
+
+**Read these files first:**
+- `src/lib/mcp/client.ts` — the current client (see which methods exist)
+- `src/lib/mcp/types.ts` — MCP type definitions
+- The MCP specification for HTTP transport: https://spec.modelcontextprotocol.io/specification/basic/transports/#streamable-http
 
 **Steps:**
 
-1. In `src/lib/mcp/client.ts`, rewrite `connectHttp()`:
-   - Instead of `invoke("mcp_connect_http", ...)`, use `fetch()` to send MCP initialize request
-   - MCP over HTTP uses JSON-RPC. Send a POST with `{ jsonrpc: "2.0", method: "initialize", params: {...} }`
-   - Parse the response
+1. In `src/lib/mcp/client.ts`, identify all HTTP MCP methods. They typically have names like `connectHttp`, `listToolsHttp`, `callToolHttp`, `disconnectHttp`.
 
-2. Rewrite `listToolsHttp()`:
-   - POST JSON-RPC: `{ method: "tools/list" }`
+2. Rewrite each to use `fetch()`:
+   ```typescript
+   async function mcpHttpPost(url: string, method: string, params?: Record<string, unknown>): Promise<unknown> {
+     const token = await getSerenApiKey();
+     const response = await fetch(url, {
+       method: "POST",
+       headers: {
+         "Content-Type": "application/json",
+         ...(token ? { Authorization: `Bearer ${token}` } : {}),
+       },
+       body: JSON.stringify({
+         jsonrpc: "2.0",
+         method,
+         params: params ?? {},
+         id: String(++requestCounter),
+       }),
+     });
 
-3. Rewrite `callToolHttp()`:
-   - POST JSON-RPC: `{ method: "tools/call", params: { name, arguments } }`
+     if (!response.ok) {
+       throw new Error(`MCP HTTP error: ${response.status} ${response.statusText}`);
+     }
 
-4. Rewrite `disconnectHttp()`:
-   - POST JSON-RPC: `{ method: "close" }` (or just drop the connection)
+     const result = await response.json();
+     if (result.error) {
+       throw new Error(`MCP error: ${result.error.message}`);
+     }
+     return result.result;
+   }
+   ```
 
-5. Remove all `invoke()` calls from this file.
+3. For SSE streaming (if used), use `EventSource` or `fetch()` with readable stream.
 
-**Reference:** The MCP protocol spec defines the HTTP transport. The Seren Gateway at `mcp.serendb.com/mcp` accepts JSON-RPC over HTTP with Bearer token auth.
-
-**Files to modify:**
-- `src/lib/mcp/client.ts`
+4. Stdio MCP methods should check `isRuntimeConnected()` and route through `runtimeInvoke()`.
 
 **How to test:**
 ```bash
 # Manual: Login → go to catalog → tools should load from Gateway
-# The tool count should match what seren-desktop shows (~90+ tools)
+# Check browser Network tab for MCP requests to mcp.serendb.com
+# Tool count should match what seren-desktop shows (~90+ tools)
 ```
 
 **Commit:** `"Rewrite MCP HTTP client for browser fetch"`
 
 ---
 
-### Task 1.8: Clean Up App.tsx and Entry Points
+### Task 1.7: Clean Up App.tsx and Entry Points
 
-**What:** Remove Tauri-specific initialization from `App.tsx` and `index.tsx`.
+**What:** Remove Tauri-specific initialization from `App.tsx`.
 
 **Steps:**
 
 1. In `src/App.tsx`:
-   - Remove `import { updaterStore } from "@/stores/updater.store"` and `updaterStore.initUpdater()`
-   - Keep `openclawStore.init()` but it should no-op in browser-only mode (per Task 1.4 stubs)
-   - Keep `startOpenClawAgent()` but it should no-op in browser-only mode
+   - The `updaterStore.initUpdater()` call should already be a no-op (Task 1.4)
+   - The `openclawStore.init()` should silently succeed (Task 1.4)
+   - The `startOpenClawAgent()` should silently no-op (Task 1.4)
+   - Add runtime connection attempt:
+     ```typescript
+     import { connectToRuntime } from "@/lib/bridge";
 
-2. In `src/index.tsx`:
-   - Remove `import { attachConsole } from "@tauri-apps/plugin-log"`
-   - Remove the `attachConsole()` call
-   - Keep everything else (SolidJS render)
+     onMount(async () => {
+       // Try connecting to local runtime (non-blocking)
+       connectToRuntime().then((connected) => {
+         if (connected) {
+           console.log("[App] Local runtime connected");
+         }
+       });
+       // ... rest of existing init
+     });
+     ```
+   - Add OAuth callback check (from Task 1.5)
 
-3. Verify `index.html` doesn't reference any Tauri scripts.
-
-**Files to modify:**
-- `src/App.tsx`
-- `src/index.tsx`
-- `index.html` (if needed)
+2. Verify `index.html` doesn't reference any Tauri scripts.
 
 **How to test:**
 ```bash
 pnpm dev
-# Open http://localhost:1420
-# App should render with no console errors related to Tauri
-# Chat should be functional (if CORS is configured on Gateway)
+# Open http://localhost:3000
+# Console should NOT show any Tauri-related errors
+# Should see either "Local runtime connected" or nothing (no error)
 ```
 
 **Commit:** `"Clean up app initialization for browser environment"`
 
 ---
 
-### Task 1.9: Configure Deployment
+### Task 1.8: Configure Deployment
 
-**What:** Set up static site deployment. Vite builds to `dist/` which can be deployed to any CDN.
+**What:** Set up static site deployment.
 
 **Steps:**
 
-1. Verify `pnpm build` produces a working static build:
+1. Verify build:
    ```bash
    pnpm build
-   pnpm preview   # Serves the built files locally
+   pnpm preview  # Serves built files locally
+   # Open http://localhost:4173 — app should work
    ```
 
-2. Add deployment config. Choose one:
-   - **Vercel:** Add `vercel.json` with SPA fallback
-     ```json
-     { "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }] }
-     ```
-   - **Cloudflare Pages:** Add `_redirects` file in `public/`:
-     ```
-     /* /index.html 200
-     ```
+2. Add SPA routing config. For Vercel, create `vercel.json`:
+   ```json
+   { "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }] }
+   ```
+   For Cloudflare Pages, create `public/_redirects`:
+   ```
+   /* /index.html 200
+   ```
 
-3. Set up the domain (e.g., `app.seren.com`) pointing to the deployment.
-
-4. Update `src/lib/config.ts` if needed — the `VITE_SEREN_API_URL` env var should work as-is.
-
-**Files to create:**
-- `vercel.json` or `public/_redirects`
-
-**How to test:**
-```bash
-pnpm build && pnpm preview
-# Open http://localhost:4173
-# Full app should work
-```
+3. Set up environment variables:
+   - `VITE_SEREN_API_URL` — defaults to `https://api.serendb.com`
+   - `VITE_APP_VERSION` — set in CI from package.json version
 
 **Commit:** `"Add deployment configuration"`
 
@@ -925,71 +1440,78 @@ pnpm build && pnpm preview
 
 ### Phase 1 Complete Checklist
 
-Before moving to Phase 2, verify:
+**ALL of these must pass before moving to Phase 2:**
 
-- [ ] `pnpm exec tsc --noEmit` — zero errors
-- [ ] `pnpm check` — Biome passes
-- [ ] `pnpm build` — builds successfully
-- [ ] `pnpm test` — all tests pass
-- [ ] No `@tauri-apps` imports anywhere in `src/`
-- [ ] No `invoke()` calls from `@tauri-apps/api/core`
-- [ ] App loads in browser without errors
-- [ ] Login flow works (email/password and OAuth)
+```bash
+# 1. Zero Tauri imports
+grep -r "@tauri-apps" src/ --include="*.ts" --include="*.tsx" | wc -l
+# EXPECTED: 0
+
+# 2. TypeScript compiles clean
+pnpm exec tsc --noEmit
+# EXPECTED: 0 errors
+
+# 3. Biome passes
+pnpm check
+# EXPECTED: Clean
+
+# 4. All tests pass
+pnpm test
+# EXPECTED: All green
+
+# 5. Build succeeds
+pnpm build
+# EXPECTED: dist/ created
+
+# 6. No secrets in source
+grep -r "sk-\|api_key.*=.*[\"'][a-zA-Z]\|password.*=.*[\"'][a-zA-Z]" src/ --include="*.ts" --include="*.tsx"
+# EXPECTED: No output (or only type definitions/variable names, not actual values)
+```
+
+**Manual checks:**
+- [ ] App loads in browser without console errors
+- [ ] Login flow works (email/password)
+- [ ] OAuth login works (GitHub)
 - [ ] Chat sends messages and receives responses
 - [ ] Gateway MCP tools appear in catalog
 - [ ] Gateway tool execution works
 - [ ] Conversations persist across page reloads (IndexedDB)
-- [ ] File explorer shows "runtime required" message
-- [ ] ACP shows "runtime required" message
+- [ ] File explorer shows "runtime required" message (or empty state)
+- [ ] ACP shows "runtime required" message (or empty state)
 
 ---
 
-## 7. Phase 2: Local Runtime Server
+## 8. Phase 2: Local Runtime Server
 
 **Goal:** Build the Node.js server that runs on `localhost` and provides ACP, OpenClaw, local MCP, and file system capabilities to the browser SPA.
 
 ### Task 2.1: Initialize Runtime Package
 
-**What:** Create a new Node.js package in `runtime/` within the seren-browser repo.
+**What:** Create `runtime/` directory with Node.js project.
 
 **Steps:**
 
-1. Create `runtime/` directory at repo root.
-
-2. Initialize with:
+1. Create `runtime/package.json`:
    ```json
-   // runtime/package.json
    {
      "name": "@serendb/runtime",
      "version": "0.1.0",
-     "description": "Seren local runtime — enables ACP agents, local MCP, and file access from the browser",
+     "description": "Seren local runtime — enables ACP agents, local MCP, and file access",
      "type": "module",
      "bin": { "seren": "./bin/seren.js" },
-     "main": "src/server.ts",
      "scripts": {
        "dev": "tsx src/server.ts",
        "build": "tsup src/server.ts --format esm --target node20",
-       "start": "node dist/server.js"
+       "start": "node dist/server.js",
+       "test": "vitest"
      },
      "engines": { "node": ">=20.0.0" }
    }
    ```
 
-3. Install dependencies:
-   ```bash
-   cd runtime
-   pnpm init  # if not done above
-   pnpm add ws           # WebSocket server
-   pnpm add -D tsx tsup typescript @types/ws @types/node
-   ```
+2. Install deps: `pnpm add ws` and `pnpm add -D tsx tsup typescript @types/ws @types/node vitest`
 
-4. Create `runtime/bin/seren.js`:
-   ```javascript
-   #!/usr/bin/env node
-   import "../dist/server.js";
-   ```
-
-5. Create `runtime/src/server.ts`:
+3. Create `runtime/src/server.ts`:
    ```typescript
    // ABOUTME: Local runtime server for Seren Browser.
    // ABOUTME: HTTP + WebSocket server on localhost, bridges browser to local capabilities.
@@ -999,13 +1521,24 @@ Before moving to Phase 2, verify:
 
    const PORT = Number(process.env.SEREN_PORT) || 19420;
 
-   // HTTP server for health checks
    const httpServer = createServer((req, res) => {
+     // SECURITY: Only allow localhost connections
+     const remoteAddr = req.socket.remoteAddress;
+     if (remoteAddr !== "127.0.0.1" && remoteAddr !== "::1" && remoteAddr !== "::ffff:127.0.0.1") {
+       res.writeHead(403);
+       res.end("Forbidden: only localhost connections allowed");
+       return;
+     }
+
+     // CORS headers for browser
+     res.setHeader("Access-Control-Allow-Origin", "*"); // localhost is safe
+     res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
+     res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+
+     if (req.method === "OPTIONS") { res.writeHead(204); res.end(); return; }
+
      if (req.url === "/health") {
-       res.writeHead(200, {
-         "Content-Type": "application/json",
-         "Access-Control-Allow-Origin": "*",
-       });
+       res.writeHead(200, { "Content-Type": "application/json" });
        res.end(JSON.stringify({ status: "ok", version: "0.1.0" }));
        return;
      }
@@ -1013,358 +1546,142 @@ Before moving to Phase 2, verify:
      res.end();
    });
 
-   // WebSocket server for commands
    const wss = new WebSocketServer({ server: httpServer });
 
-   wss.on("connection", (ws) => {
+   wss.on("connection", (ws, req) => {
+     // SECURITY: Verify localhost
+     const remoteAddr = req.socket.remoteAddress;
+     if (remoteAddr !== "127.0.0.1" && remoteAddr !== "::1" && remoteAddr !== "::ffff:127.0.0.1") {
+       ws.close(4003, "Forbidden");
+       return;
+     }
+
      console.log("[Runtime] Browser connected");
-
      ws.on("message", async (data) => {
-       // Handle JSON-RPC commands
-       // Route to appropriate handler (fs, acp, mcp, openclaw)
+       // Handle JSON-RPC — implemented in Task 2.2
      });
-
-     ws.on("close", () => {
-       console.log("[Runtime] Browser disconnected");
-     });
+     ws.on("close", () => console.log("[Runtime] Browser disconnected"));
    });
 
    httpServer.listen(PORT, "127.0.0.1", () => {
      console.log(`[Seren Runtime] Listening on http://127.0.0.1:${PORT}`);
-     console.log(`[Seren Runtime] Open https://app.seren.com in your browser`);
    });
    ```
 
-**Files to create:**
-- `runtime/package.json`
-- `runtime/tsconfig.json`
-- `runtime/bin/seren.js`
-- `runtime/src/server.ts`
+   **SECURITY NOTE:** The server binds to `127.0.0.1`, NOT `0.0.0.0`. It also verifies `remoteAddress` on every connection. This prevents other machines on the network from accessing the runtime.
+
+4. Create `runtime/bin/seren.js`:
+   ```javascript
+   #!/usr/bin/env node
+   import "../dist/server.js";
+   ```
 
 **How to test:**
 ```bash
-cd runtime
-pnpm dev
+cd runtime && pnpm dev
 # In another terminal:
 curl http://localhost:19420/health
-# Should return: {"status":"ok","version":"0.1.0"}
+# EXPECTED: {"status":"ok","version":"0.1.0"}
+
+# SECURITY: Verify external access is blocked
+# From another machine on the same network, try:
+curl http://<your-ip>:19420/health
+# EXPECTED: Connection refused (server only listens on 127.0.0.1)
 ```
 
 **Commit:** `"Initialize local runtime server package"`
 
 ---
 
-### Task 2.2: Implement JSON-RPC Command Router
+### Task 2.2: Implement JSON-RPC Command Router (TDD)
 
-**What:** Build the command routing layer that receives JSON-RPC messages over WebSocket and dispatches to handlers.
+**What:** Build the command routing layer for JSON-RPC messages over WebSocket.
 
-**Steps:**
+**Write tests first** in `runtime/tests/rpc.test.ts`:
 
-1. Create `runtime/src/rpc.ts`:
-   ```typescript
-   // ABOUTME: JSON-RPC 2.0 message handler for WebSocket commands.
-   // ABOUTME: Routes commands to fs, acp, mcp, and openclaw modules.
+```typescript
+import { describe, it, expect } from "vitest";
+import { handleMessage, registerHandler } from "../src/rpc";
 
-   export interface JsonRpcRequest {
-     jsonrpc: "2.0";
-     method: string;
-     params?: Record<string, unknown>;
-     id: string | number;
-   }
+describe("JSON-RPC router", () => {
+  it("dispatches to registered handler and returns result", async () => {
+    registerHandler("test_echo", async (params) => params);
+    const result = await handleMessage(JSON.stringify({
+      jsonrpc: "2.0", method: "test_echo", params: { msg: "hello" }, id: "1"
+    }));
+    const parsed = JSON.parse(result);
+    expect(parsed.result).toEqual({ msg: "hello" });
+    expect(parsed.id).toBe("1");
+  });
 
-   export interface JsonRpcResponse {
-     jsonrpc: "2.0";
-     result?: unknown;
-     error?: { code: number; message: string; data?: unknown };
-     id: string | number;
-   }
+  it("returns parse error for invalid JSON", async () => {
+    const result = await handleMessage("not json");
+    const parsed = JSON.parse(result);
+    expect(parsed.error.code).toBe(-32700);
+  });
 
-   export type CommandHandler = (params: Record<string, unknown>) => Promise<unknown>;
+  it("returns method not found for unknown method", async () => {
+    const result = await handleMessage(JSON.stringify({
+      jsonrpc: "2.0", method: "nonexistent", id: "2"
+    }));
+    const parsed = JSON.parse(result);
+    expect(parsed.error.code).toBe(-32601);
+  });
 
-   const handlers = new Map<string, CommandHandler>();
+  it("returns error when handler throws", async () => {
+    registerHandler("test_throw", async () => { throw new Error("boom"); });
+    const result = await handleMessage(JSON.stringify({
+      jsonrpc: "2.0", method: "test_throw", id: "3"
+    }));
+    const parsed = JSON.parse(result);
+    expect(parsed.error.message).toBe("boom");
+  });
+});
+```
 
-   export function registerHandler(method: string, handler: CommandHandler): void {
-     handlers.set(method, handler);
-   }
+**Implement** `runtime/src/rpc.ts` and `runtime/src/events.ts` (for server→browser event pushing).
 
-   export async function handleMessage(raw: string): Promise<string> {
-     let request: JsonRpcRequest;
-     try {
-       request = JSON.parse(raw);
-     } catch {
-       return JSON.stringify({ jsonrpc: "2.0", error: { code: -32700, message: "Parse error" }, id: null });
-     }
-
-     const handler = handlers.get(request.method);
-     if (!handler) {
-       return JSON.stringify({ jsonrpc: "2.0", error: { code: -32601, message: `Unknown method: ${request.method}` }, id: request.id });
-     }
-
-     try {
-       const result = await handler(request.params ?? {});
-       return JSON.stringify({ jsonrpc: "2.0", result, id: request.id });
-     } catch (error) {
-       return JSON.stringify({
-         jsonrpc: "2.0",
-         error: { code: -32000, message: error instanceof Error ? error.message : String(error) },
-         id: request.id,
-       });
-     }
-   }
-   ```
-
-2. Create `runtime/src/events.ts` for server→browser event pushing:
-   ```typescript
-   // ABOUTME: Event emitter for pushing runtime events to connected browsers.
-   // ABOUTME: Used by ACP, OpenClaw, and file watcher to send real-time updates.
-
-   import type { WebSocket } from "ws";
-
-   const clients = new Set<WebSocket>();
-
-   export function addClient(ws: WebSocket): void {
-     clients.add(ws);
-     ws.on("close", () => clients.delete(ws));
-   }
-
-   export function broadcast(event: string, data: unknown): void {
-     const message = JSON.stringify({ jsonrpc: "2.0", method: event, params: data });
-     for (const ws of clients) {
-       if (ws.readyState === ws.OPEN) {
-         ws.send(message);
-       }
-     }
-   }
-   ```
-
-3. Wire into `server.ts`.
-
-**Files to create:**
-- `runtime/src/rpc.ts`
-- `runtime/src/events.ts`
-
-**Files to modify:**
-- `runtime/src/server.ts` (wire up RPC handler)
-
-**TDD: Write tests first for:**
-- Parse valid JSON-RPC request → dispatch to handler → return result
-- Parse invalid JSON → return parse error
-- Unknown method → return method not found error
-- Handler throws → return error response
-
-**Commit:** `"Implement JSON-RPC command router for runtime"`
+**Commit:** `"Implement JSON-RPC command router for runtime (TDD)"`
 
 ---
 
-### Task 2.3: Implement File System Commands
+### Task 2.3: Implement File System Handlers (TDD)
 
-**What:** Port the file system operations from `src-tauri/src/commands/files.rs` (127 LOC Rust) to Node.js.
+**What:** Port file system operations from Rust to Node.js.
 
-**Steps:**
+**Write tests first** in `runtime/tests/handlers/fs.test.ts` — use a temp directory, test all operations, clean up.
 
-1. Create `runtime/src/handlers/fs.ts`:
-   ```typescript
-   // ABOUTME: File system command handlers.
-   // ABOUTME: Ports Tauri file system commands to Node.js fs module.
+**Implement** `runtime/src/handlers/fs.ts`.
 
-   import { readFile, writeFile, readdir, stat, mkdir, rm, rename } from "node:fs/promises";
-   import { join } from "node:path";
-   import { registerHandler } from "../rpc";
+**SECURITY — Path traversal prevention:**
+```typescript
+import { resolve } from "node:path";
+import { homedir } from "node:os";
 
-   registerHandler("list_directory", async (params) => {
-     const { path } = params as { path: string };
-     const entries = await readdir(path, { withFileTypes: true });
-     return entries
-       .map((e) => ({ name: e.name, path: join(path, e.name), is_directory: e.isDirectory() }))
-       .sort((a, b) => {
-         if (a.is_directory !== b.is_directory) return a.is_directory ? -1 : 1;
-         return a.name.localeCompare(b.name);
-       });
-   });
+function validatePath(requestedPath: string): string {
+  const resolved = resolve(requestedPath);
+  // Ensure path is within user's home directory
+  if (!resolved.startsWith(homedir())) {
+    throw new Error(`Access denied: path must be within home directory`);
+  }
+  return resolved;
+}
+```
 
-   registerHandler("read_file", async (params) => {
-     const { path } = params as { path: string };
-     return await readFile(path, "utf-8");
-   });
-
-   registerHandler("write_file", async (params) => {
-     const { path, content } = params as { path: string; content: string };
-     await writeFile(path, content, "utf-8");
-   });
-
-   registerHandler("path_exists", async (params) => {
-     const { path } = params as { path: string };
-     try { await stat(path); return true; } catch { return false; }
-   });
-
-   registerHandler("is_directory", async (params) => {
-     const { path } = params as { path: string };
-     try { return (await stat(path)).isDirectory(); } catch { return false; }
-   });
-
-   registerHandler("create_file", async (params) => {
-     const { path, content } = params as { path: string; content?: string };
-     await writeFile(path, content ?? "", "utf-8");
-   });
-
-   registerHandler("create_directory", async (params) => {
-     const { path } = params as { path: string };
-     await mkdir(path, { recursive: true });
-   });
-
-   registerHandler("delete_path", async (params) => {
-     const { path } = params as { path: string };
-     await rm(path, { recursive: true });
-   });
-
-   registerHandler("rename_path", async (params) => {
-     const { oldPath, newPath } = params as { oldPath: string; newPath: string };
-     await rename(oldPath, newPath);
-   });
-   ```
-
-2. Register the handlers in `server.ts` by importing the file.
-
-**Security note:** This gives the browser full file system access on the user's machine. The runtime is only accessible from localhost, and the user explicitly installed it, so this is acceptable. But add a configurable root path restriction if you want defense-in-depth later.
-
-**Files to create:**
-- `runtime/src/handlers/fs.ts`
-
-**TDD: Write tests first for:**
-- `list_directory` on a temp dir with known files
-- `read_file` / `write_file` round-trip
-- `create_directory` + `path_exists` verification
-- `delete_path` + verify gone
-- `rename_path` + verify old gone, new exists
-- Error cases: read nonexistent file, list nonexistent dir
-
-**Commit:** `"Implement file system handlers in local runtime"`
+**Commit:** `"Implement file system handlers in local runtime (TDD)"`
 
 ---
 
 ### Task 2.4: Wire Browser Bridge to Local Runtime
 
-**What:** Complete the `bridge.ts` WebSocket connection so file operations route to the local runtime when available.
+**What:** Complete the WebSocket connection in `bridge.ts` so operations route to the runtime when available.
 
 **Steps:**
 
-1. In `src/lib/bridge.ts`, implement `connectToRuntime()`:
-   ```typescript
-   export async function connectToRuntime(): Promise<boolean> {
-     return new Promise((resolve) => {
-       try {
-         const ws = new WebSocket(`ws://localhost:${RUNTIME_PORT}`);
-         const timeout = setTimeout(() => {
-           ws.close();
-           resolve(false);
-         }, 2000);
-
-         ws.onopen = () => {
-           clearTimeout(timeout);
-           runtimeWs = ws;
-           runtimeAvailable = true;
-           // Set up event listener for server-pushed events
-           ws.onmessage = handleRuntimeEvent;
-           ws.onclose = () => { runtimeAvailable = false; runtimeWs = null; };
-           resolve(true);
-         };
-
-         ws.onerror = () => {
-           clearTimeout(timeout);
-           resolve(false);
-         };
-       } catch {
-         resolve(false);
-       }
-     });
-   }
-   ```
-
-2. Implement pending request tracking for `runtimeInvoke()`:
-   ```typescript
-   const pendingRequests = new Map<string, { resolve: (v: unknown) => void; reject: (e: Error) => void }>();
-   let requestId = 0;
-
-   async function runtimeInvoke<T>(method: string, params?: Record<string, unknown>): Promise<T> {
-     if (!runtimeWs || runtimeWs.readyState !== WebSocket.OPEN) {
-       throw new Error("Runtime not connected");
-     }
-
-     const id = String(++requestId);
-     return new Promise<T>((resolve, reject) => {
-       const timeout = setTimeout(() => {
-         pendingRequests.delete(id);
-         reject(new Error(`Runtime command timed out: ${method}`));
-       }, 30000);
-
-       pendingRequests.set(id, {
-         resolve: (v) => { clearTimeout(timeout); resolve(v as T); },
-         reject: (e) => { clearTimeout(timeout); reject(e); },
-       });
-
-       runtimeWs!.send(JSON.stringify({ jsonrpc: "2.0", method, params, id }));
-     });
-   }
-   ```
-
-3. Implement `handleRuntimeEvent()` to distinguish responses from server-pushed events:
-   ```typescript
-   function handleRuntimeEvent(event: MessageEvent): void {
-     const msg = JSON.parse(event.data);
-
-     // JSON-RPC response (has id)
-     if (msg.id !== undefined) {
-       const pending = pendingRequests.get(String(msg.id));
-       if (pending) {
-         pendingRequests.delete(String(msg.id));
-         if (msg.error) {
-           pending.reject(new Error(msg.error.message));
-         } else {
-           pending.resolve(msg.result);
-         }
-       }
-       return;
-     }
-
-     // Server-pushed event (no id, has method) — ACP events, OpenClaw events, etc.
-     if (msg.method) {
-       // Dispatch to registered event listeners
-       runtimeEventListeners.get(msg.method)?.forEach(cb => cb(msg.params));
-     }
-   }
-   ```
-
-4. Add event subscription API for ACP/OpenClaw events:
-   ```typescript
-   const runtimeEventListeners = new Map<string, Set<(data: unknown) => void>>();
-
-   export function onRuntimeEvent(event: string, callback: (data: unknown) => void): () => void {
-     if (!runtimeEventListeners.has(event)) {
-       runtimeEventListeners.set(event, new Set());
-     }
-     runtimeEventListeners.get(event)!.add(callback);
-     return () => runtimeEventListeners.get(event)?.delete(callback);
-   }
-   ```
-
-5. Update `App.tsx` to try connecting to runtime on mount:
-   ```typescript
-   onMount(async () => {
-     // Try connecting to local runtime (non-blocking)
-     connectToRuntime().then((connected) => {
-       if (connected) {
-         console.log("[App] Local runtime connected");
-       } else {
-         console.log("[App] No local runtime — browser-only mode");
-       }
-     });
-     // ... rest of init
-   });
-   ```
-
-**Files to modify:**
-- `src/lib/bridge.ts`
-- `src/App.tsx`
+1. Implement `connectToRuntime()` with timeout and error handling
+2. Implement `runtimeInvoke()` with pending request tracking
+3. Implement `handleRuntimeEvent()` to dispatch server-pushed events
+4. Update `App.tsx` to try connecting on mount
 
 **How to test:**
 ```bash
@@ -1374,8 +1691,8 @@ cd runtime && pnpm dev
 # Terminal 2: Start SPA
 pnpm dev
 
-# Open browser → console should show "Local runtime connected"
-# File explorer should work (list directories, open files)
+# Browser console should show "Local runtime connected"
+# File explorer should list directories
 ```
 
 **Commit:** `"Wire browser bridge to local runtime WebSocket"`
@@ -1384,363 +1701,55 @@ pnpm dev
 
 ### Task 2.5: Implement Runtime Conversation Storage
 
-**What:** Add SQLite-backed conversation storage in the runtime, so conversations are stored locally when the runtime is available (more robust than IndexedDB).
+**What:** Add SQLite conversation storage in the runtime.
 
-**Steps:**
-
-1. Add `better-sqlite3` dependency to `runtime/package.json`.
-
-2. Create `runtime/src/handlers/chat.ts`:
-   - Create SQLite database at `~/.seren/conversations.db`
-   - Implement all conversation commands: `create_conversation`, `get_conversations`, `get_conversation`, `update_conversation`, `archive_conversation`, `delete_conversation`, `save_message`, `get_messages`, `clear_conversation_history`, `clear_all_history`
-   - Register as JSON-RPC handlers
-
-3. The schema should match what `src-tauri/src/commands/chat.rs` uses:
-   ```sql
-   CREATE TABLE IF NOT EXISTS conversations (
-     id TEXT PRIMARY KEY,
-     title TEXT NOT NULL,
-     created_at INTEGER NOT NULL,
-     selected_model TEXT,
-     selected_provider TEXT,
-     is_archived INTEGER DEFAULT 0
-   );
-
-   CREATE TABLE IF NOT EXISTS messages (
-     id TEXT PRIMARY KEY,
-     conversation_id TEXT,
-     role TEXT NOT NULL,
-     content TEXT NOT NULL,
-     model TEXT,
-     timestamp INTEGER NOT NULL,
-     FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
-   );
-   ```
-
-4. Update `bridge.ts` to route conversation commands to runtime when connected, IndexedDB when not.
-
-**Files to create:**
-- `runtime/src/handlers/chat.ts`
-
-**Files to modify:**
-- `runtime/package.json` (add better-sqlite3)
-- `src/lib/bridge.ts` (route conversation commands)
+Add `better-sqlite3` to runtime. Create `runtime/src/handlers/chat.ts`. Update bridge.ts to route conversation operations to runtime when connected, IndexedDB when not.
 
 **Commit:** `"Implement SQLite conversation storage in local runtime"`
 
 ---
 
-## 9. Phase 4: ACP Agent Support
+## 9. Phase 3: Install Scripts
 
-**Goal:** Port ACP agent spawning from Rust to Node.js in the local runtime. Enable the browser SPA to spawn and interact with Claude Code agents.
+(Same as original plan — see Section 8 in original. No changes needed.)
 
-### Task 4.1: Port ACP Agent Spawning to Node.js
-
-**What:** Rewrite `src-tauri/src/acp.rs` (1,411 LOC Rust) as a Node.js handler.
-
-**What ACP does:**
-1. Spawns a child process (e.g., `claude` or `codex` CLI)
-2. Communicates via JSON-RPC over stdio (stdin/stdout)
-3. Emits events: message chunks, tool calls, diffs, permission requests, etc.
-4. Supports: spawn, send prompt, cancel, terminate, list sessions
-
-**Steps:**
-
-1. Create `runtime/src/handlers/acp.ts`:
-   - Use `child_process.spawn()` to launch agent binaries
-   - Read stdout line-by-line, parse JSON-RPC messages
-   - Map each message type to a broadcast event
-   - Register handlers: `acp_spawn`, `acp_prompt`, `acp_cancel`, `acp_terminate`, `acp_list_sessions`, `acp_set_permission_mode`, `acp_respond_to_permission`, `acp_respond_to_diff_proposal`, `acp_get_available_agents`, `acp_ensure_claude_cli`, `acp_check_agent_available`
-
-2. Maintain a session map:
-   ```typescript
-   const sessions = new Map<string, {
-     process: ChildProcess;
-     agentType: string;
-     cwd: string;
-     status: string;
-     createdAt: string;
-   }>();
-   ```
-
-3. Event broadcasting — when the agent sends a message, broadcast to browser:
-   ```typescript
-   // On stdout line from agent process:
-   broadcast("acp://message-chunk", { sessionId, text: chunk, isThought: false });
-   broadcast("acp://tool-call", { sessionId, toolCallId, title, kind, status });
-   // etc.
-   ```
-
-4. The browser's `src/services/acp.ts` needs to be updated to use the runtime:
-   - Replace `invoke()` calls with `runtimeInvoke()` from `bridge.ts`
-   - Replace `listen()` calls with `onRuntimeEvent()` from `bridge.ts`
-
-**Reference files:**
-- `src-tauri/src/acp.rs` — the Rust implementation to port
-- `src/services/acp.ts` — the frontend service (shows the API contract)
-
-**Files to create:**
-- `runtime/src/handlers/acp.ts`
-
-**Files to modify:**
-- `src/services/acp.ts` (replace Tauri imports with bridge imports)
-
-**How to test:**
-```bash
-# Ensure claude CLI is installed: npx @anthropic-ai/claude-code@latest --version
-# Start runtime
-cd runtime && pnpm dev
-# Start SPA
-pnpm dev
-# Open browser → Go to Agent panel → Try spawning an agent
-# Should see agent messages streaming in
-```
-
-**Commit:** `"Implement ACP agent spawning in local runtime"`
-
----
-
-### Task 4.2: Update ACP Frontend Service
-
-**What:** Update `src/services/acp.ts` to work via the runtime bridge instead of Tauri.
-
-**Steps:**
-
-1. Remove all `@tauri-apps/*` imports.
-2. Import `runtimeInvoke`, `onRuntimeEvent`, `isRuntimeConnected` from `@/lib/bridge`.
-3. Replace each `invoke(...)` with `runtimeInvoke(...)`.
-4. Replace each `listen(...)` with `onRuntimeEvent(...)`.
-5. Add runtime availability checks:
-   ```typescript
-   export async function spawnAgent(agentType: AgentType, cwd: string): Promise<AcpSessionInfo> {
-     if (!isRuntimeConnected()) {
-       throw new Error("ACP agents require the local runtime");
-     }
-     return runtimeInvoke<AcpSessionInfo>("acp_spawn", { agentType, cwd });
-   }
-   ```
-
-**Files to modify:**
-- `src/services/acp.ts`
-
-**Commit:** `"Update ACP frontend service to use runtime bridge"`
-
----
-
-## 10. Phase 5: OpenClaw via Local Runtime
-
-**Goal:** Port OpenClaw process management from Rust to Node.js in the local runtime.
-
-### Task 5.1: Port OpenClaw to Node.js Runtime
-
-**What:** Rewrite `src-tauri/src/openclaw.rs` (1,473 LOC Rust) as a Node.js handler.
-
-**What OpenClaw does:**
-1. Spawns the OpenClaw Node.js process
-2. Communicates via HTTP + WebSocket to the OpenClaw process
-3. Manages messaging channels (WhatsApp, Telegram, Discord, etc.)
-4. Emits events: status changes, channel events, messages
-
-**Steps:**
-
-1. Create `runtime/src/handlers/openclaw.ts`:
-   - Use `child_process.spawn()` to launch OpenClaw
-   - Connect to OpenClaw's HTTP API and WebSocket
-   - Register handlers: `openclaw_start`, `openclaw_stop`, `openclaw_restart`, `openclaw_status`, `openclaw_list_channels`, `openclaw_connect_channel`, `openclaw_disconnect_channel`, `openclaw_get_qr`, `openclaw_send`, `openclaw_set_trust`
-   - Broadcast events: `openclaw://status-changed`, `openclaw://channel-event`, `openclaw://message-received`
-
-2. Update `src/stores/openclaw.store.ts`:
-   - Replace `invoke` calls with `runtimeInvoke` from bridge
-   - Replace `listen` calls with `onRuntimeEvent` from bridge
-
-**Reference files:**
-- `src-tauri/src/openclaw.rs` — Rust implementation to port
-- `src/stores/openclaw.store.ts` — frontend store (shows the API contract)
-
-**Files to create:**
-- `runtime/src/handlers/openclaw.ts`
-
-**Files to modify:**
-- `src/stores/openclaw.store.ts`
-
-**Commit:** `"Implement OpenClaw process management in local runtime"`
-
----
-
-### Task 5.2: Port Local MCP Server Spawning
-
-**What:** Rewrite `src-tauri/src/mcp.rs` (563 LOC Rust) as a Node.js handler for spawning local MCP servers via stdio.
-
-**Steps:**
-
-1. Create `runtime/src/handlers/mcp.ts`:
-   - Use `child_process.spawn()` to launch MCP server processes
-   - Communicate via JSON-RPC over stdio
-   - Register handlers: `mcp_connect`, `mcp_disconnect`, `mcp_list_tools`, `mcp_list_resources`, `mcp_call_tool`, `mcp_read_resource`, `mcp_is_connected`, `mcp_list_connected`
-
-2. Update `src/lib/mcp/client.ts`:
-   - Stdio MCP methods route through `runtimeInvoke()` when runtime is connected
-   - HTTP MCP methods continue using browser `fetch()` directly (from Phase 1)
-
-**Reference files:**
-- `src-tauri/src/mcp.rs` — Rust implementation
-- `src/lib/mcp/client.ts` — frontend client
-
-**Files to create:**
-- `runtime/src/handlers/mcp.ts`
-
-**Files to modify:**
-- `src/lib/mcp/client.ts`
-
-**Commit:** `"Implement local MCP server spawning in runtime"`
-
----
-
-## 8. Phase 3: Install Scripts
-
-**Goal:** One-line install commands for macOS/Linux/Windows that set up Node.js (if needed) and the Seren runtime.
-
-### Task 3.1: Create Install Scripts
-
-**What:** Write platform-specific install scripts.
-
-**macOS/Linux (`install.sh`):**
-```bash
-#!/bin/sh
-set -e
-
-SEREN_DIR="$HOME/.seren"
-SEREN_BIN="$SEREN_DIR/bin"
-
-echo "Installing Seren Runtime to $SEREN_DIR..."
-
-# Check for Node.js
-if command -v node >/dev/null 2>&1; then
-  NODE_VERSION=$(node -v | cut -d'v' -f2 | cut -d'.' -f1)
-  if [ "$NODE_VERSION" -ge 20 ]; then
-    echo "Found Node.js $(node -v)"
-  else
-    echo "Node.js 20+ required. Found $(node -v)."
-    echo "Installing Node.js 20..."
-    # Download and extract Node.js to $SEREN_DIR/node
-    # (platform detection: uname -s, uname -m)
-  fi
-else
-  echo "Node.js not found. Installing Node.js 20..."
-  # Download and extract Node.js to $SEREN_DIR/node
-fi
-
-# Install @serendb/runtime via npm
-mkdir -p "$SEREN_DIR"
-npm install -g @serendb/runtime --prefix "$SEREN_DIR"
-
-# Add to PATH hint
-echo ""
-echo "Seren Runtime installed!"
-echo "Start it with: seren"
-echo "Then open https://app.seren.com in your browser"
-```
-
-**Windows (`install.ps1`):**
-```powershell
-$SerenDir = "$env:USERPROFILE\.seren"
-
-Write-Host "Installing Seren Runtime to $SerenDir..."
-
-# Check for Node.js
-$node = Get-Command node -ErrorAction SilentlyContinue
-if ($node) {
-    $version = (node -v).TrimStart('v').Split('.')[0]
-    if ([int]$version -ge 20) {
-        Write-Host "Found Node.js $(node -v)"
-    } else {
-        Write-Host "Downloading Node.js 20..."
-        # Download Node.js zip, extract to $SerenDir\node
-    }
-} else {
-    Write-Host "Downloading Node.js 20..."
-    # Download Node.js zip, extract to $SerenDir\node
-}
-
-# Install @serendb/runtime
-npm install -g @serendb/runtime --prefix $SerenDir
-
-Write-Host ""
-Write-Host "Seren Runtime installed!"
-Write-Host "Start it with: seren"
-Write-Host "Then open https://app.seren.com in your browser"
-```
-
-**Steps:**
-
-1. Create `scripts/install.sh` (macOS/Linux)
-2. Create `scripts/install.ps1` (Windows)
-3. Host them at `seren.com/install` (serve `install.sh` by default, `install.ps1` for PowerShell user-agent or explicit path)
-
-**Usage:**
-```bash
-# macOS/Linux
-curl -fsSL https://seren.com/install | sh
-
-# Windows (PowerShell)
-irm https://seren.com/install.ps1 | iex
-```
-
-**Files to create:**
-- `scripts/install.sh`
-- `scripts/install.ps1`
-
-**How to test:**
-```bash
-# Test on clean macOS/Linux:
-bash scripts/install.sh
-seren   # Should start runtime
-# Open browser → should detect runtime
-
-# Test on Windows VM:
-powershell -ExecutionPolicy Bypass -File scripts/install.ps1
-seren   # Should start runtime
-```
+One-line install commands:
+- macOS/Linux: `curl -fsSL https://seren.com/install | sh`
+- Windows: `irm https://seren.com/install.ps1 | iex`
 
 **Commit:** `"Add cross-platform install scripts"`
 
 ---
 
-## 11. Phase 6: Crypto Wallet
+## 10. Phase 4: ACP Agent Support
 
-**Goal:** Port x402 payment signing from Rust (alloy crate) to JavaScript.
+Port ACP agent spawning from Rust to Node.js runtime. See original plan Phase 4.
 
-### Task 6.1: Implement Wallet in JavaScript
+**Key difference from original plan:** The frontend service (`src/services/acp.ts`) was already rewritten in Task 1.4 to use `runtimeInvoke`/`onRuntimeEvent`. Phase 4 only needs the runtime-side handler.
 
-**What:** Replace the Rust wallet (`src-tauri/src/wallet/`) with a JavaScript implementation using `viem` or `ethers.js`.
+**Commit:** `"Implement ACP agent spawning in local runtime"`
 
-**Steps:**
+---
 
-1. Add `viem` to runtime dependencies.
-2. Create `runtime/src/handlers/wallet.ts`:
-   - `store_crypto_private_key` — store encrypted in `~/.seren/wallet.json`, derive address
-   - `get_crypto_wallet_address` — read stored address
-   - `clear_crypto_wallet` — delete wallet file
-   - `sign_x402_payment` — sign payment request using private key
-   - `get_crypto_usdc_balance` — query Base mainnet for USDC balance
+## 11. Phase 5: OpenClaw via Local Runtime
 
-3. Update `src/lib/bridge.ts` wallet functions to route through runtime.
+Port OpenClaw process management from Rust to Node.js runtime. See original plan Phase 5.
 
-**Files to create:**
-- `runtime/src/handlers/wallet.ts`
+**Commit:** `"Implement OpenClaw process management in local runtime"`
 
-**TDD: Write tests first for:**
-- Store private key → get address → verify address is correct for known test key
-- Sign x402 payment → verify signature format
-- Clear wallet → address returns null
+---
+
+## 12. Phase 6: Crypto Wallet
+
+Port x402 wallet signing from Rust to JavaScript using `viem`. See original plan Phase 6.
 
 **Commit:** `"Implement x402 wallet signing in local runtime"`
 
 ---
 
-## 12. What Gets Deleted
+## 13. What Gets Deleted
 
-These items from `seren-desktop` are NOT ported to `seren-browser`:
+These items from `seren-desktop` are NOT ported:
 
 | Item | Reason |
 |------|--------|
@@ -1749,44 +1758,47 @@ These items from `seren-desktop` are NOT ported to `seren-browser`:
 | `scripts/build-openclaw.ts` | OpenClaw builds separately |
 | `scripts/build-sidecar.ts` | No sidecars |
 | `embedded-runtime/` | No bundled Node.js/Git |
-| `src/stores/updater.store.ts` | Web auto-updates via CDN |
-| `src/stores/sync.store.ts` | File watching moves to runtime (if needed) |
 | All `@tauri-apps/*` packages | No Tauri |
-| Tauri config files (`tauri.conf.json`, `.taurignore`) | No Tauri |
+| Tauri config files | No Tauri |
 | Code signing workflows | No signing needed |
 | Platform-specific CI/CD | No platform builds |
 
 ---
 
-## 13. Testing Strategy
+## 14. Testing Strategy
 
 ### Unit Tests (Vitest)
 
-**TDD required for:**
-- `src/lib/bridge.ts` — token storage, runtime connection, runtimeInvoke timeout
-- `src/lib/storage/conversations.ts` — IndexedDB CRUD operations
+**TDD REQUIRED for:**
+- `src/lib/bridge.ts` — token storage, runtime connection, runtimeInvoke timeout, IndexedDB operations
 - `runtime/src/rpc.ts` — JSON-RPC parsing, routing, error handling
-- `runtime/src/handlers/fs.ts` — file system operations
+- `runtime/src/handlers/fs.ts` — file system operations with path validation
 - `runtime/src/handlers/wallet.ts` — key storage, signing, balance query
 
 **NOT required for:**
-- UI components (test manually)
+- UI components (test manually or with E2E)
 - Simple CRUD wrappers
 - Mocked behavior (don't mock the runtime — test against real runtime or skip)
 
-### Test Design Guidance
+### Test Design Rules
 
-When writing tests:
+**Follow these exactly. Violating them will create flaky, useless tests.**
 
-1. **Test the contract, not the implementation.** If `storeToken("abc")` followed by `getToken()` returns `"abc"`, the test passes. Don't test that localStorage.setItem was called.
+1. **Test the contract, not the implementation.** If `storeToken("abc")` then `getToken()` returns `"abc"`, the test passes. Don't assert that `localStorage.setItem` was called.
 
-2. **Use real dependencies where feasible.** For file system tests, use a temp directory. For IndexedDB, use `fake-indexeddb` package. Don't mock `fs` or `localStorage` unless you have no choice.
+2. **Use real dependencies.** For file system tests, use `os.tmpdir()`. For IndexedDB, use `fake-indexeddb`. Don't mock `fs` or `localStorage`.
 
-3. **One assertion per logical behavior.** A test named `"stores and retrieves token"` should test exactly that. Don't also test error handling in the same test.
+3. **One behavior per test.** A test named `"stores and retrieves token"` tests exactly that. Don't also test error handling.
 
-4. **Test error paths explicitly.** Have separate tests for: "read nonexistent file throws" and "read valid file returns contents". Don't combine them.
+4. **Test error paths explicitly.** Separate tests for: "read nonexistent file throws" and "read valid file returns contents".
 
-5. **Clean up after tests.** Delete temp files, clear IndexedDB, close WebSocket connections.
+5. **Clean up after tests.** Delete temp files. Clear localStorage. Clear IndexedDB. Close WebSocket connections. Use `beforeEach`/`afterEach`.
+
+6. **No test interdependence.** Tests must pass when run individually: `pnpm test -- --grep "specific test name"`
+
+7. **No `any` types in tests.** Type your test data.
+
+8. **No `console.log` in tests.** If you need to debug, use `console.error` and remove it before committing.
 
 ### E2E Tests (Playwright)
 
@@ -1804,6 +1816,9 @@ When writing tests:
 # Unit tests
 pnpm test
 
+# Unit tests with coverage
+pnpm test -- --coverage
+
 # E2E tests (browser-only mode)
 pnpm test:e2e
 
@@ -1814,13 +1829,13 @@ pnpm test:e2e
 
 ---
 
-## 14. Deployment
+## 15. Deployment
 
 ### SPA (Browser App)
 
 - **Build:** `pnpm build` → static files in `dist/`
 - **Host:** Vercel, Cloudflare Pages, or any static CDN
-- **Domain:** `app.seren.com` (or similar)
+- **Domain:** `app.seren.com`
 - **SSL:** Required (HTTPS)
 - **SPA routing:** All paths → `index.html`
 
@@ -1828,30 +1843,93 @@ pnpm test:e2e
 
 - **Publish:** `cd runtime && npm publish` → `@serendb/runtime` on npm
 - **Install:** `npm install -g @serendb/runtime`
-- **Run:** `seren` (starts runtime on localhost:19420)
+- **Run:** `seren`
 - **Update:** `npm update -g @serendb/runtime`
 
 ### Install Scripts
 
 - **Host:** `seren.com/install` → serves `install.sh`
 - **Host:** `seren.com/install.ps1` → serves PowerShell script
-- **CDN:** Cache install scripts on CDN for fast global access
 
 ---
 
-## 15. Risk Register
+## 16. Risk Register
 
 | Risk | Impact | Likelihood | Mitigation |
 |------|--------|-----------|------------|
-| **CORS not configured on Gateway API** | Blocks Phase 1 entirely | High (likely not set up for browser origin) | Coordinate with backend team BEFORE starting. This is the #1 blocker. |
-| **OAuth redirect URL not registered** | Blocks login via OAuth | Medium | Register `https://app.seren.com/oauth/callback` with GitHub, Google |
-| **MCP HTTP transport incompatible with browser fetch** | Blocks Gateway MCP in browser | Low | MCP uses standard HTTP/SSE, should work. Test early. |
-| **localhost WebSocket blocked by browser** | Blocks runtime connection | Low | Browsers explicitly allow `ws://localhost`. Well-established pattern. |
-| **Mixed content (HTTPS page → HTTP localhost)** | Blocks runtime connection | Low | Browsers allow HTTPS → `http://localhost`. Explicit exception in spec. |
-| **Port 19420 in use** | Runtime fails to start | Low | Try multiple ports, make configurable |
-| **Node.js not available on user's machine** | Install script complexity | Medium | Install scripts download Node.js automatically |
-| **ACP agent binary not installed** | Agent features broken | Medium | Runtime runs `acp_ensure_claude_cli` same as Tauri did |
-| **IndexedDB quota limits** | Conversation storage fails for heavy users | Low | Monitor usage, warn user, offer runtime upgrade |
+| **CORS not configured on Gateway API** | Blocks Phase 1 entirely | High | Coordinate with backend team BEFORE starting. #1 blocker. |
+| **OAuth redirect URL not registered** | Blocks login via OAuth | Medium | Register with GitHub, Google before starting. |
+| **MCP HTTP transport incompatible with browser fetch** | Blocks Gateway MCP | Low | MCP uses standard HTTP/SSE. Test early. |
+| **localhost WebSocket blocked by browser** | Blocks runtime connection | Low | Browsers explicitly allow `ws://localhost`. |
+| **Mixed content (HTTPS → HTTP localhost)** | Blocks runtime connection | Low | Browsers allow `http://localhost`. Explicit spec exception. |
+| **Port 19420 in use** | Runtime fails to start | Low | Try multiple ports, make configurable. |
+| **Node.js not on user's machine** | Install script complexity | Medium | Install scripts download Node.js. |
+| **XSS via chat message rendering** | Token theft, account compromise | Medium | Use textContent or DOMPurify. NEVER innerHTML with user data. |
+| **Path traversal in runtime** | Arbitrary file read/write | Medium | Validate all paths resolve within home directory. |
+| **OAuth CSRF** | Account takeover | Medium | Validate state parameter on every OAuth callback. |
+| **Token logging** | Credential exposure | Medium | Search for console.log with tokens before every commit. |
+
+---
+
+## 17. Final Audit Checklist
+
+**Run this audit after all phases are complete and before any production deployment.**
+
+### Security Audit
+
+```bash
+# 1. No secrets in source
+grep -rn "sk-\|api_key.*=.*['\"][a-zA-Z]" src/ runtime/ --include="*.ts" --include="*.tsx" --include="*.js"
+
+# 2. No innerHTML with user data
+grep -rn "innerHTML" src/ --include="*.ts" --include="*.tsx"
+# Review each match — ensure user data is NOT being injected
+
+# 3. No eval or Function constructor
+grep -rn "eval(\|new Function" src/ runtime/ --include="*.ts" --include="*.tsx" --include="*.js"
+
+# 4. No console.log with tokens
+grep -rn "console.log.*token\|console.log.*key\|console.log.*secret\|console.log.*password" src/ runtime/ --include="*.ts" --include="*.tsx" --include="*.js"
+
+# 5. Runtime binds to localhost only
+grep -rn "0\.0\.0\.0\|listen.*0\.0\.0\.0" runtime/ --include="*.ts" --include="*.js"
+# EXPECTED: No output
+
+# 6. Path traversal protection
+grep -rn "validatePath\|homedir" runtime/src/handlers/fs.ts
+# EXPECTED: Path validation exists in every file handler
+
+# 7. OAuth state validation
+grep -rn "oauth_state\|state.*mismatch" src/ --include="*.ts" --include="*.tsx"
+# EXPECTED: State parameter is generated, stored, and validated
+```
+
+### Functional Audit
+
+- [ ] `pnpm exec tsc --noEmit` — zero errors
+- [ ] `pnpm check` — Biome passes
+- [ ] `pnpm build` — succeeds
+- [ ] `pnpm test` — all pass
+- [ ] `cd runtime && pnpm test` — all pass
+- [ ] Zero `@tauri-apps` imports in `src/`
+- [ ] App loads in browser, no console errors
+- [ ] Login works (email/password)
+- [ ] Login works (OAuth GitHub)
+- [ ] Chat sends and receives messages
+- [ ] Gateway MCP tools load and execute
+- [ ] Conversations persist across page reload
+- [ ] With runtime: file explorer works
+- [ ] With runtime: ACP agent spawns
+- [ ] With runtime: OpenClaw starts
+- [ ] Install script works on macOS
+- [ ] Install script works on Linux
+- [ ] Install script works on Windows
+
+### Performance Audit
+
+- [ ] `pnpm build` output is under 5MB (excluding Monaco)
+- [ ] First page load is under 3 seconds on 4G
+- [ ] Chat response starts streaming within 2 seconds of send
 
 ---
 
@@ -1859,41 +1937,27 @@ pnpm test:e2e
 
 ```
 Phase 1 (Browser SPA)
-  1.1 → 1.2 → 1.3 → 1.4 → 1.8 → 1.9
-              1.2 → 1.5 (can parallel with 1.3-1.4)
-              1.2 → 1.6 (can parallel)
-              1.4 → 1.7 (after Tauri imports removed)
+  1.1 → 1.2 (TDD) → 1.3 → 1.4 (Groups A-F) → 1.7 → 1.8
+                       1.2 → 1.5 (can parallel with 1.3-1.4)
+                       1.4 → 1.6 (after Tauri imports removed)
 
 Phase 2 (Runtime Server)  — can start after 1.2
-  2.1 → 2.2 → 2.3 → 2.4
-              2.2 → 2.5 (can parallel with 2.3)
+  2.1 → 2.2 (TDD) → 2.3 (TDD) → 2.4
+                      2.2 → 2.5 (can parallel with 2.3)
 
 Phase 3 (Install Scripts) — can start after 2.1
   3.1
 
 Phase 4 (ACP) — requires 2.2
-  4.1 → 4.2
+  4.1
 
 Phase 5 (OpenClaw) — requires 2.2
-  5.1 → 5.2
+  5.1
 
 Phase 6 (Wallet) — requires 2.2
   6.1
 ```
 
-**Critical path:** 1.1 → 1.2 → 1.4 → 1.8 → 1.9 (Phase 1 complete)
+**Critical path:** 1.1 → 1.2 → 1.4 → 1.7 → 1.8 (Phase 1 complete)
 
-**Parallelizable:** Phase 2 can start as soon as Task 1.2 defines the bridge interface. Phases 4, 5, 6 can run in parallel once Phase 2's RPC router is done.
-
----
-
-## Getting Started Checklist
-
-Before writing any code:
-
-1. [ ] **Verify CORS on api.serendb.com** — make a browser fetch from any webpage to `https://api.serendb.com/auth/me` and check for CORS errors. If blocked, file a ticket with the backend team. THIS IS THE #1 BLOCKER.
-2. [ ] **Verify OAuth redirect URIs** — confirm `https://app.seren.com/oauth/callback` (or your domain) is registered with GitHub and Google OAuth apps.
-3. [ ] **Verify MCP Gateway** — test `fetch("https://mcp.serendb.com/mcp", { method: "POST", ... })` from a browser. Check for CORS issues.
-4. [ ] **Choose deployment platform** — Vercel or Cloudflare Pages.
-5. [ ] **Set up CI/CD** — GitHub Actions for: lint → test → build → deploy on push to main.
-6. [ ] **Read this entire document.** Don't skim.
+**Commit cadence:** Every 2-3 files or after each logical group. **Never go more than 30 minutes without a commit.**

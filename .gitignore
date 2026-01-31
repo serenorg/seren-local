@@ -54,8 +54,8 @@ Thumbs.db
 *.temp
 src-tauri/*.txt
 
-# Planning and notes (use external docs)
-docs/
+# Planning and notes (scratch files only)
+docs/scratch/
 
 # Lock files (keep pnpm-lock.yaml)
 package-lock.json
