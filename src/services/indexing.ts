@@ -1,7 +1,7 @@
 // ABOUTME: Codebase indexing service for semantic code search.
 // ABOUTME: Orchestrates file discovery, chunking, embedding, and vector storage.
 
-import { invoke } from "@tauri-apps/api/core";
+import { isRuntimeConnected, runtimeInvoke } from "@/lib/bridge";
 import { EMBEDDING_DIM, embedText, embedTexts, estimateBatchTokens } from "./seren-embed";
 
 /** Index statistics from the backend */
@@ -85,21 +85,24 @@ export interface IndexingProgress {
  * Initialize or get the index for a project.
  */
 export async function initProjectIndex(projectPath: string): Promise<IndexStats> {
-  return invoke<IndexStats>("init_project_index", { projectPath });
+  if (!isRuntimeConnected()) throw new Error("This operation requires the local runtime to be running");
+  return runtimeInvoke<IndexStats>("init_project_index", { projectPath });
 }
 
 /**
  * Get index statistics for a project.
  */
 export async function getIndexStatus(projectPath: string): Promise<IndexStats> {
-  return invoke<IndexStats>("get_index_status", { projectPath });
+  if (!isRuntimeConnected()) throw new Error("This operation requires the local runtime to be running");
+  return runtimeInvoke<IndexStats>("get_index_status", { projectPath });
 }
 
 /**
  * Check if an index exists for a project.
  */
 export async function hasProjectIndex(projectPath: string): Promise<boolean> {
-  return invoke<boolean>("has_project_index", { projectPath });
+  if (!isRuntimeConnected()) throw new Error("This operation requires the local runtime to be running");
+  return runtimeInvoke<boolean>("has_project_index", { projectPath });
 }
 
 /**
@@ -115,7 +118,8 @@ export async function searchCodebase(
   const queryEmbedding = await embedText(query);
 
   // Search the vector store
-  return invoke<SearchResult[]>("search_codebase", {
+  if (!isRuntimeConnected()) throw new Error("This operation requires the local runtime to be running");
+  return runtimeInvoke<SearchResult[]>("search_codebase", {
     projectPath,
     queryEmbedding,
     limit,
@@ -130,7 +134,8 @@ export async function searchCodebaseByEmbedding(
   queryEmbedding: number[],
   limit = 5,
 ): Promise<SearchResult[]> {
-  return invoke<SearchResult[]>("search_codebase", {
+  if (!isRuntimeConnected()) throw new Error("This operation requires the local runtime to be running");
+  return runtimeInvoke<SearchResult[]>("search_codebase", {
     projectPath,
     queryEmbedding,
     limit,
@@ -145,7 +150,8 @@ export async function fileNeedsReindex(
   filePath: string,
   fileHash: string,
 ): Promise<boolean> {
-  return invoke<boolean>("file_needs_reindex", {
+  if (!isRuntimeConnected()) throw new Error("This operation requires the local runtime to be running");
+  return runtimeInvoke<boolean>("file_needs_reindex", {
     projectPath,
     filePath,
     fileHash,
@@ -159,7 +165,8 @@ export async function deleteFileIndex(
   projectPath: string,
   filePath: string,
 ): Promise<number> {
-  return invoke<number>("delete_file_index", { projectPath, filePath });
+  if (!isRuntimeConnected()) throw new Error("This operation requires the local runtime to be running");
+  return runtimeInvoke<number>("delete_file_index", { projectPath, filePath });
 }
 
 /**
@@ -191,7 +198,7 @@ export async function indexChunks(
     }));
 
     // Store in vector database
-    const ids = await invoke<number[]>("index_chunks", {
+    const ids = await runtimeInvoke<number[]>("index_chunks", {
       projectPath,
       chunks: chunksWithEmbeddings,
     });

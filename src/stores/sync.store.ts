@@ -1,9 +1,10 @@
 // ABOUTME: Sync store for managing file sync status.
 // ABOUTME: Listens to Tauri events and provides reactive sync state.
 
-import { invoke } from "@tauri-apps/api/core";
-import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { isRuntimeConnected, onRuntimeEvent, runtimeInvoke } from "@/lib/bridge";
 import { createStore } from "solid-js/store";
+
+type UnlistenFn = () => void;
 
 /**
  * Sync status enum matching Rust backend.
@@ -74,7 +75,8 @@ export const syncStore = {
    */
   async startWatching(path: string): Promise<void> {
     try {
-      await invoke("start_watching", { path });
+      if (!isRuntimeConnected()) throw new Error("This operation requires the local runtime to be running");
+      await runtimeInvoke("start_watching", { path });
     } catch (err) {
       setState({
         status: "error",
@@ -90,7 +92,8 @@ export const syncStore = {
    */
   async stopWatching(): Promise<void> {
     try {
-      await invoke("stop_watching");
+      if (!isRuntimeConnected()) throw new Error("This operation requires the local runtime to be running");
+      await runtimeInvoke("stop_watching");
     } catch (err) {
       setState({
         status: "error",
@@ -105,7 +108,7 @@ export const syncStore = {
    */
   async refresh(): Promise<void> {
     try {
-      const status = await invoke<SyncState>("get_sync_status");
+      const status = await runtimeInvoke<SyncState>("get_sync_status");
       setState(status);
     } catch {
       // Ignore refresh errors
@@ -128,19 +131,16 @@ export const syncStore = {
   async init(): Promise<void> {
     // Listen for sync status changes
     if (!statusUnlisten) {
-      statusUnlisten = await listen<SyncState>("sync-status", (event) => {
-        setState(event.payload);
+      statusUnlisten = onRuntimeEvent("sync-status", (payload) => {
+        setState(payload as SyncState);
       });
     }
 
     // Listen for file changes
     if (!fileChangeUnlisten) {
-      fileChangeUnlisten = await listen<FileChangeEvent>(
-        "file-changed",
-        (event) => {
-          fileChangeHandlers.forEach((handler) => handler(event.payload));
-        },
-      );
+      fileChangeUnlisten = onRuntimeEvent("file-changed", (payload) => {
+        fileChangeHandlers.forEach((handler) => handler(payload as FileChangeEvent));
+      });
     }
 
     // Get initial status

@@ -1,7 +1,7 @@
 // ABOUTME: MCP OAuth2 service for authenticating with mcp.serendb.com.
 // ABOUTME: Implements Dynamic Client Registration and Authorization Code flow with PKCE (S256).
 
-import { invoke } from "@tauri-apps/api/core";
+import { isRuntimeConnected, runtimeInvoke } from "@/lib/bridge";
 import { appFetch } from "@/lib/fetch";
 
 const MCP_OAUTH_BASE = "https://mcp.serendb.com";
@@ -179,7 +179,7 @@ export async function startOAuthFlow(): Promise<{
       "[MCP OAuth] Clearing stored client_id to ensure fresh registration with current redirect_uri",
     );
     cachedClientId = null;
-    await invoke("set_setting", {
+    await runtimeInvoke("set_setting", {
       store: MCP_TOKEN_STORE,
       key: CLIENT_ID_KEY,
       value: "",
@@ -362,20 +362,20 @@ export async function isMcpAuthenticated(): Promise<boolean> {
 async function storeTokens(tokens: TokenResponse): Promise<void> {
   const expiry = Date.now() + tokens.expires_in * 1000;
 
-  await invoke("set_setting", {
+  await runtimeInvoke("set_setting", {
     store: MCP_TOKEN_STORE,
     key: ACCESS_TOKEN_KEY,
     value: tokens.access_token,
   });
 
-  await invoke("set_setting", {
+  await runtimeInvoke("set_setting", {
     store: MCP_TOKEN_STORE,
     key: TOKEN_EXPIRY_KEY,
     value: expiry.toString(),
   });
 
   if (tokens.refresh_token) {
-    await invoke("set_setting", {
+    await runtimeInvoke("set_setting", {
       store: MCP_TOKEN_STORE,
       key: REFRESH_TOKEN_KEY,
       value: tokens.refresh_token,
@@ -384,7 +384,7 @@ async function storeTokens(tokens: TokenResponse): Promise<void> {
 }
 
 async function storeClientId(clientId: string): Promise<void> {
-  await invoke("set_setting", {
+  await runtimeInvoke("set_setting", {
     store: MCP_TOKEN_STORE,
     key: CLIENT_ID_KEY,
     value: clientId,
@@ -393,7 +393,7 @@ async function storeClientId(clientId: string): Promise<void> {
 
 async function getStoredClientId(): Promise<string | null> {
   try {
-    const result = await invoke<string | null>("get_setting", {
+    const result = await runtimeInvoke<string | null>("get_setting", {
       store: MCP_TOKEN_STORE,
       key: CLIENT_ID_KEY,
     });
@@ -405,7 +405,7 @@ async function getStoredClientId(): Promise<string | null> {
 
 async function getStoredAccessToken(): Promise<string | null> {
   try {
-    const result = await invoke<string | null>("get_setting", {
+    const result = await runtimeInvoke<string | null>("get_setting", {
       store: MCP_TOKEN_STORE,
       key: ACCESS_TOKEN_KEY,
     });
@@ -417,7 +417,7 @@ async function getStoredAccessToken(): Promise<string | null> {
 
 async function getStoredRefreshToken(): Promise<string | null> {
   try {
-    const result = await invoke<string | null>("get_setting", {
+    const result = await runtimeInvoke<string | null>("get_setting", {
       store: MCP_TOKEN_STORE,
       key: REFRESH_TOKEN_KEY,
     });
@@ -429,7 +429,7 @@ async function getStoredRefreshToken(): Promise<string | null> {
 
 async function getStoredTokenExpiry(): Promise<number | null> {
   try {
-    const result = await invoke<string | null>("get_setting", {
+    const result = await runtimeInvoke<string | null>("get_setting", {
       store: MCP_TOKEN_STORE,
       key: TOKEN_EXPIRY_KEY,
     });
@@ -441,17 +441,17 @@ async function getStoredTokenExpiry(): Promise<number | null> {
 
 export async function clearStoredTokens(): Promise<void> {
   try {
-    await invoke("set_setting", {
+    await runtimeInvoke("set_setting", {
       store: MCP_TOKEN_STORE,
       key: ACCESS_TOKEN_KEY,
       value: "",
     });
-    await invoke("set_setting", {
+    await runtimeInvoke("set_setting", {
       store: MCP_TOKEN_STORE,
       key: REFRESH_TOKEN_KEY,
       value: "",
     });
-    await invoke("set_setting", {
+    await runtimeInvoke("set_setting", {
       store: MCP_TOKEN_STORE,
       key: TOKEN_EXPIRY_KEY,
       value: "",
@@ -471,7 +471,7 @@ export async function clearAllOAuthData(): Promise<void> {
   currentOAuthState = null;
 
   try {
-    await invoke("set_setting", {
+    await runtimeInvoke("set_setting", {
       store: MCP_TOKEN_STORE,
       key: CLIENT_ID_KEY,
       value: "",
@@ -539,7 +539,7 @@ export async function startOAuthBrowserFlow(): Promise<TokenResponse> {
   if (storedClientId) {
     console.log("[MCP OAuth] Clearing stored client_id for fresh registration");
     cachedClientId = null;
-    await invoke("set_setting", {
+    await runtimeInvoke("set_setting", {
       store: MCP_TOKEN_STORE,
       key: CLIENT_ID_KEY,
       value: "",
@@ -547,7 +547,8 @@ export async function startOAuthBrowserFlow(): Promise<TokenResponse> {
   }
 
   // Get a port from the Rust backend first so we know the redirect URI
-  const port = await invoke<number>("get_oauth_callback_port");
+  if (!isRuntimeConnected()) throw new Error("This operation requires the local runtime to be running");
+  const port = await runtimeInvoke<number>("get_oauth_callback_port");
   const redirectUri = `http://127.0.0.1:${port}/oauth/callback`;
 
   console.log("[MCP OAuth] Browser flow - redirect URI:", redirectUri);
@@ -605,7 +606,7 @@ export async function startOAuthBrowserFlow(): Promise<TokenResponse> {
   console.log("[MCP OAuth] Starting browser flow...");
 
   // Call Rust backend to open browser and wait for callback
-  const callbackResult = await invoke<OAuthCallbackResult>(
+  const callbackResult = await runtimeInvoke<OAuthCallbackResult>(
     "start_oauth_browser_flow",
     {
       authUrl,

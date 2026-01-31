@@ -1,7 +1,7 @@
 // ABOUTME: Publisher OAuth service for gateway-managed OAuth flows.
 // ABOUTME: Handles connecting/disconnecting OAuth providers for MCP publishers.
 
-import { openUrl } from "@tauri-apps/plugin-opener";
+import { isRuntimeConnected, runtimeInvoke } from "@/lib/bridge";
 import {
   listConnections,
   revokeConnection,
@@ -36,10 +36,12 @@ export async function connectPublisher(providerSlug: string): Promise<void> {
   const authUrl = `${apiBase}/oauth/${providerSlug}/authorize?redirect_uri=${encodeURIComponent(redirectUri)}`;
 
   // Fetch the authorize endpoint to get the redirect Location header.
-  // Tauri's JS fetch ignores redirect: "manual", so we use the Rust backend
-  // via invoke to make the request without following redirects.
-  const { invoke } = await import("@tauri-apps/api/core");
-  const location: string = await invoke("get_oauth_redirect_url", {
+  // The browser fetch ignores redirect: "manual", so we use the runtime backend
+  // to make the request without following redirects.
+  if (!isRuntimeConnected()) {
+    throw new Error("This operation requires the local runtime to be running");
+  }
+  const location: string = await runtimeInvoke("get_oauth_redirect_url", {
     url: authUrl,
     bearerToken: token,
   });
@@ -50,7 +52,7 @@ export async function connectPublisher(providerSlug: string): Promise<void> {
   }
 
   console.log(`[PublisherOAuth] Opening authorization URL: ${location}`);
-  await openUrl(location);
+  window.open(location, "_blank", "noopener,noreferrer");
 }
 
 /**

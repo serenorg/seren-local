@@ -1,8 +1,9 @@
 // ABOUTME: Routes inbound OpenClaw messages to Seren AI and sends responses back.
 // ABOUTME: Maintains per-channel conversation context and enforces trust levels.
 
-import { invoke } from "@tauri-apps/api/core";
-import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { isRuntimeConnected, onRuntimeEvent, runtimeInvoke } from "@/lib/bridge";
+
+type UnlistenFn = () => void;
 import { sendMessageWithTools } from "@/lib/providers/seren";
 import type {
   ChatMessageWithTools,
@@ -191,7 +192,7 @@ async function processInboundMessage(msg: InboundMessage): Promise<void> {
     }
 
     // Send response via OpenClaw
-    await invoke("openclaw_send", {
+    await runtimeInvoke("openclaw_send", {
       channel: msg.channel,
       to: msg.from,
       message: response,
@@ -210,7 +211,7 @@ async function processInboundMessage(msg: InboundMessage): Promise<void> {
     // Send error response if auto mode
     if (!needsApproval(msg)) {
       try {
-        await invoke("openclaw_send", {
+        await runtimeInvoke("openclaw_send", {
           channel: msg.channel,
           to: msg.from,
           message: "I'm unable to respond right now. Please try again later.",
@@ -282,7 +283,7 @@ async function requestApproval(
     const approvalId = `${msg.channel}:${msg.from}:${Date.now()}`;
 
     // Emit approval request to frontend
-    invoke("plugin:event|emit", {
+    runtimeInvoke("plugin:event|emit", {
       event: "openclaw://approval-needed",
       payload: {
         id: approvalId,
@@ -308,21 +309,13 @@ async function requestApproval(
       resolve(false);
     }, APPROVAL_TIMEOUT_MS);
 
-    listen<{ id: string; approved: boolean }>(
-      "openclaw://approval-response",
-      (event) => {
-        if (event.payload.id === approvalId && !resolved) {
-          resolved = true;
-          clearTimeout(timeout);
-          unlisten?.();
-          resolve(event.payload.approved);
-        }
-      },
-    ).then((unlistenFn) => {
-      unlisten = unlistenFn;
-      // If timeout already fired before listen() resolved, clean up immediately
-      if (resolved) {
-        unlistenFn();
+    unlisten = onRuntimeEvent("openclaw://approval-response", (payload) => {
+      const data = payload as { id: string; approved: boolean };
+      if (data.id === approvalId && !resolved) {
+        resolved = true;
+        clearTimeout(timeout);
+        unlisten?.();
+        resolve(data.approved);
       }
     });
   });
@@ -336,13 +329,11 @@ let unlistenMessage: UnlistenFn | null = null;
 let cleanupInterval: ReturnType<typeof setInterval> | null = null;
 
 export function startOpenClawAgent(): void {
-  // Listen for inbound messages from Rust backend
-  listen<InboundMessage>("openclaw://message-received", (event) => {
-    processInboundMessage(event.payload).catch((e) => {
+  // Listen for inbound messages from runtime backend
+  unlistenMessage = onRuntimeEvent("openclaw://message-received", (payload) => {
+    processInboundMessage(payload as InboundMessage).catch((e) => {
       console.error("[OpenClaw Agent] Unhandled error:", e);
     });
-  }).then((fn) => {
-    unlistenMessage = fn;
   });
 
   // Periodically clean up stale sessions

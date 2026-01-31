@@ -75,8 +75,7 @@ export async function initiateTopUp(amount: number) {
  * Open the Stripe checkout URL in the default browser.
  */
 export async function openCheckout(checkoutUrl: string): Promise<void> {
-  const { openUrl } = await import("@tauri-apps/plugin-opener");
-  await openUrl(checkoutUrl);
+  window.open(checkoutUrl, "_blank", "noopener,noreferrer");
 }
 
 /**

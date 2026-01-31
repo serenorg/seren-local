@@ -1,8 +1,10 @@
 // ABOUTME: Reactive ACP (Agent Client Protocol) state management for agent sessions.
 // ABOUTME: Stores agent sessions, message streams, tool calls, and plan state.
 
-import type { UnlistenFn } from "@tauri-apps/api/event";
+import { onRuntimeEvent } from "@/lib/bridge";
 import { createStore, produce } from "solid-js/store";
+
+type UnlistenFn = () => void;
 import { settingsStore } from "@/stores/settings.store";
 import type {
   AcpEvent,
@@ -226,11 +228,11 @@ export const acpStore = {
     try {
       // Ensure Claude CLI is installed before spawning
       if (state.selectedAgentType === "claude-code") {
-        const { listen } = await import("@tauri-apps/api/event");
-        const progressUnsub = await listen<{ stage: string; message: string }>(
+        const progressUnsub = onRuntimeEvent(
           "acp://cli-install-progress",
-          (event) => {
-            setState("installStatus", event.payload.message);
+          (payload) => {
+            const data = payload as { stage: string; message: string };
+            setState("installStatus", data.message);
           },
         );
 

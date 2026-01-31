@@ -1,8 +1,9 @@
 // ABOUTME: ACP (Agent Client Protocol) service for spawning and communicating with AI coding agents.
-// ABOUTME: Wraps Tauri commands and provides event subscriptions for agent interactions.
+// ABOUTME: Wraps runtime commands and provides event subscriptions for agent interactions.
 
-import { invoke } from "@tauri-apps/api/core";
-import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { isRuntimeConnected, onRuntimeEvent, runtimeInvoke } from "@/lib/bridge";
+
+type UnlistenFn = () => void;
 
 // ============================================================================
 // Types
@@ -127,8 +128,14 @@ export type AcpEvent =
   | { type: "error"; data: ErrorEvent };
 
 // ============================================================================
-// Tauri Command Wrappers
+// Runtime Command Wrappers
 // ============================================================================
+
+function requireRuntime(): void {
+  if (!isRuntimeConnected()) {
+    throw new Error("This operation requires the local runtime to be running");
+  }
+}
 
 /**
  * Spawn a new ACP agent session.
@@ -138,7 +145,8 @@ export async function spawnAgent(
   cwd: string,
   sandboxMode?: string,
 ): Promise<AcpSessionInfo> {
-  return invoke<AcpSessionInfo>("acp_spawn", {
+  requireRuntime();
+  return runtimeInvoke<AcpSessionInfo>("acp_spawn", {
     agentType,
     cwd,
     sandboxMode: sandboxMode ?? null,
@@ -153,28 +161,32 @@ export async function sendPrompt(
   prompt: string,
   context?: Array<{ text?: string }>,
 ): Promise<void> {
-  return invoke("acp_prompt", { sessionId, prompt, context });
+  requireRuntime();
+  return runtimeInvoke("acp_prompt", { sessionId, prompt, context });
 }
 
 /**
  * Cancel an ongoing prompt in an ACP session.
  */
 export async function cancelPrompt(sessionId: string): Promise<void> {
-  return invoke("acp_cancel", { sessionId });
+  requireRuntime();
+  return runtimeInvoke("acp_cancel", { sessionId });
 }
 
 /**
  * Terminate an ACP session.
  */
 export async function terminateSession(sessionId: string): Promise<void> {
-  return invoke("acp_terminate", { sessionId });
+  requireRuntime();
+  return runtimeInvoke("acp_terminate", { sessionId });
 }
 
 /**
  * List all active ACP sessions.
  */
 export async function listSessions(): Promise<AcpSessionInfo[]> {
-  return invoke<AcpSessionInfo[]>("acp_list_sessions");
+  requireRuntime();
+  return runtimeInvoke<AcpSessionInfo[]>("acp_list_sessions");
 }
 
 /**
@@ -184,7 +196,8 @@ export async function setPermissionMode(
   sessionId: string,
   mode: string,
 ): Promise<void> {
-  return invoke("acp_set_permission_mode", { sessionId, mode });
+  requireRuntime();
+  return runtimeInvoke("acp_set_permission_mode", { sessionId, mode });
 }
 
 /**
@@ -195,7 +208,8 @@ export async function respondToPermission(
   requestId: string,
   optionId: string,
 ): Promise<void> {
-  return invoke("acp_respond_to_permission", {
+  requireRuntime();
+  return runtimeInvoke("acp_respond_to_permission", {
     sessionId,
     requestId,
     optionId,
@@ -210,7 +224,8 @@ export async function respondToDiffProposal(
   proposalId: string,
   accepted: boolean,
 ): Promise<void> {
-  return invoke("acp_respond_to_diff_proposal", {
+  requireRuntime();
+  return runtimeInvoke("acp_respond_to_diff_proposal", {
     sessionId,
     proposalId,
     accepted,
@@ -221,7 +236,8 @@ export async function respondToDiffProposal(
  * Get list of available agents and their status.
  */
 export async function getAvailableAgents(): Promise<AgentInfo[]> {
-  return invoke<AgentInfo[]>("acp_get_available_agents");
+  requireRuntime();
+  return runtimeInvoke<AgentInfo[]>("acp_get_available_agents");
 }
 
 /**
@@ -229,7 +245,8 @@ export async function getAvailableAgents(): Promise<AgentInfo[]> {
  * Returns the bin directory path containing the claude binary.
  */
 export async function ensureClaudeCli(): Promise<string> {
-  return invoke<string>("acp_ensure_claude_cli");
+  requireRuntime();
+  return runtimeInvoke<string>("acp_ensure_claude_cli");
 }
 
 /**
@@ -238,7 +255,8 @@ export async function ensureClaudeCli(): Promise<string> {
 export async function checkAgentAvailable(
   agentType: AgentType,
 ): Promise<boolean> {
-  return invoke<boolean>("acp_check_agent_available", {
+  requireRuntime();
+  return runtimeInvoke<boolean>("acp_check_agent_available", {
     agentType,
   });
 }
@@ -266,15 +284,15 @@ type EventType = keyof typeof EVENT_CHANNELS;
  * Subscribe to a specific ACP event type.
  * Returns an unlisten function to clean up the subscription.
  */
-export async function subscribeToEvent<T extends { sessionId: string }>(
+export function subscribeToEvent<T extends { sessionId: string }>(
   eventType: EventType,
   callback: (data: T) => void,
-): Promise<UnlistenFn> {
+): UnlistenFn {
   const channel = EVENT_CHANNELS[eventType];
   console.log(`[AcpService] Subscribing to ${channel}`);
-  return listen<T>(channel, (event) => {
-    console.log(`[AcpService] Received event on ${channel}:`, event.payload);
-    callback(event.payload);
+  return onRuntimeEvent(channel, (payload) => {
+    console.log(`[AcpService] Received event on ${channel}:`, payload);
+    callback(payload as T);
   });
 }
 
@@ -282,10 +300,10 @@ export async function subscribeToEvent<T extends { sessionId: string }>(
  * Subscribe to all ACP events for a session.
  * Returns an unlisten function to clean up all subscriptions.
  */
-export async function subscribeToSession(
+export function subscribeToSession(
   sessionId: string,
   callback: (event: AcpEvent) => void,
-): Promise<UnlistenFn> {
+): UnlistenFn {
   console.log(
     `[AcpService] subscribeToSession called for sessionId: ${sessionId}`,
   );
@@ -306,7 +324,7 @@ export async function subscribeToSession(
   }
 
   unlisteners.push(
-    await subscribeToEvent<MessageChunkEvent>(
+    subscribeToEvent<MessageChunkEvent>(
       "messageChunk",
       createHandler<{ type: "messageChunk"; data: MessageChunkEvent }>(
         "messageChunk",
@@ -314,13 +332,13 @@ export async function subscribeToSession(
     ),
   );
   unlisteners.push(
-    await subscribeToEvent<ToolCallEvent>(
+    subscribeToEvent<ToolCallEvent>(
       "toolCall",
       createHandler<{ type: "toolCall"; data: ToolCallEvent }>("toolCall"),
     ),
   );
   unlisteners.push(
-    await subscribeToEvent<ToolResultEvent>(
+    subscribeToEvent<ToolResultEvent>(
       "toolResult",
       createHandler<{ type: "toolResult"; data: ToolResultEvent }>(
         "toolResult",
@@ -328,13 +346,13 @@ export async function subscribeToSession(
     ),
   );
   unlisteners.push(
-    await subscribeToEvent<DiffEvent>(
+    subscribeToEvent<DiffEvent>(
       "diff",
       createHandler<{ type: "diff"; data: DiffEvent }>("diff"),
     ),
   );
   unlisteners.push(
-    await subscribeToEvent<PlanUpdateEvent>(
+    subscribeToEvent<PlanUpdateEvent>(
       "planUpdate",
       createHandler<{ type: "planUpdate"; data: PlanUpdateEvent }>(
         "planUpdate",
@@ -342,7 +360,7 @@ export async function subscribeToSession(
     ),
   );
   unlisteners.push(
-    await subscribeToEvent<PromptCompleteEvent>(
+    subscribeToEvent<PromptCompleteEvent>(
       "promptComplete",
       createHandler<{ type: "promptComplete"; data: PromptCompleteEvent }>(
         "promptComplete",
@@ -350,7 +368,7 @@ export async function subscribeToSession(
     ),
   );
   unlisteners.push(
-    await subscribeToEvent<PermissionRequestEvent>(
+    subscribeToEvent<PermissionRequestEvent>(
       "permissionRequest",
       createHandler<{
         type: "permissionRequest";
@@ -359,7 +377,7 @@ export async function subscribeToSession(
     ),
   );
   unlisteners.push(
-    await subscribeToEvent<SessionStatusEvent>(
+    subscribeToEvent<SessionStatusEvent>(
       "sessionStatus",
       createHandler<{ type: "sessionStatus"; data: SessionStatusEvent }>(
         "sessionStatus",
@@ -367,7 +385,7 @@ export async function subscribeToSession(
     ),
   );
   unlisteners.push(
-    await subscribeToEvent<ErrorEvent>(
+    subscribeToEvent<ErrorEvent>(
       "error",
       createHandler<{ type: "error"; data: ErrorEvent }>("error"),
     ),
@@ -385,59 +403,59 @@ export async function subscribeToSession(
  * Subscribe to all ACP events (not filtered by session).
  * Returns an unlisten function to clean up all subscriptions.
  */
-export async function subscribeToAllEvents(
+export function subscribeToAllEvents(
   callback: (event: AcpEvent) => void,
-): Promise<UnlistenFn> {
+): UnlistenFn {
   const unlisteners: UnlistenFn[] = [];
 
   unlisteners.push(
-    await subscribeToEvent<MessageChunkEvent>("messageChunk", (data) =>
+    subscribeToEvent<MessageChunkEvent>("messageChunk", (data) =>
       callback({ type: "messageChunk", data }),
     ),
   );
   unlisteners.push(
-    await subscribeToEvent<ToolCallEvent>("toolCall", (data) =>
+    subscribeToEvent<ToolCallEvent>("toolCall", (data) =>
       callback({ type: "toolCall", data }),
     ),
   );
   unlisteners.push(
-    await subscribeToEvent<ToolResultEvent>("toolResult", (data) =>
+    subscribeToEvent<ToolResultEvent>("toolResult", (data) =>
       callback({ type: "toolResult", data }),
     ),
   );
   unlisteners.push(
-    await subscribeToEvent<DiffEvent>("diff", (data) =>
+    subscribeToEvent<DiffEvent>("diff", (data) =>
       callback({ type: "diff", data }),
     ),
   );
   unlisteners.push(
-    await subscribeToEvent<PlanUpdateEvent>("planUpdate", (data) =>
+    subscribeToEvent<PlanUpdateEvent>("planUpdate", (data) =>
       callback({ type: "planUpdate", data }),
     ),
   );
   unlisteners.push(
-    await subscribeToEvent<PromptCompleteEvent>("promptComplete", (data) =>
+    subscribeToEvent<PromptCompleteEvent>("promptComplete", (data) =>
       callback({ type: "promptComplete", data }),
     ),
   );
   unlisteners.push(
-    await subscribeToEvent<PermissionRequestEvent>(
+    subscribeToEvent<PermissionRequestEvent>(
       "permissionRequest",
       (data) => callback({ type: "permissionRequest", data }),
     ),
   );
   unlisteners.push(
-    await subscribeToEvent<DiffProposalEvent>("diffProposal", (data) =>
+    subscribeToEvent<DiffProposalEvent>("diffProposal", (data) =>
       callback({ type: "diffProposal", data }),
     ),
   );
   unlisteners.push(
-    await subscribeToEvent<SessionStatusEvent>("sessionStatus", (data) =>
+    subscribeToEvent<SessionStatusEvent>("sessionStatus", (data) =>
       callback({ type: "sessionStatus", data }),
     ),
   );
   unlisteners.push(
-    await subscribeToEvent<ErrorEvent>("error", (data) =>
+    subscribeToEvent<ErrorEvent>("error", (data) =>
       callback({ type: "error", data }),
     ),
   );

@@ -1,4 +1,7 @@
-import { invoke } from "@tauri-apps/api/core";
+// ABOUTME: Reactive file tree state for tracking directory structure.
+// ABOUTME: Provides signals and helpers for expanding, selecting, and refreshing nodes.
+
+import { isRuntimeConnected, runtimeInvoke } from "@/lib/bridge";
 import { createSignal } from "solid-js";
 import { createStore } from "solid-js/store";
 
@@ -127,7 +130,8 @@ function entryToNode(entry: FileEntry): FileNode {
  */
 export async function refreshDirectory(path: string): Promise<void> {
   try {
-    const entries = await invoke<FileEntry[]>("list_directory", { path });
+    if (!isRuntimeConnected()) throw new Error("This operation requires the local runtime to be running");
+    const entries = await runtimeInvoke<FileEntry[]>("list_directory", { path });
     const children = entries.map(entryToNode);
 
     // If this is the root path, update the root nodes

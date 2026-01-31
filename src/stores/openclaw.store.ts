@@ -1,9 +1,10 @@
 // ABOUTME: Reactive state for OpenClaw process status, connected channels, and per-channel config.
-// ABOUTME: Communicates with Rust backend via Tauri invoke() calls and listens for events.
+// ABOUTME: Communicates with Rust backend via Tauri runtimeInvoke() calls and listens for events.
 
-import { invoke } from "@tauri-apps/api/core";
-import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { isRuntimeConnected, onRuntimeEvent, runtimeInvoke } from "@/lib/bridge";
 import { createStore } from "solid-js/store";
+
+type UnlistenFn = () => void;
 
 // ============================================================================
 // Types
@@ -67,21 +68,20 @@ const OPENCLAW_STORE = "openclaw.json";
 // Event Listeners
 // ============================================================================
 
-async function setupEventListeners() {
-  unlistenStatus = await listen<{ status: ProcessStatus }>(
-    "openclaw://status-changed",
-    (event) => {
-      setState("processStatus", event.payload.status);
-    },
-  );
+function setupEventListeners() {
+  unlistenStatus = onRuntimeEvent("openclaw://status-changed", (payload) => {
+    const data = payload as { status: ProcessStatus };
+    setState("processStatus", data.status);
+  });
 
-  unlistenChannel = await listen<{
-    type: string;
-    id?: string;
-    platform?: string;
-    status?: string;
-  }>("openclaw://channel-event", (event) => {
-    const { type: eventType, id } = event.payload;
+  unlistenChannel = onRuntimeEvent("openclaw://channel-event", (payload) => {
+    const data = payload as {
+      type: string;
+      id?: string;
+      platform?: string;
+      status?: string;
+    };
+    const { type: eventType, id } = data;
 
     if (!id) return;
 
@@ -105,7 +105,7 @@ async function setupEventListeners() {
     }
   });
 
-  unlistenMessage = await listen("openclaw://message-received", (_event) => {
+  unlistenMessage = onRuntimeEvent("openclaw://message-received", (_payload) => {
     // Message events are handled by the notification system (Phase 6)
     // and agent routing (Phase 4). No store update needed here.
   });
@@ -176,12 +176,12 @@ export const openclawStore = {
     if (initPromise) return initPromise;
 
     initPromise = (async () => {
-      await setupEventListeners();
+      setupEventListeners();
 
       // Load setupComplete flag from Tauri store
       let value: string | null = null;
       try {
-        value = await invoke<string | null>("get_setting", {
+        value = await runtimeInvoke<string | null>("get_setting", {
           store: OPENCLAW_STORE,
           key: "setup_complete",
         });
@@ -204,7 +204,7 @@ export const openclawStore = {
 
   async start() {
     try {
-      await invoke("openclaw_start");
+      await runtimeInvoke("openclaw_start");
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       // "already running" is not an error — treat it as success
@@ -225,7 +225,7 @@ export const openclawStore = {
 
   async stop() {
     try {
-      await invoke("openclaw_stop");
+      await runtimeInvoke("openclaw_stop");
     } catch (e) {
       console.error("[OpenClaw Store] Failed to stop:", e);
       throw e;
@@ -234,7 +234,7 @@ export const openclawStore = {
 
   async restart() {
     try {
-      await invoke("openclaw_restart");
+      await runtimeInvoke("openclaw_restart");
     } catch (e) {
       console.error("[OpenClaw Store] Failed to restart:", e);
       throw e;
@@ -246,7 +246,7 @@ export const openclawStore = {
 
   async refreshStatus() {
     try {
-      const info = await invoke<{
+      const info = await runtimeInvoke<{
         processStatus: ProcessStatus;
         port: number | null;
         channels: OpenClawChannel[];
@@ -264,7 +264,7 @@ export const openclawStore = {
 
   async refreshChannels() {
     try {
-      const channels = await invoke<OpenClawChannel[]>(
+      const channels = await runtimeInvoke<OpenClawChannel[]>(
         "openclaw_list_channels",
       );
       // Preserve local agentMode and trustLevel settings
@@ -280,7 +280,7 @@ export const openclawStore = {
 
       // Sync default trust levels to backend for any channels it doesn't know about yet
       for (const ch of merged) {
-        invoke("openclaw_set_trust", {
+        runtimeInvoke("openclaw_set_trust", {
           channelId: ch.id,
           trustLevel: ch.trustLevel,
           agentMode: ch.agentMode,
@@ -313,7 +313,7 @@ export const openclawStore = {
 
     // Sync trust settings to Rust backend for enforcement
     const channel = state.channels[index];
-    invoke("openclaw_set_trust", {
+    runtimeInvoke("openclaw_set_trust", {
       channelId,
       trustLevel: channel.trustLevel,
       agentMode: channel.agentMode,
@@ -335,7 +335,7 @@ export const openclawStore = {
       await new Promise((r) => setTimeout(r, 2000));
     }
     console.log("[OpenClaw Store] Connecting channel:", platform);
-    const result = await invoke<Record<string, unknown>>(
+    const result = await runtimeInvoke<Record<string, unknown>>(
       "openclaw_connect_channel",
       {
         platform,
@@ -347,11 +347,11 @@ export const openclawStore = {
   },
 
   async getQrCode(platform: string) {
-    return invoke<string>("openclaw_get_qr", { platform });
+    return runtimeInvoke<string>("openclaw_get_qr", { platform });
   },
 
   async disconnectChannel(channelId: string) {
-    await invoke("openclaw_disconnect_channel", { channelId });
+    await runtimeInvoke("openclaw_disconnect_channel", { channelId });
     // Remove from local state
     setState(
       "channels",
@@ -360,7 +360,7 @@ export const openclawStore = {
   },
 
   async sendMessage(channel: string, to: string, message: string) {
-    return invoke<string>("openclaw_send", {
+    return runtimeInvoke<string>("openclaw_send", {
       channel,
       to,
       message,
@@ -372,7 +372,7 @@ export const openclawStore = {
   async completeSetup() {
     setState("setupComplete", true);
     try {
-      await invoke("set_setting", {
+      await runtimeInvoke("set_setting", {
         store: OPENCLAW_STORE,
         key: "setup_complete",
         value: "true",
