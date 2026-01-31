@@ -3,8 +3,12 @@
 
 import { createServer } from "node:http";
 import { WebSocketServer } from "ws";
+import { join } from "node:path";
+import { homedir } from "node:os";
+import { mkdirSync } from "node:fs";
 import { handleMessage } from "./rpc";
 import { registerAllHandlers } from "./handlers/index";
+import { initChatDb } from "./handlers/chat";
 
 const PORT = Number(process.env.SEREN_PORT) || 19420;
 
@@ -66,6 +70,11 @@ wss.on("connection", (ws, req) => {
 
   ws.on("close", () => console.log("[Runtime] Browser disconnected"));
 });
+
+// Initialize SQLite database for conversation storage
+const dataDir = join(homedir(), ".seren");
+mkdirSync(dataDir, { recursive: true });
+initChatDb(join(dataDir, "conversations.db"));
 
 registerAllHandlers();
 
