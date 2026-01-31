@@ -11,18 +11,19 @@
 
 1. [Project Overview](#1-project-overview)
 2. [Architecture](#2-architecture)
-3. [Key Decisions](#3-key-decisions)
-4. [Source Codebase Reference](#4-source-codebase-reference)
-5. [Phase 1: Browser SPA (Chat + Gateway MCP)](#5-phase-1-browser-spa)
-6. [Phase 2: Local Runtime Server](#6-phase-2-local-runtime-server)
-7. [Phase 3: Install Scripts](#7-phase-3-install-scripts)
-8. [Phase 4: ACP Agent Support via Local Runtime](#8-phase-4-acp-agent-support)
-9. [Phase 5: OpenClaw via Local Runtime](#9-phase-5-openclaw-via-local-runtime)
-10. [Phase 6: Crypto Wallet (x402)](#10-phase-6-crypto-wallet)
-11. [What Gets Deleted / Not Ported](#11-what-gets-deleted)
-12. [Testing Strategy](#12-testing-strategy)
-13. [Deployment](#13-deployment)
-14. [Risk Register](#14-risk-register)
+3. [What Dies and What Improves](#3-what-dies-and-what-improves)
+4. [Key Decisions](#4-key-decisions)
+5. [Source Codebase Reference](#5-source-codebase-reference)
+6. [Phase 1: Browser SPA (Chat + Gateway MCP)](#6-phase-1-browser-spa)
+7. [Phase 2: Local Runtime Server](#7-phase-2-local-runtime-server)
+8. [Phase 3: Install Scripts](#8-phase-3-install-scripts)
+9. [Phase 4: ACP Agent Support via Local Runtime](#9-phase-4-acp-agent-support)
+10. [Phase 5: OpenClaw via Local Runtime](#10-phase-5-openclaw-via-local-runtime)
+11. [Phase 6: Crypto Wallet (x402)](#11-phase-6-crypto-wallet)
+12. [What Gets Deleted / Not Ported](#12-what-gets-deleted)
+13. [Testing Strategy](#13-testing-strategy)
+14. [Deployment](#14-deployment)
+15. [Risk Register](#15-risk-register)
 
 ---
 
@@ -94,7 +95,46 @@ For users who want local capabilities (ACP agents, local MCP servers, file syste
 
 ---
 
-## 3. Key Decisions
+## 3. What Dies and What Improves
+
+| Feature | Desktop (Tauri) | Browser-Only Mode | Browser + Local Runtime | Impact |
+| --- | --- | --- | --- | --- |
+| **AI Chat** | Tauri window | Browser tab | Browser tab | **No loss.** Same SolidJS components. |
+| **Gateway MCP (90+ tools)** | HTTP via Rust client | HTTP via browser `fetch()` | HTTP via browser `fetch()` | **No loss.** Already HTTP/SSE. Requires CORS headers on Gateway — this is the #1 blocker. |
+| **Local MCP servers (stdio)** | Rust spawns child process | **Gone.** No process spawning. | Node.js spawns child process | **No loss with runtime.** Without runtime, users only get Gateway tools. |
+| **ACP agents (Claude Code)** | Rust spawns agent binary | **Gone.** | Node.js spawns agent binary | **No loss with runtime.** Without runtime, no agent panel. |
+| **OpenClaw (messaging)** | Rust spawns OpenClaw process | **Gone.** | Node.js spawns OpenClaw process | **No loss with runtime.** Without runtime, no messaging channels. |
+| **File system access** | Rust `fs` commands | **Gone.** Editor becomes read-only or virtual. | Node.js `fs` module | **No loss with runtime.** Without runtime, no file tree or file editing. |
+| **Secure token storage** | OS keychain via Tauri plugin | localStorage | Encrypted file in `~/.seren/` | **Slight downgrade in browser-only.** localStorage is standard for web apps but less secure than keychain. Runtime mode restores encrypted storage. |
+| **Conversation persistence** | SQLite via Rust | IndexedDB | SQLite via runtime | **Functional parity.** IndexedDB is less robust than SQLite but adequate. Runtime mode upgrades to SQLite. |
+| **OAuth login** | Deep links (`seren://` URL scheme) | Standard browser redirect | Standard browser redirect | **Actually simpler.** No custom URL schemes, no deep link registration, no platform-specific handling. |
+| **x402 crypto wallet** | Rust `alloy` crate | **Gone.** No signing. | `viem` in Node.js | **No loss with runtime.** Without runtime, no x402 payments. Users can still use SerenBucks. |
+| **Auto-updates** | Tauri updater plugin | CDN deploy (instant for all users) | `npm update -g @serendb/runtime` | **Upgrade.** Web deploys are instant. No more "please restart" dialogs. |
+| **Code signing** | Required for macOS + Windows | **Gone.** | **Gone.** | **Major win.** No $99/yr Apple fee, no EV certificate, no notarization delays, no SmartScreen warnings. |
+| **Platform builds** | 6 targets (darwin-arm64/x64, win32-x64/arm64, linux-x64/arm64) | One static build | One npm package | **Major win.** Build once, deploy everywhere. |
+| **Embedded runtimes** | Ships Node.js + Git binaries (~500MB) | Nothing | Install script downloads Node.js if needed | **Major win.** No bloated downloads. |
+| **Monaco editor** | Works in Tauri webview | Works in browser | Works in browser | **No loss.** Monaco is web-native. |
+| **File watcher / sync** | Rust `notify` crate | **Gone.** | Could add via `chokidar` in runtime | **Minor loss.** Only matters for live-reload workflows. Can add later. |
+| **Reveal in Finder/Explorer** | Tauri shell command | **Gone.** | Could add via `open` in runtime | **Trivial loss.** Nice-to-have, not essential. |
+
+### Summary
+
+**Nothing critical is lost.** Every major feature either:
+1. Works directly in the browser (chat, Gateway MCP, auth, catalog, wallet balance)
+2. Works with the local runtime installed (ACP, OpenClaw, local MCP, file system, crypto signing)
+
+**What actually improves:**
+- Zero-friction distribution (URL vs download)
+- No code signing overhead
+- Instant updates for all users
+- Simpler OAuth flow
+- Single build target instead of six
+
+**The real tradeoff:** Users who want ACP/OpenClaw/file access must run a one-line install command. That's a higher bar than "just open the app" but dramatically lower than "download a 200MB installer, approve code signing, drag to Applications."
+
+---
+
+## 4. Key Decisions
 
 | Decision | Choice | Rationale |
 |----------|--------|-----------|
@@ -119,7 +159,7 @@ For users who want local capabilities (ACP agents, local MCP servers, file syste
 
 ---
 
-## 4. Source Codebase Reference
+## 5. Source Codebase Reference
 
 You'll be working from `seren-desktop`. Here's what you need to know about its structure.
 
@@ -297,7 +337,7 @@ In the Rust backend (`src-tauri/src/openclaw.rs`, 1,473 LOC), this spawns the Op
 
 ---
 
-## 5. Phase 1: Browser SPA
+## 6. Phase 1: Browser SPA
 
 **Goal:** A working browser app with AI chat and 90+ Gateway MCP tools. Zero install. Deploy as static site.
 
@@ -904,7 +944,7 @@ Before moving to Phase 2, verify:
 
 ---
 
-## 6. Phase 2: Local Runtime Server
+## 7. Phase 2: Local Runtime Server
 
 **Goal:** Build the Node.js server that runs on `localhost` and provides ACP, OpenClaw, local MCP, and file system capabilities to the browser SPA.
 
@@ -1390,7 +1430,7 @@ pnpm dev
 
 ---
 
-## 8. Phase 4: ACP Agent Support
+## 9. Phase 4: ACP Agent Support
 
 **Goal:** Port ACP agent spawning from Rust to Node.js in the local runtime. Enable the browser SPA to spawn and interact with Claude Code agents.
 
@@ -1487,7 +1527,7 @@ pnpm dev
 
 ---
 
-## 9. Phase 5: OpenClaw via Local Runtime
+## 10. Phase 5: OpenClaw via Local Runtime
 
 **Goal:** Port OpenClaw process management from Rust to Node.js in the local runtime.
 
@@ -1556,7 +1596,7 @@ pnpm dev
 
 ---
 
-## 7. Phase 3: Install Scripts
+## 8. Phase 3: Install Scripts
 
 **Goal:** One-line install commands for macOS/Linux/Windows that set up Node.js (if needed) and the Seren runtime.
 
@@ -1666,7 +1706,7 @@ seren   # Should start runtime
 
 ---
 
-## 10. Phase 6: Crypto Wallet
+## 11. Phase 6: Crypto Wallet
 
 **Goal:** Port x402 payment signing from Rust (alloy crate) to JavaScript.
 
@@ -1698,7 +1738,7 @@ seren   # Should start runtime
 
 ---
 
-## 11. What Gets Deleted
+## 12. What Gets Deleted
 
 These items from `seren-desktop` are NOT ported to `seren-browser`:
 
@@ -1718,7 +1758,7 @@ These items from `seren-desktop` are NOT ported to `seren-browser`:
 
 ---
 
-## 12. Testing Strategy
+## 13. Testing Strategy
 
 ### Unit Tests (Vitest)
 
@@ -1774,7 +1814,7 @@ pnpm test:e2e
 
 ---
 
-## 13. Deployment
+## 14. Deployment
 
 ### SPA (Browser App)
 
@@ -1799,7 +1839,7 @@ pnpm test:e2e
 
 ---
 
-## 14. Risk Register
+## 15. Risk Register
 
 | Risk | Impact | Likelihood | Mitigation |
 |------|--------|-----------|------------|
