@@ -1,0 +1,29 @@
+{
+  "name": "@serendb/runtime",
+  "version": "0.1.0",
+  "description": "Seren local runtime — enables ACP agents, local MCP, and file access",
+  "type": "module",
+  "bin": {
+    "seren": "./bin/seren.js"
+  },
+  "scripts": {
+    "dev": "tsx src/server.ts",
+    "build": "tsup src/server.ts --format esm --target node20",
+    "start": "node dist/server.js",
+    "test": "NODE_OPTIONS='--no-experimental-webstorage' vitest run"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "dependencies": {
+    "ws": "^8.19.0"
+  },
+  "devDependencies": {
+    "@types/node": "^25.1.0",
+    "@types/ws": "^8.18.1",
+    "tsup": "^8.5.1",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.18"
+  }
+}
