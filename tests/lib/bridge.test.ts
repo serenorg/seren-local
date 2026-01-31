@@ -21,7 +21,7 @@ import {
   clearToken,
   storeRefreshToken,
   getRefreshToken,
-  clearRefreshToken,
+
   // API key
   storeSerenApiKey,
   getSerenApiKey,

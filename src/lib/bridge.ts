@@ -174,7 +174,7 @@ export function runtimeInvoke<T>(
       },
     });
 
-    ws!.send(JSON.stringify({ jsonrpc: "2.0", id, method, params }));
+    ws?.send(JSON.stringify({ jsonrpc: "2.0", id, method, params }));
   });
 }
 
@@ -185,7 +185,7 @@ export function onRuntimeEvent(
   if (!eventListeners.has(event)) {
     eventListeners.set(event, new Set());
   }
-  eventListeners.get(event)!.add(callback);
+  eventListeners.get(event)?.add(callback);
   return () => {
     eventListeners.get(event)?.delete(callback);
   };
@@ -258,9 +258,7 @@ export async function storeProviderKey(
   localStorage.setItem(`${PROVIDER_KEY_PREFIX}${provider}`, apiKey);
 }
 
-export async function getProviderKey(
-  provider: string,
-): Promise<string | null> {
+export async function getProviderKey(provider: string): Promise<string | null> {
   return localStorage.getItem(`${PROVIDER_KEY_PREFIX}${provider}`);
 }
 

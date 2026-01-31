@@ -16,8 +16,8 @@ import {
 } from "@/stores/settings.store";
 import { claimDaily, walletState } from "@/stores/wallet.store";
 import { OAuthLogins } from "./OAuthLogins";
-import { ProviderSettings } from "./ProviderSettings";
 import { OpenClawSettings } from "./OpenClawSettings";
+import { ProviderSettings } from "./ProviderSettings";
 import { SearchableModelSelect } from "./SearchableModelSelect";
 
 type SettingsSection =
@@ -1321,7 +1321,7 @@ const DailyClaimBanner: Component = () => {
 
   const canClaim = () => {
     const claim = walletState.dailyClaim;
-    return claim !== null && claim.can_claim;
+    return claim?.can_claim;
   };
 
   const handleClaim = async () => {

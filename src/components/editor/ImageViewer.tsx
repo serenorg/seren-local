@@ -1,7 +1,6 @@
 // ABOUTME: Image viewer component for displaying image files.
 // ABOUTME: Supports zoom, pan, and displays image metadata.
 
-import { runtimeInvoke, isRuntimeConnected } from "@/lib/bridge";
 import {
   type Component,
   createEffect,
@@ -9,6 +8,7 @@ import {
   onCleanup,
   Show,
 } from "solid-js";
+import { isRuntimeConnected, runtimeInvoke } from "@/lib/bridge";
 
 interface ImageViewerProps {
   filePath: string;
@@ -37,18 +37,25 @@ export const ImageViewer: Component<ImageViewerProps> = (props) => {
       setError("Local runtime not connected");
       return;
     }
-    runtimeInvoke<string>("read_file_base64", { path }).then((base64) => {
-      const ext = path.split(".").pop()?.toLowerCase() || "";
-      const mimeMap: Record<string, string> = {
-        png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg",
-        gif: "image/gif", webp: "image/webp", svg: "image/svg+xml",
-        bmp: "image/bmp", ico: "image/x-icon",
-      };
-      const mime = mimeMap[ext] || "image/png";
-      setImageUrl(`data:${mime};base64,${base64}`);
-    }).catch(() => {
-      setError("Failed to load image");
-    });
+    runtimeInvoke<string>("read_file_base64", { path })
+      .then((base64) => {
+        const ext = path.split(".").pop()?.toLowerCase() || "";
+        const mimeMap: Record<string, string> = {
+          png: "image/png",
+          jpg: "image/jpeg",
+          jpeg: "image/jpeg",
+          gif: "image/gif",
+          webp: "image/webp",
+          svg: "image/svg+xml",
+          bmp: "image/bmp",
+          ico: "image/x-icon",
+        };
+        const mime = mimeMap[ext] || "image/png";
+        setImageUrl(`data:${mime};base64,${base64}`);
+      })
+      .catch(() => {
+        setError("Failed to load image");
+      });
     setError(null);
     setZoom(100);
     setPosition({ x: 0, y: 0 });

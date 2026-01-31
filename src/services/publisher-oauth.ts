@@ -1,14 +1,13 @@
 // ABOUTME: Publisher OAuth service for gateway-managed OAuth flows.
 // ABOUTME: Handles connecting/disconnecting OAuth providers for MCP publishers.
 
-import { isRuntimeConnected, runtimeInvoke } from "@/lib/bridge";
 import {
   listConnections,
   revokeConnection,
   type UserOAuthConnectionResponse,
 } from "@/api";
+import { getToken, isRuntimeConnected, runtimeInvoke } from "@/lib/bridge";
 import { apiBase } from "@/lib/config";
-import { getToken } from "@/lib/bridge";
 
 /**
  * Start OAuth flow for a publisher provider.

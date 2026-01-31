@@ -9,6 +9,7 @@ import {
   onMount,
   Show,
 } from "solid-js";
+import { listenForOAuthCallback, storeOAuthCredentials } from "@/lib/bridge";
 import { validateProviderKey } from "@/lib/providers";
 import {
   CONFIGURABLE_PROVIDERS,
@@ -17,10 +18,6 @@ import {
   supportsApiKey,
   supportsOAuth,
 } from "@/lib/providers/types";
-import {
-  listenForOAuthCallback,
-  storeOAuthCredentials,
-} from "@/lib/bridge";
 import {
   cancelOAuthFlow,
   getPendingOAuthProvider,
@@ -49,7 +46,14 @@ export const ProviderSettings: Component = () => {
         const code = urlObj.searchParams.get("code");
         const state = urlObj.searchParams.get("state");
         const error = urlObj.searchParams.get("error");
-        console.log("[ProviderSettings] Callback params - code:", !!code, "state:", !!state, "error:", error);
+        console.log(
+          "[ProviderSettings] Callback params - code:",
+          !!code,
+          "state:",
+          !!state,
+          "error:",
+          error,
+        );
 
         if (error) {
           console.log("[ProviderSettings] OAuth error received:", error);

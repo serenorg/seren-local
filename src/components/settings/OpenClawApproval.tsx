@@ -1,9 +1,10 @@
 // ABOUTME: Approval dialog for OpenClaw messages when trust level is "approval-required".
 // ABOUTME: Shows inbound message, draft AI response, and approve/reject buttons.
 
-import { isRuntimeConnected, onRuntimeEvent, runtimeInvoke } from "@/lib/bridge";
+import { onRuntimeEvent, runtimeInvoke } from "@/lib/bridge";
 
 type UnlistenFn = () => void;
+
 import {
   type Component,
   createSignal,

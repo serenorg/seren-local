@@ -1,11 +1,11 @@
 // ABOUTME: Reactive ACP (Agent Client Protocol) state management for agent sessions.
 // ABOUTME: Stores agent sessions, message streams, tool calls, and plan state.
 
-import { onRuntimeEvent } from "@/lib/bridge";
 import { createStore, produce } from "solid-js/store";
+import { onRuntimeEvent } from "@/lib/bridge";
 
 type UnlistenFn = () => void;
-import { settingsStore } from "@/stores/settings.store";
+
 import type {
   AcpEvent,
   AcpSessionInfo,
@@ -18,6 +18,7 @@ import type {
   ToolCallEvent,
 } from "@/services/acp";
 import * as acpService from "@/services/acp";
+import { settingsStore } from "@/stores/settings.store";
 
 // ============================================================================
 // Types
@@ -779,4 +780,11 @@ export const acpStore = {
   },
 };
 
-export type { AgentType, SessionStatus, AcpSessionInfo, AgentInfo, DiffEvent, DiffProposalEvent };
+export type {
+  AgentType,
+  SessionStatus,
+  AcpSessionInfo,
+  AgentInfo,
+  DiffEvent,
+  DiffProposalEvent,
+};

@@ -1,7 +1,11 @@
 // ABOUTME: ACP (Agent Client Protocol) service for spawning and communicating with AI coding agents.
 // ABOUTME: Wraps runtime commands and provides event subscriptions for agent interactions.
 
-import { isRuntimeConnected, onRuntimeEvent, runtimeInvoke } from "@/lib/bridge";
+import {
+  isRuntimeConnected,
+  onRuntimeEvent,
+  runtimeInvoke,
+} from "@/lib/bridge";
 
 type UnlistenFn = () => void;
 
@@ -439,9 +443,8 @@ export function subscribeToAllEvents(
     ),
   );
   unlisteners.push(
-    subscribeToEvent<PermissionRequestEvent>(
-      "permissionRequest",
-      (data) => callback({ type: "permissionRequest", data }),
+    subscribeToEvent<PermissionRequestEvent>("permissionRequest", (data) =>
+      callback({ type: "permissionRequest", data }),
     ),
   );
   unlisteners.push(

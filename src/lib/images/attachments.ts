@@ -34,10 +34,13 @@ export async function pickImageFiles(): Promise<string[]> {
   if (!isRuntimeConnected()) {
     throw new Error("This operation requires the local runtime to be running");
   }
-  const selected = await runtimeInvoke<string | string[] | null>("open_file_dialog", {
-    multiple: true,
-    filters: [{ name: "Images", extensions: SUPPORTED_EXTENSIONS }],
-  });
+  const selected = await runtimeInvoke<string | string[] | null>(
+    "open_file_dialog",
+    {
+      multiple: true,
+      filters: [{ name: "Images", extensions: SUPPORTED_EXTENSIONS }],
+    },
+  );
 
   if (!selected) return [];
   if (typeof selected === "string") return [selected];

@@ -2,7 +2,6 @@
 // ABOUTME: Stores conversations, messages, and provides persistence via Tauri.
 
 import { createStore } from "solid-js/store";
-import type { ProviderId } from "@/lib/providers/types";
 import {
   archiveConversation as archiveConversationDb,
   clearAllHistory as clearAllHistoryDb,
@@ -14,6 +13,7 @@ import {
   saveMessage as saveMessageDb,
   updateConversation as updateConversationDb,
 } from "@/lib/bridge";
+import type { ProviderId } from "@/lib/providers/types";
 import {
   estimateConversationTokens,
   getModelContextLimit,

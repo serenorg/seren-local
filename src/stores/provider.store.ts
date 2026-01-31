@@ -2,11 +2,6 @@
 // ABOUTME: Persists provider configuration to localStorage.
 
 import { createStore } from "solid-js/store";
-import type { ProviderId, ProviderModel } from "@/lib/providers/types";
-import {
-  CONFIGURABLE_PROVIDERS,
-  PROVIDER_CONFIGS,
-} from "@/lib/providers/types";
 import {
   clearOAuthCredentials,
   clearProviderKey,
@@ -15,6 +10,11 @@ import {
   getProviderKey,
   storeProviderKey,
 } from "@/lib/bridge";
+import type { ProviderId, ProviderModel } from "@/lib/providers/types";
+import {
+  CONFIGURABLE_PROVIDERS,
+  PROVIDER_CONFIGS,
+} from "@/lib/providers/types";
 
 const PROVIDER_SETTINGS_KEY = "seren_provider_settings";
 

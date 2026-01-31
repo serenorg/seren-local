@@ -2,8 +2,6 @@
 // ABOUTME: Uses manual fetch for login/refresh (not in OpenAPI spec) and SDK for user info.
 
 import { getCurrentUser } from "@/api";
-import { apiBase } from "@/lib/config";
-import { appFetch } from "@/lib/fetch";
 import {
   clearDefaultOrganizationId,
   clearRefreshToken,
@@ -14,6 +12,8 @@ import {
   storeRefreshToken,
   storeToken,
 } from "@/lib/bridge";
+import { apiBase } from "@/lib/config";
+import { appFetch } from "@/lib/fetch";
 
 export interface LoginResponse {
   data: {
@@ -188,17 +188,14 @@ export async function createApiKey(): Promise<string> {
     throw new Error("Not authenticated");
   }
 
-  const response = await appFetch(
-    `${apiBase}/organizations/default/api-keys`,
-    {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ name: DESKTOP_API_KEY_NAME }),
+  const response = await appFetch(`${apiBase}/organizations/default/api-keys`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
     },
-  );
+    body: JSON.stringify({ name: DESKTOP_API_KEY_NAME }),
+  });
 
   if (!response.ok) {
     const error: AuthError = await response.json().catch(() => ({

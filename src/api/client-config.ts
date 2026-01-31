@@ -1,8 +1,8 @@
 // ABOUTME: Hey-API client configuration for browser environment.
 // ABOUTME: Uses browser-native fetch with automatic token refresh on 401.
 
-import { apiBase } from "@/lib/config";
 import { getToken } from "@/lib/bridge";
+import { apiBase } from "@/lib/config";
 import type { ClientOptions, Config } from "./generated/client";
 
 // Endpoints that should not trigger auto-refresh (to avoid loops)

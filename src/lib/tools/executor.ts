@@ -1,9 +1,10 @@
 // ABOUTME: Tool executor that routes tool calls to file operations, MCP servers, or gateway.
 // ABOUTME: Handles tool call parsing, execution, and result formatting.
 
-import { isRuntimeConnected, onRuntimeEvent, runtimeInvoke } from "@/lib/bridge";
+import { onRuntimeEvent, runtimeInvoke } from "@/lib/bridge";
 
 type UnlistenFn = () => void;
+
 import { mcpClient } from "@/lib/mcp/client";
 import type { ToolCall, ToolResult } from "@/lib/providers/types";
 import { type PaymentRequirements, parsePaymentRequirements } from "@/lib/x402";
@@ -130,7 +131,9 @@ export async function executeTool(toolCall: ToolCall): Promise<ToolResult> {
       case "list_directory": {
         const path = args.path as string;
         validatePath(path);
-        const entries = await runtimeInvoke<FileEntry[]>("list_directory", { path });
+        const entries = await runtimeInvoke<FileEntry[]>("list_directory", {
+          path,
+        });
         result = formatDirectoryListing(entries);
         break;
       }

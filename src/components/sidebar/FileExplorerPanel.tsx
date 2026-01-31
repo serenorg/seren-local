@@ -1,9 +1,13 @@
 // ABOUTME: File explorer panel with folder selection and tree view.
 // ABOUTME: Provides VS Code-like file browsing for local projects.
 
-import { isRuntimeConnected, runtimeInvoke } from "@/lib/bridge";
 import { type Component, createSignal, Show } from "solid-js";
-import { type FileEntry, listDirectory } from "@/lib/bridge";
+import {
+  type FileEntry,
+  isRuntimeConnected,
+  listDirectory,
+  runtimeInvoke,
+} from "@/lib/bridge";
 import {
   type FileNode,
   fileTreeState,
@@ -40,9 +44,14 @@ export const FileExplorerPanel: Component<FileExplorerPanelProps> = (props) => {
   async function handleOpenFolder() {
     try {
       if (!isRuntimeConnected()) {
-        throw new Error("This operation requires the local runtime to be running");
+        throw new Error(
+          "This operation requires the local runtime to be running",
+        );
       }
-      const selected = await runtimeInvoke<string | null>("open_folder_dialog", {});
+      const selected = await runtimeInvoke<string | null>(
+        "open_folder_dialog",
+        {},
+      );
 
       if (selected && typeof selected === "string") {
         await loadFolder(selected);

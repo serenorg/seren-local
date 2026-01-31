@@ -1,8 +1,8 @@
 // ABOUTME: Reactive state for OpenClaw process status, connected channels, and per-channel config.
 // ABOUTME: Communicates with Rust backend via Tauri runtimeInvoke() calls and listens for events.
 
-import { isRuntimeConnected, onRuntimeEvent, runtimeInvoke } from "@/lib/bridge";
 import { createStore } from "solid-js/store";
+import { onRuntimeEvent, runtimeInvoke } from "@/lib/bridge";
 
 type UnlistenFn = () => void;
 
@@ -105,10 +105,13 @@ function setupEventListeners() {
     }
   });
 
-  unlistenMessage = onRuntimeEvent("openclaw://message-received", (_payload) => {
-    // Message events are handled by the notification system (Phase 6)
-    // and agent routing (Phase 4). No store update needed here.
-  });
+  unlistenMessage = onRuntimeEvent(
+    "openclaw://message-received",
+    (_payload) => {
+      // Message events are handled by the notification system (Phase 6)
+      // and agent routing (Phase 4). No store update needed here.
+    },
+  );
 }
 
 function teardownEventListeners() {

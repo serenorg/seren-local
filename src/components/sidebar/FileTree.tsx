@@ -1,12 +1,12 @@
 // ABOUTME: File tree component for displaying folder structure in the sidebar.
 // ABOUTME: Supports right-click context menu with file operations.
 
-import { isRuntimeConnected, runtimeInvoke } from "@/lib/bridge";
 import { type Component, createMemo, createSignal, For, Show } from "solid-js";
 import {
   ContextMenu,
   type ContextMenuItem,
 } from "@/components/common/ContextMenu";
+import { runtimeInvoke } from "@/lib/bridge";
 import {
   type FileNode,
   fileTreeState,
@@ -56,7 +56,9 @@ export const FileTree: Component<FileTreeProps> = (props) => {
   const handleCopy = async (node: FileNode) => {
     if (node.isDirectory) return;
     try {
-      const content = await runtimeInvoke<string>("read_file", { path: node.path });
+      const content = await runtimeInvoke<string>("read_file", {
+        path: node.path,
+      });
       await navigator.clipboard.writeText(content);
     } catch (err) {
       console.error("Failed to copy file:", err);

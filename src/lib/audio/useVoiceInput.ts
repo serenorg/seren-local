@@ -65,7 +65,12 @@ export function useVoiceInput(onTranscript: (text: string) => void) {
         try {
           console.log("[VoiceInput] Sending blob for transcription");
           const text = await transcribeAudio(blob, mimeType);
-          console.log("[VoiceInput] Transcription result:", JSON.stringify(text), "type:", typeof text);
+          console.log(
+            "[VoiceInput] Transcription result:",
+            JSON.stringify(text),
+            "type:",
+            typeof text,
+          );
           if (text?.trim()) {
             console.log("[VoiceInput] Calling onTranscript with:", text.trim());
             onTranscript(text.trim());

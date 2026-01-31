@@ -1,9 +1,10 @@
 // ABOUTME: Routes inbound OpenClaw messages to Seren AI and sends responses back.
 // ABOUTME: Maintains per-channel conversation context and enforces trust levels.
 
-import { isRuntimeConnected, onRuntimeEvent, runtimeInvoke } from "@/lib/bridge";
+import { onRuntimeEvent, runtimeInvoke } from "@/lib/bridge";
 
 type UnlistenFn = () => void;
+
 import { sendMessageWithTools } from "@/lib/providers/seren";
 import type {
   ChatMessageWithTools,

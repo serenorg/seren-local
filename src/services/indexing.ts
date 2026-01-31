@@ -2,7 +2,12 @@
 // ABOUTME: Orchestrates file discovery, chunking, embedding, and vector storage.
 
 import { isRuntimeConnected, runtimeInvoke } from "@/lib/bridge";
-import { EMBEDDING_DIM, embedText, embedTexts, estimateBatchTokens } from "./seren-embed";
+import {
+  EMBEDDING_DIM,
+  embedText,
+  embedTexts,
+  estimateBatchTokens,
+} from "./seren-embed";
 
 /** Index statistics from the backend */
 export interface IndexStats {
@@ -84,8 +89,11 @@ export interface IndexingProgress {
 /**
  * Initialize or get the index for a project.
  */
-export async function initProjectIndex(projectPath: string): Promise<IndexStats> {
-  if (!isRuntimeConnected()) throw new Error("This operation requires the local runtime to be running");
+export async function initProjectIndex(
+  projectPath: string,
+): Promise<IndexStats> {
+  if (!isRuntimeConnected())
+    throw new Error("This operation requires the local runtime to be running");
   return runtimeInvoke<IndexStats>("init_project_index", { projectPath });
 }
 
@@ -93,7 +101,8 @@ export async function initProjectIndex(projectPath: string): Promise<IndexStats>
  * Get index statistics for a project.
  */
 export async function getIndexStatus(projectPath: string): Promise<IndexStats> {
-  if (!isRuntimeConnected()) throw new Error("This operation requires the local runtime to be running");
+  if (!isRuntimeConnected())
+    throw new Error("This operation requires the local runtime to be running");
   return runtimeInvoke<IndexStats>("get_index_status", { projectPath });
 }
 
@@ -101,7 +110,8 @@ export async function getIndexStatus(projectPath: string): Promise<IndexStats> {
  * Check if an index exists for a project.
  */
 export async function hasProjectIndex(projectPath: string): Promise<boolean> {
-  if (!isRuntimeConnected()) throw new Error("This operation requires the local runtime to be running");
+  if (!isRuntimeConnected())
+    throw new Error("This operation requires the local runtime to be running");
   return runtimeInvoke<boolean>("has_project_index", { projectPath });
 }
 
@@ -118,7 +128,8 @@ export async function searchCodebase(
   const queryEmbedding = await embedText(query);
 
   // Search the vector store
-  if (!isRuntimeConnected()) throw new Error("This operation requires the local runtime to be running");
+  if (!isRuntimeConnected())
+    throw new Error("This operation requires the local runtime to be running");
   return runtimeInvoke<SearchResult[]>("search_codebase", {
     projectPath,
     queryEmbedding,
@@ -134,7 +145,8 @@ export async function searchCodebaseByEmbedding(
   queryEmbedding: number[],
   limit = 5,
 ): Promise<SearchResult[]> {
-  if (!isRuntimeConnected()) throw new Error("This operation requires the local runtime to be running");
+  if (!isRuntimeConnected())
+    throw new Error("This operation requires the local runtime to be running");
   return runtimeInvoke<SearchResult[]>("search_codebase", {
     projectPath,
     queryEmbedding,
@@ -150,7 +162,8 @@ export async function fileNeedsReindex(
   filePath: string,
   fileHash: string,
 ): Promise<boolean> {
-  if (!isRuntimeConnected()) throw new Error("This operation requires the local runtime to be running");
+  if (!isRuntimeConnected())
+    throw new Error("This operation requires the local runtime to be running");
   return runtimeInvoke<boolean>("file_needs_reindex", {
     projectPath,
     filePath,
@@ -165,7 +178,8 @@ export async function deleteFileIndex(
   projectPath: string,
   filePath: string,
 ): Promise<number> {
-  if (!isRuntimeConnected()) throw new Error("This operation requires the local runtime to be running");
+  if (!isRuntimeConnected())
+    throw new Error("This operation requires the local runtime to be running");
   return runtimeInvoke<number>("delete_file_index", { projectPath, filePath });
 }
 

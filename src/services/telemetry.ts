@@ -1,11 +1,11 @@
 // ABOUTME: Error telemetry service for reporting errors to Seren Gateway.
 // ABOUTME: Captures unhandled errors, scrubs PII, rate limits, and batches reports.
 
+import { getToken } from "@/lib/bridge";
 import { API_BASE } from "@/lib/config";
 import { appFetch } from "@/lib/fetch";
 import { getErrorKey, RateLimiter } from "@/lib/rate-limiter";
 import { scrubSensitive } from "@/lib/scrub-sensitive";
-import { getToken } from "@/lib/bridge";
 
 export interface ErrorReport {
   message: string;

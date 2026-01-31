@@ -4,6 +4,7 @@
 import { appFetch } from "@/lib/fetch";
 import type { OAuthCredentials, ProviderId } from "@/lib/providers/types";
 import { PROVIDER_CONFIGS, supportsOAuth } from "@/lib/providers/types";
+
 // OAuth state storage keys (sessionStorage for CSRF protection)
 const OAUTH_STATE_KEY = "seren_oauth_state";
 

@@ -1,8 +1,12 @@
 // ABOUTME: Sync store for managing file sync status.
 // ABOUTME: Listens to Tauri events and provides reactive sync state.
 
-import { isRuntimeConnected, onRuntimeEvent, runtimeInvoke } from "@/lib/bridge";
 import { createStore } from "solid-js/store";
+import {
+  isRuntimeConnected,
+  onRuntimeEvent,
+  runtimeInvoke,
+} from "@/lib/bridge";
 
 type UnlistenFn = () => void;
 
@@ -75,7 +79,10 @@ export const syncStore = {
    */
   async startWatching(path: string): Promise<void> {
     try {
-      if (!isRuntimeConnected()) throw new Error("This operation requires the local runtime to be running");
+      if (!isRuntimeConnected())
+        throw new Error(
+          "This operation requires the local runtime to be running",
+        );
       await runtimeInvoke("start_watching", { path });
     } catch (err) {
       setState({
@@ -92,7 +99,10 @@ export const syncStore = {
    */
   async stopWatching(): Promise<void> {
     try {
-      if (!isRuntimeConnected()) throw new Error("This operation requires the local runtime to be running");
+      if (!isRuntimeConnected())
+        throw new Error(
+          "This operation requires the local runtime to be running",
+        );
       await runtimeInvoke("stop_watching");
     } catch (err) {
       setState({
@@ -139,7 +149,9 @@ export const syncStore = {
     // Listen for file changes
     if (!fileChangeUnlisten) {
       fileChangeUnlisten = onRuntimeEvent("file-changed", (payload) => {
-        fileChangeHandlers.forEach((handler) => handler(payload as FileChangeEvent));
+        fileChangeHandlers.forEach((handler) =>
+          handler(payload as FileChangeEvent),
+        );
       });
     }
 

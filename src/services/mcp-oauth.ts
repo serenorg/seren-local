@@ -547,7 +547,8 @@ export async function startOAuthBrowserFlow(): Promise<TokenResponse> {
   }
 
   // Get a port from the Rust backend first so we know the redirect URI
-  if (!isRuntimeConnected()) throw new Error("This operation requires the local runtime to be running");
+  if (!isRuntimeConnected())
+    throw new Error("This operation requires the local runtime to be running");
   const port = await runtimeInvoke<number>("get_oauth_callback_port");
   const redirectUri = `http://127.0.0.1:${port}/oauth/callback`;
 

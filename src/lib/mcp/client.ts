@@ -1,8 +1,8 @@
 // ABOUTME: MCP client service for frontend communication with MCP servers.
 // ABOUTME: Provides reactive state management and Tauri IPC integration.
 
-import { isRuntimeConnected, runtimeInvoke } from "@/lib/bridge";
 import { createSignal } from "solid-js";
+import { runtimeInvoke } from "@/lib/bridge";
 import { isRecoverableError, parseMcpError } from "./errors";
 import type {
   McpConnection,
@@ -374,11 +374,14 @@ function createMcpClient() {
 
     try {
       // Connect via Tauri HTTP MCP command
-      const result = await runtimeInvoke<McpInitializeResult>("mcp_connect_http", {
-        serverName,
-        url,
-        authToken: authToken || null,
-      });
+      const result = await runtimeInvoke<McpInitializeResult>(
+        "mcp_connect_http",
+        {
+          serverName,
+          url,
+          authToken: authToken || null,
+        },
+      );
 
       // Fetch tools from HTTP MCP server
       const tools = await listToolsHttp(serverName);
