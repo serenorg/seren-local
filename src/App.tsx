@@ -11,6 +11,7 @@ import {
   Switch,
   untrack,
 } from "solid-js";
+import { connectToRuntime } from "@/lib/bridge";
 import { SignIn } from "@/components/auth/SignIn";
 import { CatalogPanel } from "@/components/catalog";
 import { ChatContent } from "@/components/chat/ChatContent";
@@ -70,6 +71,13 @@ function App() {
   const [showEditor, setShowEditor] = createSignal(false);
 
   onMount(async () => {
+    // Try connecting to local runtime (non-blocking)
+    connectToRuntime().then((connected) => {
+      if (connected) {
+        console.log("[App] Local runtime connected");
+      }
+    });
+
     checkAuth();
     updaterStore.initUpdater();
 
