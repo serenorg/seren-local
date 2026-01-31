@@ -3,7 +3,7 @@
 
 import { mcpClient } from "@/lib/mcp/client";
 import type { McpTool, McpToolResult } from "@/lib/mcp/types";
-import { getSerenApiKey } from "@/lib/tauri-bridge";
+import { getSerenApiKey } from "@/lib/bridge";
 
 const MCP_GATEWAY_URL = "https://mcp.serendb.com/mcp";
 const SEREN_MCP_SERVER_NAME = "seren-gateway";

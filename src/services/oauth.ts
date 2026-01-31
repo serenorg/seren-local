@@ -4,7 +4,7 @@
 import { appFetch } from "@/lib/fetch";
 import type { OAuthCredentials, ProviderId } from "@/lib/providers/types";
 import { PROVIDER_CONFIGS, supportsOAuth } from "@/lib/providers/types";
-import { isTauriRuntime } from "@/lib/tauri-bridge";
+import { isTauriRuntime } from "@/lib/bridge";
 
 // OAuth state storage (in-memory during auth flow)
 interface OAuthState {

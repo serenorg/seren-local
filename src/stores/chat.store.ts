@@ -13,7 +13,7 @@ import {
   getMessages as getMessagesDb,
   saveMessage as saveMessageDb,
   updateConversation as updateConversationDb,
-} from "@/lib/tauri-bridge";
+} from "@/lib/bridge";
 import {
   estimateConversationTokens,
   getModelContextLimit,

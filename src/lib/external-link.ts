@@ -1,7 +1,7 @@
 // ABOUTME: External link handler for opening URLs in the default browser.
 // ABOUTME: Uses Tauri opener plugin when available, falls back to window.open.
 
-import { isTauriRuntime } from "@/lib/tauri-bridge";
+import { isTauriRuntime } from "@/lib/bridge";
 
 type OpenUrlFn = (url: string | URL, openWith?: string) => Promise<void>;
 

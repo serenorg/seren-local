@@ -20,7 +20,7 @@ import {
 import {
   listenForOAuthCallback,
   storeOAuthCredentials,
-} from "@/lib/tauri-bridge";
+} from "@/lib/bridge";
 import {
   cancelOAuthFlow,
   getPendingOAuthProvider,

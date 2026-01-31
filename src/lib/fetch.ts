@@ -1,7 +1,7 @@
 // ABOUTME: Fetch wrapper for HTTP requests in Tauri environment.
 // ABOUTME: Uses Tauri HTTP plugin when available, falls back to browser fetch.
 
-import { getToken, isTauriRuntime } from "./tauri-bridge";
+import { getToken, isTauriRuntime } from "./bridge";
 
 type TauriFetch = typeof globalThis.fetch;
 
