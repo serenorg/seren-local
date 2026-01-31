@@ -4,9 +4,9 @@
 import { appFetch } from "@/lib/fetch";
 import type { OAuthCredentials, ProviderId } from "@/lib/providers/types";
 import { PROVIDER_CONFIGS, supportsOAuth } from "@/lib/providers/types";
-import { isTauriRuntime } from "@/lib/bridge";
+// OAuth state storage keys (sessionStorage for CSRF protection)
+const OAUTH_STATE_KEY = "seren_oauth_state";
 
-// OAuth state storage (in-memory during auth flow)
 interface OAuthState {
   providerId: ProviderId;
   codeVerifier: string;
@@ -14,7 +14,23 @@ interface OAuthState {
   redirectUri: string;
 }
 
-let pendingOAuthState: OAuthState | null = null;
+function savePendingState(state: OAuthState): void {
+  sessionStorage.setItem(OAUTH_STATE_KEY, JSON.stringify(state));
+}
+
+function loadPendingState(): OAuthState | null {
+  const raw = sessionStorage.getItem(OAUTH_STATE_KEY);
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw) as OAuthState;
+  } catch {
+    return null;
+  }
+}
+
+function clearPendingState(): void {
+  sessionStorage.removeItem(OAUTH_STATE_KEY);
+}
 
 /**
  * Generate a cryptographically random string for PKCE.
@@ -43,11 +59,6 @@ async function generateCodeChallenge(verifier: string): Promise<string> {
  * Get the OAuth redirect URI for this app.
  */
 function getRedirectUri(): string {
-  if (isTauriRuntime()) {
-    // Tauri deep link
-    return "seren://oauth/callback";
-  }
-  // Browser fallback (for development)
   return `${window.location.origin}/oauth/callback`;
 }
 
@@ -78,13 +89,13 @@ export async function startOAuthFlow(providerId: ProviderId): Promise<void> {
   const state = generateRandomString(32);
   const redirectUri = getRedirectUri();
 
-  // Store state for callback verification
-  pendingOAuthState = {
+  // Store state for callback verification (sessionStorage for CSRF protection)
+  savePendingState({
     providerId,
     codeVerifier,
     state,
     redirectUri,
-  };
+  });
 
   // Build authorization URL
   const params = new URLSearchParams({
@@ -99,13 +110,7 @@ export async function startOAuthFlow(providerId: ProviderId): Promise<void> {
 
   const authUrl = `${oauthConfig.authUrl}?${params.toString()}`;
 
-  // Open in browser
-  if (isTauriRuntime()) {
-    const { open } = await import("@tauri-apps/plugin-shell");
-    await open(authUrl);
-  } else {
-    window.open(authUrl, "_blank");
-  }
+  window.open(authUrl, "_blank", "noopener,noreferrer");
 }
 
 /**
@@ -116,22 +121,23 @@ export async function handleOAuthCallback(
   code: string,
   state: string,
 ): Promise<OAuthCredentials> {
-  if (!pendingOAuthState) {
+  const pendingState = loadPendingState();
+  if (!pendingState) {
     throw new Error("No pending OAuth flow. Please start the flow again.");
   }
 
-  // Verify state
-  if (state !== pendingOAuthState.state) {
-    pendingOAuthState = null;
-    throw new Error("OAuth state mismatch. Please try again.");
+  // Verify state (CSRF protection)
+  if (state !== pendingState.state) {
+    clearPendingState();
+    throw new Error("OAuth state mismatch — possible CSRF attack");
   }
 
-  const { providerId, codeVerifier, redirectUri } = pendingOAuthState;
+  const { providerId, codeVerifier, redirectUri } = pendingState;
   const config = PROVIDER_CONFIGS[providerId];
   const oauthConfig = config.oauth;
 
   if (!oauthConfig) {
-    pendingOAuthState = null;
+    clearPendingState();
     throw new Error(`OAuth configuration not found for ${providerId}`);
   }
 
@@ -153,13 +159,13 @@ export async function handleOAuthCallback(
   });
 
   if (!response.ok) {
-    pendingOAuthState = null;
+    clearPendingState();
     const error = await response.text();
     throw new Error(`Token exchange failed: ${error}`);
   }
 
   const tokenData = await response.json();
-  pendingOAuthState = null;
+  clearPendingState();
 
   const credentials: OAuthCredentials = {
     type: "oauth",
@@ -239,12 +245,12 @@ export function needsRefresh(credentials: OAuthCredentials): boolean {
  * Get the pending OAuth provider (if flow is in progress).
  */
 export function getPendingOAuthProvider(): ProviderId | null {
-  return pendingOAuthState?.providerId || null;
+  return loadPendingState()?.providerId ?? null;
 }
 
 /**
  * Cancel any pending OAuth flow.
  */
 export function cancelOAuthFlow(): void {
-  pendingOAuthState = null;
+  clearPendingState();
 }

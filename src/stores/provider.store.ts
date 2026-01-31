@@ -1,5 +1,5 @@
 // ABOUTME: Provider store for managing LLM provider API keys and selection.
-// ABOUTME: Persists provider configuration to Tauri encrypted store.
+// ABOUTME: Persists provider configuration to localStorage.
 
 import { createStore } from "solid-js/store";
 import type { ProviderId, ProviderModel } from "@/lib/providers/types";
@@ -13,26 +13,10 @@ import {
   getConfiguredProviders,
   getOAuthProviders,
   getProviderKey,
-  isTauriRuntime,
   storeProviderKey,
 } from "@/lib/bridge";
 
-const PROVIDER_SETTINGS_STORE = "provider-settings.json";
-const PROVIDER_SETTINGS_KEY = "provider-settings";
-const BROWSER_PROVIDER_SETTINGS_KEY = "seren_provider_settings";
-
-/**
- * Get invoke function only when in Tauri runtime.
- */
-async function getInvoke(): Promise<
-  typeof import("@tauri-apps/api/core").invoke | null
-> {
-  if (!isTauriRuntime()) {
-    return null;
-  }
-  const { invoke } = await import("@tauri-apps/api/core");
-  return invoke;
-}
+const PROVIDER_SETTINGS_KEY = "seren_provider_settings";
 
 /**
  * Provider selection settings (persisted).
@@ -182,18 +166,7 @@ const [state, setState] = createStore<ProviderState>({ ...DEFAULT_STATE });
  */
 async function loadProviderSelectionSettings(): Promise<void> {
   try {
-    const invoke = await getInvoke();
-    let stored: string | null = null;
-
-    if (invoke) {
-      stored = await invoke<string | null>("get_setting", {
-        store: PROVIDER_SETTINGS_STORE,
-        key: PROVIDER_SETTINGS_KEY,
-      });
-    } else {
-      stored = localStorage.getItem(BROWSER_PROVIDER_SETTINGS_KEY);
-    }
-
+    const stored = localStorage.getItem(PROVIDER_SETTINGS_KEY);
     if (stored) {
       const parsed = JSON.parse(stored) as Partial<ProviderSelectionSettings>;
       if (parsed.activeProvider) {
@@ -213,22 +186,11 @@ async function loadProviderSelectionSettings(): Promise<void> {
  */
 async function saveProviderSelectionSettings(): Promise<void> {
   try {
-    const invoke = await getInvoke();
     const settings: ProviderSelectionSettings = {
       activeProvider: state.activeProvider,
       activeModel: state.activeModel,
     };
-    const value = JSON.stringify(settings);
-
-    if (invoke) {
-      await invoke("set_setting", {
-        store: PROVIDER_SETTINGS_STORE,
-        key: PROVIDER_SETTINGS_KEY,
-        value,
-      });
-    } else {
-      localStorage.setItem(BROWSER_PROVIDER_SETTINGS_KEY, value);
-    }
+    localStorage.setItem(PROVIDER_SETTINGS_KEY, JSON.stringify(settings));
   } catch (error) {
     console.error("Failed to save provider settings:", error);
   }

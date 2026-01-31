@@ -1,28 +1,11 @@
 // ABOUTME: Settings store for managing user preferences and MCP configuration.
-// ABOUTME: Persists settings to Tauri store for cross-session persistence.
+// ABOUTME: Persists settings to localStorage for cross-session persistence.
 
 import { createStore } from "solid-js/store";
 import type { McpServerConfig, McpSettings } from "@/lib/mcp/types";
-import { isTauriRuntime } from "@/lib/bridge";
 
-const SETTINGS_STORE = "settings.json";
-const MCP_SETTINGS_KEY = "mcp";
-const APP_SETTINGS_KEY = "app";
-const BROWSER_SETTINGS_KEY = "seren_settings";
-const BROWSER_MCP_KEY = "seren_mcp_settings";
-
-/**
- * Get invoke function only when in Tauri runtime.
- */
-async function getInvoke(): Promise<
-  typeof import("@tauri-apps/api/core").invoke | null
-> {
-  if (!isTauriRuntime()) {
-    return null;
-  }
-  const { invoke } = await import("@tauri-apps/api/core");
-  return invoke;
-}
+const SETTINGS_KEY = "seren_settings";
+const MCP_SETTINGS_KEY = "seren_mcp_settings";
 
 /**
  * Application settings.
@@ -167,19 +150,7 @@ const [settingsState, setSettingsState] = createStore<SettingsState>({
  */
 async function loadAppSettings(): Promise<void> {
   try {
-    const invoke = await getInvoke();
-    let stored: string | null = null;
-
-    if (invoke) {
-      stored = await invoke<string | null>("get_setting", {
-        store: SETTINGS_STORE,
-        key: APP_SETTINGS_KEY,
-      });
-    } else {
-      // Browser fallback
-      stored = localStorage.getItem(BROWSER_SETTINGS_KEY);
-    }
-
+    const stored = localStorage.getItem(SETTINGS_KEY);
     if (stored) {
       const parsed = JSON.parse(stored) as Partial<Settings>;
       setSettingsState("app", { ...DEFAULT_SETTINGS, ...parsed });
@@ -194,19 +165,7 @@ async function loadAppSettings(): Promise<void> {
  */
 async function saveAppSettings(): Promise<void> {
   try {
-    const invoke = await getInvoke();
-    const value = JSON.stringify(settingsState.app);
-
-    if (invoke) {
-      await invoke("set_setting", {
-        store: SETTINGS_STORE,
-        key: APP_SETTINGS_KEY,
-        value,
-      });
-    } else {
-      // Browser fallback
-      localStorage.setItem(BROWSER_SETTINGS_KEY, value);
-    }
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify(settingsState.app));
   } catch (error) {
     console.error("Failed to save app settings:", error);
   }
@@ -286,19 +245,7 @@ export const settingsStore = {
  */
 async function loadMcpSettings(): Promise<void> {
   try {
-    const invoke = await getInvoke();
-    let stored: string | null = null;
-
-    if (invoke) {
-      stored = await invoke<string | null>("get_setting", {
-        store: SETTINGS_STORE,
-        key: MCP_SETTINGS_KEY,
-      });
-    } else {
-      // Browser fallback
-      stored = localStorage.getItem(BROWSER_MCP_KEY);
-    }
-
+    const stored = localStorage.getItem(MCP_SETTINGS_KEY);
     if (stored) {
       const parsed = JSON.parse(stored) as McpSettings;
       setSettingsState("mcp", parsed);
@@ -313,19 +260,7 @@ async function loadMcpSettings(): Promise<void> {
  */
 async function saveMcpSettings(): Promise<void> {
   try {
-    const invoke = await getInvoke();
-    const value = JSON.stringify(settingsState.mcp);
-
-    if (invoke) {
-      await invoke("set_setting", {
-        store: SETTINGS_STORE,
-        key: MCP_SETTINGS_KEY,
-        value,
-      });
-    } else {
-      // Browser fallback
-      localStorage.setItem(BROWSER_MCP_KEY, value);
-    }
+    localStorage.setItem(MCP_SETTINGS_KEY, JSON.stringify(settingsState.mcp));
   } catch (error) {
     console.error("Failed to save MCP settings:", error);
     throw error;
