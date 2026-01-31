@@ -3,6 +3,8 @@
 
 import { createServer } from "node:http";
 import { WebSocketServer } from "ws";
+import { handleMessage } from "./rpc";
+import { registerAllHandlers } from "./handlers/index";
 
 const PORT = Number(process.env.SEREN_PORT) || 19420;
 
@@ -54,12 +56,18 @@ wss.on("connection", (ws, req) => {
 
   console.log("[Runtime] Browser connected");
 
-  ws.on("message", async (_data) => {
-    // Handle JSON-RPC — implemented in Task 2.2
+  ws.on("message", async (data) => {
+    const raw = typeof data === "string" ? data : data.toString();
+    const response = await handleMessage(raw);
+    if (response !== null) {
+      ws.send(response);
+    }
   });
 
   ws.on("close", () => console.log("[Runtime] Browser disconnected"));
 });
+
+registerAllHandlers();
 
 httpServer.listen(PORT, "127.0.0.1", () => {
   console.log(`[Seren Runtime] Listening on http://127.0.0.1:${PORT}`);
