@@ -239,8 +239,7 @@ registry.register({
   description: "Show About Seren dialog",
   panels: ["chat", "agent"],
   execute: async (ctx) => {
-    const { emit } = await import("@tauri-apps/api/event");
-    await emit("open-about");
+    window.dispatchEvent(new CustomEvent("open-about"));
     ctx.clearInput();
     return true;
   },

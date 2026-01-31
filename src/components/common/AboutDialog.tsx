@@ -1,42 +1,29 @@
-// ABOUTME: About Seren dialog showing detailed build information.
-// ABOUTME: Triggered by the native "About Seren" menu item via Tauri event.
+// ABOUTME: About Seren dialog showing build information.
+// ABOUTME: Triggered by custom DOM event "open-about".
 
 import { createSignal, onCleanup, onMount, Show } from "solid-js";
-import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
 import "./AboutDialog.css";
 
 interface BuildInfo {
   app_version: string;
-  release_tag: string;
-  commit: string;
-  build_date: string;
   build_type: string;
-  tauri_version: string;
-  webview: string;
-  rust_version: string;
-  os: string;
+  platform: string;
 }
 
 export function AboutDialog() {
   const [isOpen, setIsOpen] = createSignal(false);
-  const [info, setInfo] = createSignal<BuildInfo | null>(null);
   const [copied, setCopied] = createSignal(false);
 
-  onMount(() => {
-    const unlisten = listen("open-about", async () => {
-      try {
-        const buildInfo = await invoke<BuildInfo>("get_build_info");
-        setInfo(buildInfo);
-      } catch (e) {
-        console.error("[AboutDialog] Failed to get build info:", e);
-      }
-      setIsOpen(true);
-    });
+  const buildInfo: BuildInfo = {
+    app_version: import.meta.env.VITE_APP_VERSION ?? "0.1.0",
+    build_type: import.meta.env.DEV ? "development" : "production",
+    platform: "browser",
+  };
 
-    onCleanup(() => {
-      unlisten.then((fn) => fn());
-    });
+  onMount(() => {
+    const handler = () => setIsOpen(true);
+    window.addEventListener("open-about", handler);
+    onCleanup(() => window.removeEventListener("open-about", handler));
   });
 
   function close() {
@@ -49,19 +36,10 @@ export function AboutDialog() {
   }
 
   function copyInfo() {
-    const data = info();
-    if (!data) return;
-
     const text = [
-      `Version: ${data.app_version}`,
-      `Release: ${data.release_tag}`,
-      `Commit: ${data.commit}`,
-      `Date: ${data.build_date}`,
-      `Build Type: ${data.build_type}`,
-      `Tauri: ${data.tauri_version}`,
-      `WebView: ${data.webview}`,
-      `Rust: ${data.rust_version}`,
-      `OS: ${data.os}`,
+      `Version: ${buildInfo.app_version}`,
+      `Build Type: ${buildInfo.build_type}`,
+      `Platform: ${buildInfo.platform}`,
     ].join("\n");
 
     navigator.clipboard.writeText(text).then(() => {
@@ -77,21 +55,11 @@ export function AboutDialog() {
           <div class="about-header">
             <h2>Seren</h2>
           </div>
-          <Show when={info()}>
-            {(data) => (
-              <div class="about-content">
-                <Row label="Version" value={data().app_version} />
-                <Row label="Release" value={data().release_tag} />
-                <Row label="Commit" value={data().commit} />
-                <Row label="Date" value={data().build_date} />
-                <Row label="Build Type" value={data().build_type} />
-                <Row label="Tauri" value={data().tauri_version} />
-                <Row label="WebView" value={data().webview} />
-                <Row label="Rust" value={data().rust_version} />
-                <Row label="OS" value={data().os} />
-              </div>
-            )}
-          </Show>
+          <div class="about-content">
+            <Row label="Version" value={buildInfo.app_version} />
+            <Row label="Build Type" value={buildInfo.build_type} />
+            <Row label="Platform" value={buildInfo.platform} />
+          </div>
           <div class="about-footer">
             <button class="about-btn-ok" onClick={close}>
               OK
