@@ -1,0 +1,47 @@
+{
+  "name": "seren-browser",
+  "version": "0.1.0",
+  "description": "Browser-first AI agent platform with optional local runtime",
+  "type": "module",
+  "scripts": {
+    "start": "vite",
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "generate:api": "openapi-ts -f openapi/openapi-ts.config.ts",
+    "lint": "biome lint",
+    "lint:fix": "biome lint --fix",
+    "format": "biome format --write",
+    "format:check": "biome format",
+    "check": "biome check",
+    "check:fix": "biome check --fix",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui",
+    "test:e2e:headed": "playwright test --headed"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "@monaco-editor/loader": "^1.7.0",
+    "@tailwindcss/vite": "4",
+    "highlight.js": "^11.11.1",
+    "marked": "^17.0.1",
+    "monaco-editor": "^0.55.1",
+    "pdfjs-dist": "^5.4.530",
+    "solid-js": "^1.9.3",
+    "tailwind-merge": "^3.4.0",
+    "tailwindcss": "4"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.3.11",
+    "@hey-api/openapi-ts": "0.90.10",
+    "@playwright/test": "^1.58.0",
+    "@types/node": "^25.0.10",
+    "tsx": "^4.19.0",
+    "typescript": "~5.6.2",
+    "vite": "^6.0.3",
+    "vite-plugin-solid": "^2.11.0",
+    "vitest": "^4.0.18"
+  }
+}

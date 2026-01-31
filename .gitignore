@@ -1,0 +1,65 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+target/
+src-tauri/target/
+.build/
+
+# Environment files (NEVER commit these)
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# Logs
+*.log
+npm-debug.log*
+
+# Test coverage
+coverage/
+test-results/
+
+# Tauri
+src-tauri/WixTools/
+src-tauri/gen/schemas/
+src-tauri/binaries/
+
+# Embedded runtime binaries (downloaded, not committed)
+# Keep .gitkeep placeholder for CI
+src-tauri/embedded-runtime/bin/
+src-tauri/embedded-runtime/openclaw/
+src-tauri/embedded-runtime/darwin-*/
+src-tauri/embedded-runtime/win32-*/
+src-tauri/embedded-runtime/linux-*/
+
+# Generated icons (note: icon.ico is tracked for Windows builds)
+src-tauri/icons/android/
+src-tauri/icons/ios/
+
+# OS files
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.temp
+src-tauri/*.txt
+
+# Planning and notes (use external docs)
+docs/
+
+# Lock files (keep pnpm-lock.yaml)
+package-lock.json
+yarn.lock
+
+# Claude Code local settings (per-developer)
+.claude/settings.local.json

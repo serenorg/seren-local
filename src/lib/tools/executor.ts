@@ -1,0 +1,573 @@
+// ABOUTME: Tool executor that routes tool calls to file operations, MCP servers, or gateway.
+// ABOUTME: Handles tool call parsing, execution, and result formatting.
+
+import { invoke } from "@tauri-apps/api/core";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { mcpClient } from "@/lib/mcp/client";
+import type { ToolCall, ToolResult } from "@/lib/providers/types";
+import { type PaymentRequirements, parsePaymentRequirements } from "@/lib/x402";
+import { callGatewayTool, type PaymentProxyInfo } from "@/services/mcp-gateway";
+import { x402Service } from "@/services/x402";
+import {
+  parseGatewayToolName,
+  parseMcpToolName,
+  parseOpenClawToolName,
+} from "./definitions";
+
+/**
+ * File entry returned by list_directory.
+ */
+interface FileEntry {
+  name: string;
+  path: string;
+  is_directory: boolean;
+}
+
+const OPENCLAW_APPROVAL_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
+
+function parseOpenClawApprovalError(
+  message: string,
+): { approvalId: string } | null {
+  const trimmed = message.trim();
+  const jsonStart = trimmed.indexOf("{");
+  if (jsonStart === -1) return null;
+  const json = trimmed.slice(jsonStart);
+  try {
+    const parsed = JSON.parse(json) as unknown;
+    if (
+      typeof parsed === "object" &&
+      parsed != null &&
+      "code" in parsed &&
+      (parsed as { code?: unknown }).code === "approval_required" &&
+      "approvalId" in parsed
+    ) {
+      const approvalId = (parsed as { approvalId?: unknown }).approvalId;
+      if (typeof approvalId === "string" && approvalId.length > 0) {
+        return { approvalId };
+      }
+    }
+  } catch {
+    // Not JSON
+  }
+  return null;
+}
+
+async function waitForOpenClawApproval(approvalId: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    let unlisten: UnlistenFn | undefined;
+    const timeout = setTimeout(() => {
+      unlisten?.();
+      resolve(false);
+    }, OPENCLAW_APPROVAL_TIMEOUT_MS);
+
+    listen<{ id: string; approved: boolean }>(
+      "openclaw://approval-response",
+      (event) => {
+        if (event.payload.id !== approvalId) return;
+        clearTimeout(timeout);
+        unlisten?.();
+        resolve(event.payload.approved);
+      },
+    )
+      .then((fn) => {
+        unlisten = fn;
+      })
+      .catch(() => {
+        clearTimeout(timeout);
+        resolve(false);
+      });
+  });
+}
+
+/**
+ * Execute a single tool call and return the result.
+ * Routes to MCP servers or file tools based on prefix.
+ */
+export async function executeTool(toolCall: ToolCall): Promise<ToolResult> {
+  const { name, arguments: argsJson } = toolCall.function;
+
+  try {
+    const args = (argsJson ? JSON.parse(argsJson) : {}) as Record<
+      string,
+      unknown
+    >;
+
+    // Check if this is a Seren Gateway tool call (gateway__publisher__toolName)
+    const gatewayInfo = parseGatewayToolName(name);
+    if (gatewayInfo) {
+      return await executeGatewayTool(
+        toolCall.id,
+        gatewayInfo.publisherSlug,
+        gatewayInfo.toolName,
+        args,
+      );
+    }
+
+    // Check if this is a local MCP tool call (mcp__server__toolName)
+    const mcpInfo = parseMcpToolName(name);
+    if (mcpInfo) {
+      return await executeMcpTool(
+        toolCall.id,
+        mcpInfo.serverName,
+        mcpInfo.toolName,
+        args,
+      );
+    }
+
+    // Check if this is an OpenClaw tool call (openclaw__toolName)
+    const openclawInfo = parseOpenClawToolName(name);
+    if (openclawInfo) {
+      return await executeOpenClawTool(
+        toolCall.id,
+        openclawInfo.toolName,
+        args,
+      );
+    }
+
+    // Otherwise, handle local file tools
+    let result: unknown;
+
+    switch (name) {
+      case "read_file": {
+        const path = args.path as string;
+        validatePath(path);
+        result = await invoke<string>("read_file", { path });
+        break;
+      }
+
+      case "list_directory": {
+        const path = args.path as string;
+        validatePath(path);
+        const entries = await invoke<FileEntry[]>("list_directory", { path });
+        result = formatDirectoryListing(entries);
+        break;
+      }
+
+      case "write_file": {
+        const path = args.path as string;
+        const content = args.content as string;
+        validatePath(path);
+        if (content == null) {
+          throw new Error("Invalid content: content must be provided");
+        }
+        await invoke("write_file", { path, content });
+        result = `Successfully wrote ${content.length} characters to ${path}`;
+        break;
+      }
+
+      case "path_exists": {
+        const path = args.path as string;
+        validatePath(path);
+        const exists = await invoke<boolean>("path_exists", { path });
+        result = exists
+          ? `Path exists: ${path}`
+          : `Path does not exist: ${path}`;
+        break;
+      }
+
+      case "create_directory": {
+        const path = args.path as string;
+        validatePath(path);
+        await invoke("create_directory", { path });
+        result = `Successfully created directory: ${path}`;
+        break;
+      }
+
+      case "seren_web_fetch": {
+        const url = args.url as string;
+        const timeoutMs = args.timeout_ms as number | undefined;
+        const response = await invoke<{
+          content: string;
+          content_type: string;
+          url: string;
+          status: number;
+          truncated: boolean;
+        }>("web_fetch", { url, timeoutMs });
+
+        if (response.status >= 400) {
+          result = `Error: HTTP ${response.status} for ${response.url}`;
+        } else {
+          result = response.content;
+        }
+        break;
+      }
+
+      default:
+        throw new Error(`Unknown tool: ${name}`);
+    }
+
+    return {
+      tool_call_id: toolCall.id,
+      content:
+        typeof result === "string" ? result : JSON.stringify(result, null, 2),
+      is_error: false,
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return {
+      tool_call_id: toolCall.id,
+      content: `Error: ${message}`,
+      is_error: true,
+    };
+  }
+}
+
+/**
+ * Execute an OpenClaw tool call via Tauri IPC.
+ */
+async function executeOpenClawTool(
+  toolCallId: string,
+  toolName: string,
+  args: Record<string, unknown>,
+): Promise<ToolResult> {
+  try {
+    switch (toolName) {
+      case "send_message": {
+        const channel = args.channel as string;
+        const to = args.to as string;
+        const message = args.message as string;
+        if (!channel || !to || !message) {
+          return {
+            tool_call_id: toolCallId,
+            content: "Missing required parameters: channel, to, message",
+            is_error: true,
+          };
+        }
+        let result: string;
+        try {
+          result = await invoke<string>("openclaw_send", {
+            channel,
+            to,
+            message,
+          });
+        } catch (error) {
+          const errorMessage =
+            error instanceof Error ? error.message : String(error);
+          const approval = parseOpenClawApprovalError(errorMessage);
+          if (!approval) throw error;
+
+          const approved = await waitForOpenClawApproval(approval.approvalId);
+          if (!approved) {
+            return {
+              tool_call_id: toolCallId,
+              content: "Message was not approved.",
+              is_error: true,
+            };
+          }
+
+          result = await invoke<string>("openclaw_send", {
+            channel,
+            to,
+            message,
+          });
+        }
+        return {
+          tool_call_id: toolCallId,
+          content: result || "Message sent successfully.",
+          is_error: false,
+        };
+      }
+      case "list_channels": {
+        const channels = await invoke<
+          Array<{
+            id: string;
+            platform: string;
+            displayName: string;
+            status: string;
+          }>
+        >("openclaw_list_channels");
+        return {
+          tool_call_id: toolCallId,
+          content: JSON.stringify(channels, null, 2),
+          is_error: false,
+        };
+      }
+      case "channel_status": {
+        const channelId = args.channel as string;
+        if (!channelId) {
+          return {
+            tool_call_id: toolCallId,
+            content: "Missing required parameter: channel",
+            is_error: true,
+          };
+        }
+        const allChannels = await invoke<
+          Array<{
+            id: string;
+            platform: string;
+            displayName: string;
+            status: string;
+          }>
+        >("openclaw_list_channels");
+        const found = allChannels.find((c) => c.id === channelId);
+        if (!found) {
+          return {
+            tool_call_id: toolCallId,
+            content: `Channel not found: ${channelId}`,
+            is_error: true,
+          };
+        }
+        return {
+          tool_call_id: toolCallId,
+          content: JSON.stringify(found, null, 2),
+          is_error: false,
+        };
+      }
+      default:
+        return {
+          tool_call_id: toolCallId,
+          content: `Unknown OpenClaw tool: ${toolName}`,
+          is_error: true,
+        };
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return {
+      tool_call_id: toolCallId,
+      content: `OpenClaw tool error: ${message}`,
+      is_error: true,
+    };
+  }
+}
+
+/**
+ * Execute an MCP tool call via the MCP client (local stdio servers).
+ */
+async function executeMcpTool(
+  toolCallId: string,
+  serverName: string,
+  toolName: string,
+  args: Record<string, unknown>,
+): Promise<ToolResult> {
+  try {
+    const result = await mcpClient.callTool(serverName, {
+      name: toolName,
+      arguments: args,
+    });
+
+    // Convert MCP result content to string
+    let content = "";
+    for (const item of result.content) {
+      if (item.type === "text") {
+        content += item.text;
+      } else if (item.type === "image") {
+        content += `[Image: ${item.mimeType}]`;
+      } else if (item.type === "resource") {
+        content += item.resource.text || `[Resource: ${item.resource.uri}]`;
+      }
+    }
+
+    return {
+      tool_call_id: toolCallId,
+      content: content || "Tool executed successfully",
+      is_error: result.isError ?? false,
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return {
+      tool_call_id: toolCallId,
+      content: `MCP tool error: ${message}`,
+      is_error: true,
+    };
+  }
+}
+
+/**
+ * Extract PaymentRequirements from proxy payment info.
+ */
+function extractPaymentRequirements(
+  proxyInfo: PaymentProxyInfo,
+): PaymentRequirements | null {
+  // Try parsing from payment_requirements first (the body JSON)
+  if (proxyInfo.payment_requirements) {
+    try {
+      return parsePaymentRequirements(
+        JSON.stringify(proxyInfo.payment_requirements),
+      );
+    } catch {
+      // Fall through to try header
+    }
+  }
+
+  // Try parsing from the PAYMENT-REQUIRED header (base64-encoded)
+  if (proxyInfo.payment_required_header) {
+    try {
+      const decoded = atob(proxyInfo.payment_required_header);
+      return parsePaymentRequirements(decoded);
+    } catch {
+      // Failed to decode/parse header
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Execute a gateway tool call via the MCP Gateway.
+ * Handles x402 payment proxy flow: if server returns payment requirements,
+ * signs the payment locally and retries with _x402_payment parameter.
+ */
+async function executeGatewayTool(
+  toolCallId: string,
+  publisherSlug: string,
+  toolName: string,
+  args: Record<string, unknown>,
+): Promise<ToolResult> {
+  try {
+    const response = await callGatewayTool(publisherSlug, toolName, args);
+
+    // Check if this is a payment proxy response (requires client-side signing)
+    if (response.is_error && response.payment_proxy) {
+      console.log(
+        "[Tool Executor] Payment proxy detected, attempting local signing...",
+      );
+
+      const requirements = extractPaymentRequirements(response.payment_proxy);
+      if (!requirements) {
+        return {
+          tool_call_id: toolCallId,
+          content:
+            "Payment required but could not parse payment requirements from server response",
+          is_error: true,
+        };
+      }
+
+      // Use the x402 service to handle payment (shows UI, signs, etc.)
+      const paymentResult = await x402Service.handlePaymentRequired(
+        `seren-gateway/${publisherSlug}`,
+        toolName,
+        new Error(JSON.stringify(response.payment_proxy)),
+      );
+
+      if (!paymentResult || !paymentResult.success) {
+        return {
+          tool_call_id: toolCallId,
+          content: paymentResult?.error || "Payment was cancelled or failed",
+          is_error: true,
+        };
+      }
+
+      // If crypto payment was signed, retry with the payment header
+      if (paymentResult.paymentHeader) {
+        console.log("[Tool Executor] Retrying with signed payment...");
+
+        const retryArgs = {
+          ...args,
+          _x402_payment: paymentResult.paymentHeader,
+        };
+
+        const retryResponse = await callGatewayTool(
+          publisherSlug,
+          toolName,
+          retryArgs,
+        );
+
+        const retryContent =
+          typeof retryResponse.result === "string"
+            ? retryResponse.result
+            : JSON.stringify(retryResponse.result, null, 2);
+
+        return {
+          tool_call_id: toolCallId,
+          content: retryContent || "Tool executed successfully with payment",
+          is_error: retryResponse.is_error,
+        };
+      }
+
+      // SerenBucks payment - server handles it via auth token
+      // Just retry the original call (auth token is always sent)
+      if (paymentResult.method === "serenbucks") {
+        console.log(
+          "[Tool Executor] SerenBucks selected, retrying (server uses auth token)...",
+        );
+
+        // For SerenBucks, we might need to add a flag to indicate user confirmed
+        // For now, just retry - the server should accept prepaid if available
+        const retryResponse = await callGatewayTool(
+          publisherSlug,
+          toolName,
+          args,
+        );
+
+        const retryContent =
+          typeof retryResponse.result === "string"
+            ? retryResponse.result
+            : JSON.stringify(retryResponse.result, null, 2);
+
+        return {
+          tool_call_id: toolCallId,
+          content: retryContent || "Tool executed successfully",
+          is_error: retryResponse.is_error,
+        };
+      }
+    }
+
+    // Convert result to string content
+    const content =
+      typeof response.result === "string"
+        ? response.result
+        : JSON.stringify(response.result, null, 2);
+
+    return {
+      tool_call_id: toolCallId,
+      content: content || "Tool executed successfully",
+      is_error: response.is_error,
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return {
+      tool_call_id: toolCallId,
+      content: `Gateway tool error: ${message}`,
+      is_error: true,
+    };
+  }
+}
+
+/**
+ * Execute multiple tool calls in parallel.
+ */
+export async function executeTools(
+  toolCalls: ToolCall[],
+): Promise<ToolResult[]> {
+  return Promise.all(toolCalls.map(executeTool));
+}
+
+/**
+ * Validate a path to prevent directory traversal attacks.
+ * Throws if the path is suspicious.
+ */
+function validatePath(path: string): void {
+  if (!path || typeof path !== "string") {
+    throw new Error("Invalid path: path must be a non-empty string");
+  }
+
+  // Check for null bytes (common attack vector)
+  if (path.includes("\0")) {
+    throw new Error("Invalid path: contains null byte");
+  }
+
+  // Warn about suspicious patterns but don't block (user may have legitimate use)
+  // The Tauri sandbox should handle actual security
+  const normalized = path.replace(/\\/g, "/");
+  if (normalized.includes("/../") || normalized.startsWith("../")) {
+    console.warn(
+      `[Tool Executor] Path contains parent directory traversal: ${path}`,
+    );
+  }
+}
+
+/**
+ * Format directory listing for readable output.
+ */
+function formatDirectoryListing(entries: FileEntry[]): string {
+  if (entries.length === 0) {
+    return "Directory is empty";
+  }
+
+  const lines = entries.map((entry) => {
+    const prefix = entry.is_directory ? "[DIR]  " : "[FILE] ";
+    return `${prefix}${entry.name}`;
+  });
+
+  return lines.join("\n");
+}

@@ -1,0 +1,638 @@
+// ABOUTME: Chat interface for agent mode, displaying agent messages, tool calls, and diffs.
+// ABOUTME: Handles agent session lifecycle and message streaming.
+
+import type { Component } from "solid-js";
+import {
+  createEffect,
+  createSignal,
+  For,
+  on,
+  onCleanup,
+  onMount,
+  Show,
+} from "solid-js";
+import { AcpPermissionDialog } from "@/components/acp/AcpPermissionDialog";
+import { DiffProposalDialog } from "@/components/acp/DiffProposalDialog";
+import { VoiceInputButton } from "@/components/chat/VoiceInputButton";
+import { getCompletions, parseCommand } from "@/lib/commands/parser";
+import type { CommandContext } from "@/lib/commands/types";
+import { openExternalLink } from "@/lib/external-link";
+import { pickAndReadImages, toDataUrl } from "@/lib/images/attachments";
+import type { ImageAttachment } from "@/lib/providers/types";
+import { escapeHtmlWithLinks, renderMarkdown } from "@/lib/render-markdown";
+import type { DiffEvent } from "@/services/acp";
+import { type AgentMessage, acpStore } from "@/stores/acp.store";
+import { fileTreeState } from "@/stores/fileTree";
+import { settingsStore } from "@/stores/settings.store";
+import { AgentSelector } from "./AgentSelector";
+import { AgentTabBar } from "./AgentTabBar";
+import { DiffCard } from "./DiffCard";
+import { ImageAttachmentBar } from "./ImageAttachmentBar";
+import { PlanHeader } from "./PlanHeader";
+import { SlashCommandPopup } from "./SlashCommandPopup";
+import { ThinkingBlock } from "./ThinkingBlock";
+import { ThinkingStatus } from "./ThinkingStatus";
+import { ToolCallCard } from "./ToolCallCard";
+
+interface AgentChatProps {
+  onViewDiff?: (diff: DiffEvent) => void;
+}
+
+export const AgentChat: Component<AgentChatProps> = (props) => {
+  const [input, setInput] = createSignal("");
+  const [messageQueue, setMessageQueue] = createSignal<string[]>([]);
+  const [attachedImages, setAttachedImages] = createSignal<ImageAttachment[]>(
+    [],
+  );
+  const [commandStatus, setCommandStatus] = createSignal<string | null>(null);
+  const [commandPopupIndex, setCommandPopupIndex] = createSignal(0);
+  let inputRef: HTMLTextAreaElement | undefined;
+  let messagesRef: HTMLDivElement | undefined;
+
+  const onPickImages = () => handleAttachImages();
+  onMount(() => {
+    window.addEventListener("seren:pick-images", onPickImages);
+  });
+  onCleanup(() => {
+    window.removeEventListener("seren:pick-images", onPickImages);
+  });
+
+  const hasSession = () => acpStore.activeSession !== null;
+  const isReady = () => acpStore.activeSession?.info.status === "ready";
+  const isPrompting = () => acpStore.activeSession?.info.status === "prompting";
+  const sessionError = () => acpStore.error;
+
+  // Get the current working directory from file tree
+  const getCwd = () => {
+    return fileTreeState.rootPath || null;
+  };
+
+  const hasFolderOpen = () => Boolean(fileTreeState.rootPath);
+
+  const scrollToBottom = () => {
+    if (messagesRef) {
+      messagesRef.scrollTop = messagesRef.scrollHeight;
+    }
+  };
+
+  // Auto-scroll when messages change
+  createEffect(() => {
+    const messages = acpStore.messages;
+    const streaming = acpStore.streamingContent;
+    console.log("[AgentChat] Effect triggered:", {
+      messagesCount: messages.length,
+      streamingLength: streaming.length,
+      streamingPreview: streaming.slice(0, 100),
+    });
+    requestAnimationFrame(scrollToBottom);
+  });
+
+  // Sync agent cwd when the user opens a different folder
+  createEffect(
+    on(
+      () => fileTreeState.rootPath,
+      (newPath: string | null) => {
+        if (newPath && hasSession()) {
+          acpStore.updateCwd(newPath);
+        }
+      },
+      { defer: true },
+    ),
+  );
+
+  const startSession = async () => {
+    const cwd = getCwd();
+    if (!cwd) {
+      console.warn("[AgentChat] No folder open, cannot start session");
+      return;
+    }
+    console.log("[AgentChat] Starting session with cwd:", cwd);
+    try {
+      const sessionId = await acpStore.spawnSession(cwd);
+      console.log("[AgentChat] Session started:", sessionId);
+    } catch (error) {
+      console.error("[AgentChat] Failed to start session:", error);
+    }
+  };
+
+  const handleAttachImages = async () => {
+    const images = await pickAndReadImages();
+    if (images.length > 0) {
+      setAttachedImages((prev) => [...prev, ...images]);
+    }
+  };
+
+  const handleRemoveImage = (index: number) => {
+    setAttachedImages((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const executeSlashCommand = (trimmed: string) => {
+    const parsed = parseCommand(trimmed, "agent");
+    if (!parsed) return false;
+
+    const ctx: CommandContext = {
+      rawInput: trimmed,
+      args: parsed.args,
+      panel: "agent",
+      clearInput: () => setInput(""),
+      openPanel: (panel: string) => {
+        window.dispatchEvent(
+          new CustomEvent("seren:open-panel", { detail: panel }),
+        );
+      },
+      showStatus: (message: string) => {
+        setCommandStatus(message);
+        setTimeout(() => setCommandStatus(null), 4000);
+      },
+    };
+
+    parsed.command.execute(ctx);
+    setCommandPopupIndex(0);
+    return true;
+  };
+
+  const sendMessage = async () => {
+    const trimmed = input().trim();
+    const images = attachedImages();
+    if ((!trimmed && images.length === 0) || !hasSession()) return;
+
+    // Check for slash commands first
+    if (trimmed.startsWith("/") && images.length === 0) {
+      if (executeSlashCommand(trimmed)) return;
+    }
+
+    // If agent is prompting, queue the message instead
+    if (isPrompting()) {
+      setMessageQueue((queue) => [...queue, trimmed]);
+      setInput("");
+      console.log("[AgentChat] Message queued:", trimmed);
+      return;
+    }
+
+    // Build context with images as data URLs
+    const context: Array<{ text?: string }> | undefined =
+      images.length > 0
+        ? images.map((img) => ({
+            text: `[Attached image: ${img.name}]\n${toDataUrl(img)}`,
+          }))
+        : undefined;
+
+    setInput("");
+    setAttachedImages([]);
+    await acpStore.sendPrompt(trimmed, context);
+  };
+
+  // Process queued messages when agent becomes ready
+  createEffect(() => {
+    if (isReady() && messageQueue().length > 0) {
+      const [nextMessage, ...remaining] = messageQueue();
+      setMessageQueue(remaining);
+      console.log("[AgentChat] Processing queued message:", nextMessage);
+      setTimeout(() => {
+        acpStore.sendPrompt(nextMessage);
+      }, 100);
+    }
+  });
+
+  const handleCancel = async () => {
+    await acpStore.cancelPrompt();
+  };
+
+  const handleGlobalKeyDown = (event: KeyboardEvent) => {
+    if (event.key === "Escape" && isPrompting()) {
+      event.preventDefault();
+      handleCancel();
+    }
+  };
+
+  onMount(() => {
+    document.addEventListener("keydown", handleGlobalKeyDown);
+  });
+
+  onCleanup(() => {
+    document.removeEventListener("keydown", handleGlobalKeyDown);
+  });
+
+  const handleKeyDown = (event: KeyboardEvent) => {
+    // Slash command popup keyboard navigation
+    const isSlashInput = input().startsWith("/") && !input().includes(" ");
+    if (isSlashInput) {
+      const matches = getCompletions(input(), "agent");
+      if (matches.length > 0) {
+        if (event.key === "ArrowUp") {
+          event.preventDefault();
+          setCommandPopupIndex((i) => (i > 0 ? i - 1 : matches.length - 1));
+          return;
+        }
+        if (event.key === "ArrowDown") {
+          event.preventDefault();
+          setCommandPopupIndex((i) => (i < matches.length - 1 ? i + 1 : 0));
+          return;
+        }
+        if (event.key === "Tab" || (event.key === "Enter" && !event.shiftKey)) {
+          event.preventDefault();
+          const selected = matches[commandPopupIndex()];
+          if (selected) {
+            setInput(`/${selected.name} `);
+            setCommandPopupIndex(0);
+          }
+          return;
+        }
+        if (event.key === "Escape") {
+          event.preventDefault();
+          setInput("");
+          return;
+        }
+      }
+    }
+
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      sendMessage();
+    }
+  };
+
+  const renderMessage = (message: AgentMessage) => {
+    switch (message.type) {
+      case "user":
+        return (
+          <article class="px-5 py-4 bg-[#161b22] border-b border-[#21262d]">
+            <div
+              class="text-sm leading-relaxed text-[#e6edf3] whitespace-pre-wrap"
+              innerHTML={escapeHtmlWithLinks(message.content)}
+            />
+          </article>
+        );
+
+      case "assistant":
+        return (
+          <article class="px-5 py-4 border-b border-[#21262d]">
+            <div
+              class="text-sm leading-relaxed text-[#e6edf3] break-words [&_p]:m-0 [&_p]:mb-3 [&_p:last-child]:mb-0 [&_code]:bg-[#21262d] [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:rounded [&_code]:font-mono [&_code]:text-[13px] [&_pre]:bg-[#161b22] [&_pre]:border [&_pre]:border-[#30363d] [&_pre]:rounded-lg [&_pre]:p-3 [&_pre]:my-3 [&_pre]:overflow-x-auto [&_pre_code]:bg-transparent [&_pre_code]:p-0 [&_pre_code]:text-[13px] [&_pre_code]:leading-normal [&_ul]:my-2 [&_ul]:pl-6 [&_ol]:my-2 [&_ol]:pl-6 [&_li]:my-1 [&_blockquote]:border-l-[3px] [&_blockquote]:border-[#30363d] [&_blockquote]:my-3 [&_blockquote]:pl-4 [&_blockquote]:text-[#8b949e] [&_a]:text-[#58a6ff] [&_a]:no-underline [&_a:hover]:underline"
+              innerHTML={renderMarkdown(message.content)}
+            />
+          </article>
+        );
+
+      case "thought":
+        return (
+          <article class="px-5 py-3 border-b border-[#21262d]">
+            <ThinkingBlock thinking={message.content} />
+          </article>
+        );
+
+      case "tool":
+        return message.toolCall ? (
+          <div class="px-5 py-2">
+            <ToolCallCard toolCall={message.toolCall} />
+          </div>
+        ) : null;
+
+      case "diff":
+        return message.diff ? (
+          <div class="px-5 py-2">
+            <DiffCard diff={message.diff} onViewInEditor={props.onViewDiff} />
+          </div>
+        ) : null;
+
+      case "error":
+        return (
+          <article class="px-5 py-3 border-b border-[#21262d]">
+            <div class="px-3 py-2 bg-[rgba(248,81,73,0.1)] border border-[rgba(248,81,73,0.4)] rounded-md text-sm text-[#f85149]">
+              {message.content}
+            </div>
+          </article>
+        );
+
+      default:
+        return null;
+    }
+  };
+
+  return (
+    <div class="flex-1 flex flex-col min-h-0">
+      {/* Agent Tab Bar */}
+      <Show when={hasSession()}>
+        <AgentTabBar onNewSession={startSession} />
+      </Show>
+
+      {/* Plan Header */}
+      <PlanHeader />
+
+      {/* Messages Area */}
+      <div
+        ref={messagesRef}
+        class="flex-1 min-h-0 overflow-y-auto [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-[#30363d] [&::-webkit-scrollbar-thumb]:rounded"
+        onClick={(e) => {
+          const target = e.target as HTMLElement;
+          const link = target.closest(".external-link") as HTMLAnchorElement;
+          if (link) {
+            e.preventDefault();
+            const url = link.dataset.externalUrl;
+            if (url) openExternalLink(url);
+            return;
+          }
+          const copyBtn = target.closest(".code-copy-btn") as HTMLElement;
+          if (copyBtn) {
+            const code = copyBtn.dataset.code;
+            if (code) {
+              navigator.clipboard.writeText(code);
+              const original = copyBtn.innerHTML;
+              copyBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0Z"></path></svg> Copied!`;
+              copyBtn.classList.add("copied");
+              setTimeout(() => {
+                copyBtn.innerHTML = original;
+                copyBtn.classList.remove("copied");
+              }, 2000);
+            }
+          }
+        }}
+      >
+        <Show
+          when={hasSession()}
+          fallback={
+            <div class="flex-1 flex flex-col items-center justify-center p-10 text-[#8b949e]">
+              <div class="max-w-[320px] text-center">
+                <svg
+                  class="w-12 h-12 mx-auto mb-4 text-[#30363d]"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  role="img"
+                  aria-label="Computer"
+                >
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="1.5"
+                    d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"
+                  />
+                </svg>
+                <h3 class="m-0 mb-2 text-base font-medium text-[#e6edf3]">
+                  Start an Agent Session
+                </h3>
+                <p class="m-0 mb-4 text-sm">
+                  Spawn an AI coding agent to help with complex tasks like
+                  refactoring, debugging, or implementing features.
+                </p>
+                <div class="flex flex-col items-center gap-3 w-full max-w-md">
+                  <AgentSelector />
+                  <Show when={acpStore.selectedAgentType === "claude-code"}>
+                    <div class="w-full px-3 py-2 bg-[#1f6feb]/10 border border-[#1f6feb]/30 rounded-md text-xs text-[#58a6ff]">
+                      <div class="flex items-start gap-2">
+                        <svg
+                          class="w-4 h-4 mt-0.5 flex-shrink-0"
+                          fill="currentColor"
+                          viewBox="0 0 20 20"
+                          role="img"
+                          aria-label="Info"
+                        >
+                          <path
+                            fill-rule="evenodd"
+                            d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z"
+                            clip-rule="evenodd"
+                          />
+                        </svg>
+                        <span>
+                          <strong>Claude Code Required:</strong> Make sure
+                          Claude Code CLI is installed on your computer.
+                        </span>
+                      </div>
+                    </div>
+                  </Show>
+                  <Show when={!hasFolderOpen()}>
+                    <div class="w-full px-3 py-2 bg-[#da3633]/10 border border-[#da3633]/30 rounded-md text-xs text-[#f85149]">
+                      Open a folder first to set the agent's working directory.
+                    </div>
+                  </Show>
+                  <button
+                    type="button"
+                    class="px-4 py-2 bg-[#238636] text-white rounded-md text-sm font-medium hover:bg-[#2ea043] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    onClick={startSession}
+                    disabled={acpStore.isLoading || !hasFolderOpen()}
+                  >
+                    {acpStore.isLoading
+                      ? (acpStore.installStatus ?? "Starting...")
+                      : "Start Agent"}
+                  </button>
+                </div>
+              </div>
+            </div>
+          }
+        >
+          {/* Session Messages */}
+          <Show
+            when={acpStore.messages.length > 0 || acpStore.streamingContent}
+            fallback={
+              <div class="flex flex-col items-center justify-center p-10 text-[#8b949e]">
+                <h3 class="m-0 mb-2 text-base font-medium text-[#e6edf3]">
+                  Agent Ready
+                </h3>
+                <p class="m-0 text-sm text-center max-w-[280px]">
+                  Describe what you'd like the agent to do. It can read files,
+                  make edits, run commands, and more.
+                </p>
+              </div>
+            }
+          >
+            <For each={acpStore.messages}>{renderMessage}</For>
+
+            {/* Diff proposal dialogs */}
+            <For each={acpStore.pendingDiffProposals}>
+              {(proposal) => (
+                <div class="px-5 py-2">
+                  <DiffProposalDialog proposal={proposal} />
+                </div>
+              )}
+            </For>
+
+            {/* Permission request dialogs */}
+            <For each={acpStore.pendingPermissions}>
+              {(perm) => (
+                <div class="px-5 py-2">
+                  <AcpPermissionDialog permission={perm} />
+                </div>
+              )}
+            </For>
+
+            {/* Loading placeholder while waiting for first chunk */}
+            <Show
+              when={
+                isPrompting() &&
+                !acpStore.streamingContent &&
+                !acpStore.streamingThinking
+              }
+            >
+              <article class="px-5 py-4 border-b border-[#21262d]">
+                <ThinkingStatus />
+              </article>
+            </Show>
+
+            {/* Streaming Thinking */}
+            <Show when={acpStore.streamingThinking}>
+              <article class="px-5 py-3 border-b border-[#21262d]">
+                <ThinkingBlock
+                  thinking={acpStore.streamingThinking}
+                  isStreaming={true}
+                />
+              </article>
+            </Show>
+
+            {/* Streaming Content */}
+            <Show when={acpStore.streamingContent}>
+              <article class="px-5 py-4 border-b border-[#21262d]">
+                <div class="text-sm leading-relaxed text-[#e6edf3] whitespace-pre-wrap">
+                  {acpStore.streamingContent}
+                  <span class="inline-block w-2 h-4 ml-0.5 bg-[#58a6ff] animate-pulse" />
+                </div>
+              </article>
+            </Show>
+          </Show>
+        </Show>
+      </div>
+
+      {/* Error Display */}
+      <Show when={sessionError()}>
+        <div class="mx-4 mb-2 px-3 py-2 bg-[rgba(248,81,73,0.1)] border border-[rgba(248,81,73,0.4)] rounded-md text-sm text-[#f85149] flex items-center justify-between">
+          <span>{sessionError()}</span>
+          <button
+            type="button"
+            class="text-xs underline hover:no-underline"
+            onClick={() => acpStore.clearError()}
+          >
+            Dismiss
+          </button>
+        </div>
+      </Show>
+
+      {/* Agent CWD Display */}
+      <Show when={hasSession() && acpStore.cwd}>
+        <div class="shrink-0 px-4 py-1.5 border-t border-[#21262d] bg-[#0d1117] flex items-center gap-2 text-xs text-[#8b949e]">
+          <svg
+            class="w-3 h-3 flex-shrink-0"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            role="img"
+            aria-label="Folder"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"
+            />
+          </svg>
+          <span class="truncate" title={acpStore.cwd!}>
+            {acpStore.cwd}
+          </span>
+        </div>
+      </Show>
+
+      {/* Input Area */}
+      <Show when={hasSession()}>
+        <div class="shrink-0 p-4 border-t border-[#21262d] bg-[#161b22]">
+          <form
+            class="flex flex-col gap-2"
+            onSubmit={(e) => {
+              e.preventDefault();
+              sendMessage();
+            }}
+          >
+            <ImageAttachmentBar
+              images={attachedImages()}
+              onAttach={handleAttachImages}
+              onRemove={handleRemoveImage}
+            />
+            <div class="relative">
+              <SlashCommandPopup
+                input={input()}
+                panel="agent"
+                selectedIndex={commandPopupIndex()}
+                onSelect={(cmd) => {
+                  setInput(`/${cmd.name} `);
+                  inputRef?.focus();
+                  setCommandPopupIndex(0);
+                }}
+              />
+              <textarea
+                ref={inputRef}
+                value={input()}
+                placeholder={
+                  isPrompting()
+                    ? "Type to queue message..."
+                    : "Tell the agent what to do… (type / for commands)"
+                }
+                class="w-full min-h-[80px] max-h-[50vh] resize-y bg-[#0d1117] border border-[#30363d] rounded-lg text-[#e6edf3] p-3 font-inherit text-sm leading-normal transition-colors focus:outline-none focus:border-[#58a6ff] placeholder:text-[#484f58] disabled:opacity-60 disabled:cursor-not-allowed"
+                onInput={(e) => {
+                  setInput(e.currentTarget.value);
+                  setCommandPopupIndex(0);
+                }}
+                onKeyDown={handleKeyDown}
+                disabled={!hasSession()}
+              />
+            </div>
+            <Show when={commandStatus()}>
+              <div class="px-3 py-2 bg-[#21262d] border border-[#30363d] rounded-lg text-xs text-[#8b949e] whitespace-pre-wrap">
+                {commandStatus()}
+              </div>
+            </Show>
+            <div class="flex justify-between items-center">
+              <div class="flex items-center gap-3">
+                <AgentSelector />
+                <Show when={isPrompting()}>
+                  <ThinkingStatus />
+                </Show>
+                <Show when={messageQueue().length > 0}>
+                  <span class="flex items-center gap-2 px-2 py-1 bg-[#21262d] border border-[#30363d] rounded text-xs text-[#8b949e]">
+                    {messageQueue().length} message
+                    {messageQueue().length > 1 ? "s" : ""} queued
+                    <button
+                      type="button"
+                      class="text-[#f85149] hover:underline"
+                      onClick={() => setMessageQueue([])}
+                    >
+                      Clear
+                    </button>
+                  </span>
+                </Show>
+              </div>
+              <div class="flex items-center gap-2">
+                <VoiceInputButton
+                  mode="agent"
+                  onTranscript={(text) => {
+                    setInput((prev) => (prev ? `${prev} ${text}` : text));
+                    if (settingsStore.get("voiceAutoSubmit")) {
+                      sendMessage();
+                    } else {
+                      inputRef?.focus();
+                    }
+                  }}
+                />
+                <Show when={isPrompting()}>
+                  <button
+                    type="button"
+                    class="px-4 py-1.5 bg-[#21262d] text-[#f85149] border border-[#30363d] rounded-md text-[13px] font-medium hover:bg-[#30363d] transition-colors"
+                    onClick={handleCancel}
+                  >
+                    Cancel
+                  </button>
+                </Show>
+                <button
+                  type="submit"
+                  class="px-4 py-1.5 bg-[#238636] text-white rounded-md text-[13px] font-medium hover:bg-[#2ea043] transition-colors disabled:bg-[#21262d] disabled:text-[#484f58] disabled:cursor-not-allowed"
+                  disabled={
+                    !hasSession() ||
+                    (!input().trim() && attachedImages().length === 0)
+                  }
+                >
+                  {isPrompting() ? "Queue" : "Send"}
+                </button>
+              </div>
+            </div>
+          </form>
+        </div>
+      </Show>
+    </div>
+  );
+};
