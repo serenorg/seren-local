@@ -2,7 +2,7 @@
 // ABOUTME: Integrates with Tauri HTTP plugin and handles token refresh.
 
 import { apiBase } from "@/lib/config";
-import { getToken, isTauriRuntime } from "@/lib/tauri-bridge";
+import { getToken, isTauriRuntime } from "@/lib/bridge";
 import type { ClientOptions, Config } from "./generated/client";
 
 type TauriFetch = typeof globalThis.fetch;

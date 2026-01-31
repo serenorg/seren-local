@@ -1,7 +1,7 @@
 import { relaunch } from "@tauri-apps/plugin-process";
 import { check } from "@tauri-apps/plugin-updater";
 import { createStore } from "solid-js/store";
-import { isTauriRuntime } from "@/lib/tauri-bridge";
+import { isTauriRuntime } from "@/lib/bridge";
 import { telemetry } from "@/services/telemetry";
 
 export type UpdateStatus =
