@@ -1,7 +1,7 @@
 // ABOUTME: Image viewer component for displaying image files.
 // ABOUTME: Supports zoom, pan, and displays image metadata.
 
-import { convertFileSrc } from "@tauri-apps/api/core";
+import { runtimeInvoke, isRuntimeConnected } from "@/lib/bridge";
 import {
   type Component,
   createEffect,
@@ -31,9 +31,24 @@ export const ImageViewer: Component<ImageViewerProps> = (props) => {
     const path = props.filePath;
     if (!path) return;
 
-    // Convert file path to URL using Tauri's asset protocol
-    const url = convertFileSrc(path);
-    setImageUrl(url);
+    // Convert file path to a displayable URL
+    // In browser mode, we read the file as base64 and create a data URL
+    if (!isRuntimeConnected()) {
+      setError("Local runtime not connected");
+      return;
+    }
+    runtimeInvoke<string>("read_file_base64", { path }).then((base64) => {
+      const ext = path.split(".").pop()?.toLowerCase() || "";
+      const mimeMap: Record<string, string> = {
+        png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg",
+        gif: "image/gif", webp: "image/webp", svg: "image/svg+xml",
+        bmp: "image/bmp", ico: "image/x-icon",
+      };
+      const mime = mimeMap[ext] || "image/png";
+      setImageUrl(`data:${mime};base64,${base64}`);
+    }).catch(() => {
+      setError("Failed to load image");
+    });
     setError(null);
     setZoom(100);
     setPosition({ x: 0, y: 0 });

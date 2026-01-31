@@ -1,8 +1,9 @@
 // ABOUTME: Approval dialog for OpenClaw messages when trust level is "approval-required".
 // ABOUTME: Shows inbound message, draft AI response, and approve/reject buttons.
 
-import { invoke } from "@tauri-apps/api/core";
-import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { isRuntimeConnected, onRuntimeEvent, runtimeInvoke } from "@/lib/bridge";
+
+type UnlistenFn = () => void;
 import {
   type Component,
   createSignal,
@@ -36,13 +37,10 @@ export const OpenClawApprovalManager: Component = () => {
   const [requests, setRequests] = createSignal<ApprovalRequest[]>([]);
   let unlisten: UnlistenFn | undefined;
 
-  onMount(async () => {
-    unlisten = await listen<ApprovalRequest>(
-      "openclaw://approval-needed",
-      (event) => {
-        setRequests((prev) => [...prev, event.payload]);
-      },
-    );
+  onMount(() => {
+    unlisten = onRuntimeEvent("openclaw://approval-needed", (payload) => {
+      setRequests((prev) => [...prev, payload as ApprovalRequest]);
+    });
   });
 
   onCleanup(() => {
@@ -55,13 +53,13 @@ export const OpenClawApprovalManager: Component = () => {
   ) => {
     if (approved) {
       // Grant server-side approval so subsequent openclaw_send passes trust check
-      await invoke("openclaw_grant_approval", {
+      await runtimeInvoke("openclaw_grant_approval", {
         channel: request.channel,
         to: request.to,
       });
     }
     // Emit approval response to unblock the agent's requestApproval() promise
-    await invoke("plugin:event|emit", {
+    await runtimeInvoke("plugin:event|emit", {
       event: "openclaw://approval-response",
       payload: { id: request.id, approved },
     });

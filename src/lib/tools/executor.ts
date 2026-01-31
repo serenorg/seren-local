@@ -1,8 +1,9 @@
 // ABOUTME: Tool executor that routes tool calls to file operations, MCP servers, or gateway.
 // ABOUTME: Handles tool call parsing, execution, and result formatting.
 
-import { invoke } from "@tauri-apps/api/core";
-import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { isRuntimeConnected, onRuntimeEvent, runtimeInvoke } from "@/lib/bridge";
+
+type UnlistenFn = () => void;
 import { mcpClient } from "@/lib/mcp/client";
 import type { ToolCall, ToolResult } from "@/lib/providers/types";
 import { type PaymentRequirements, parsePaymentRequirements } from "@/lib/x402";
@@ -60,22 +61,13 @@ async function waitForOpenClawApproval(approvalId: string): Promise<boolean> {
       resolve(false);
     }, OPENCLAW_APPROVAL_TIMEOUT_MS);
 
-    listen<{ id: string; approved: boolean }>(
-      "openclaw://approval-response",
-      (event) => {
-        if (event.payload.id !== approvalId) return;
-        clearTimeout(timeout);
-        unlisten?.();
-        resolve(event.payload.approved);
-      },
-    )
-      .then((fn) => {
-        unlisten = fn;
-      })
-      .catch(() => {
-        clearTimeout(timeout);
-        resolve(false);
-      });
+    unlisten = onRuntimeEvent("openclaw://approval-response", (payload) => {
+      const data = payload as { id: string; approved: boolean };
+      if (data.id !== approvalId) return;
+      clearTimeout(timeout);
+      unlisten?.();
+      resolve(data.approved);
+    });
   });
 }
 
@@ -131,14 +123,14 @@ export async function executeTool(toolCall: ToolCall): Promise<ToolResult> {
       case "read_file": {
         const path = args.path as string;
         validatePath(path);
-        result = await invoke<string>("read_file", { path });
+        result = await runtimeInvoke<string>("read_file", { path });
         break;
       }
 
       case "list_directory": {
         const path = args.path as string;
         validatePath(path);
-        const entries = await invoke<FileEntry[]>("list_directory", { path });
+        const entries = await runtimeInvoke<FileEntry[]>("list_directory", { path });
         result = formatDirectoryListing(entries);
         break;
       }
@@ -150,7 +142,7 @@ export async function executeTool(toolCall: ToolCall): Promise<ToolResult> {
         if (content == null) {
           throw new Error("Invalid content: content must be provided");
         }
-        await invoke("write_file", { path, content });
+        await runtimeInvoke("write_file", { path, content });
         result = `Successfully wrote ${content.length} characters to ${path}`;
         break;
       }
@@ -158,7 +150,7 @@ export async function executeTool(toolCall: ToolCall): Promise<ToolResult> {
       case "path_exists": {
         const path = args.path as string;
         validatePath(path);
-        const exists = await invoke<boolean>("path_exists", { path });
+        const exists = await runtimeInvoke<boolean>("path_exists", { path });
         result = exists
           ? `Path exists: ${path}`
           : `Path does not exist: ${path}`;
@@ -168,7 +160,7 @@ export async function executeTool(toolCall: ToolCall): Promise<ToolResult> {
       case "create_directory": {
         const path = args.path as string;
         validatePath(path);
-        await invoke("create_directory", { path });
+        await runtimeInvoke("create_directory", { path });
         result = `Successfully created directory: ${path}`;
         break;
       }
@@ -176,7 +168,7 @@ export async function executeTool(toolCall: ToolCall): Promise<ToolResult> {
       case "seren_web_fetch": {
         const url = args.url as string;
         const timeoutMs = args.timeout_ms as number | undefined;
-        const response = await invoke<{
+        const response = await runtimeInvoke<{
           content: string;
           content_type: string;
           url: string;
@@ -235,7 +227,7 @@ async function executeOpenClawTool(
         }
         let result: string;
         try {
-          result = await invoke<string>("openclaw_send", {
+          result = await runtimeInvoke<string>("openclaw_send", {
             channel,
             to,
             message,
@@ -255,7 +247,7 @@ async function executeOpenClawTool(
             };
           }
 
-          result = await invoke<string>("openclaw_send", {
+          result = await runtimeInvoke<string>("openclaw_send", {
             channel,
             to,
             message,
@@ -268,7 +260,7 @@ async function executeOpenClawTool(
         };
       }
       case "list_channels": {
-        const channels = await invoke<
+        const channels = await runtimeInvoke<
           Array<{
             id: string;
             platform: string;
@@ -291,7 +283,7 @@ async function executeOpenClawTool(
             is_error: true,
           };
         }
-        const allChannels = await invoke<
+        const allChannels = await runtimeInvoke<
           Array<{
             id: string;
             platform: string;

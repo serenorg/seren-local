@@ -1,7 +1,7 @@
 // ABOUTME: File explorer panel with folder selection and tree view.
 // ABOUTME: Provides VS Code-like file browsing for local projects.
 
-import { open } from "@tauri-apps/plugin-dialog";
+import { isRuntimeConnected, runtimeInvoke } from "@/lib/bridge";
 import { type Component, createSignal, Show } from "solid-js";
 import { type FileEntry, listDirectory } from "@/lib/bridge";
 import {
@@ -39,11 +39,10 @@ export const FileExplorerPanel: Component<FileExplorerPanelProps> = (props) => {
    */
   async function handleOpenFolder() {
     try {
-      const selected = await open({
-        directory: true,
-        multiple: false,
-        title: "Select Project Folder",
-      });
+      if (!isRuntimeConnected()) {
+        throw new Error("This operation requires the local runtime to be running");
+      }
+      const selected = await runtimeInvoke<string | null>("open_folder_dialog", {});
 
       if (selected && typeof selected === "string") {
         await loadFolder(selected);

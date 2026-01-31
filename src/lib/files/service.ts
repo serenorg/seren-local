@@ -1,5 +1,7 @@
-import { invoke } from "@tauri-apps/api/core";
-import { open, save } from "@tauri-apps/plugin-dialog";
+// ABOUTME: File service for reading, writing, and browsing local files.
+// ABOUTME: Provides folder/file picker dialogs and tab integration.
+
+import { isRuntimeConnected, runtimeInvoke } from "@/lib/bridge";
 import { type FileNode, setNodes, setRootPath } from "@/stores/fileTree";
 import { openTab, setTabDirty } from "@/stores/tabs";
 
@@ -13,35 +15,35 @@ export interface FileEntry {
  * Read the contents of a file.
  */
 export async function readFile(path: string): Promise<string> {
-  return invoke<string>("read_file", { path });
+  return runtimeInvoke<string>("read_file", { path });
 }
 
 /**
  * Write content to a file.
  */
 export async function writeFile(path: string, content: string): Promise<void> {
-  return invoke("write_file", { path, content });
+  return runtimeInvoke("write_file", { path, content });
 }
 
 /**
  * List entries in a directory.
  */
 export async function listDirectory(path: string): Promise<FileEntry[]> {
-  return invoke<FileEntry[]>("list_directory", { path });
+  return runtimeInvoke<FileEntry[]>("list_directory", { path });
 }
 
 /**
  * Check if a path exists.
  */
 export async function pathExists(path: string): Promise<boolean> {
-  return invoke<boolean>("path_exists", { path });
+  return runtimeInvoke<boolean>("path_exists", { path });
 }
 
 /**
  * Check if a path is a directory.
  */
 export async function isDirectory(path: string): Promise<boolean> {
-  return invoke<boolean>("is_directory", { path });
+  return runtimeInvoke<boolean>("is_directory", { path });
 }
 
 /**
@@ -51,21 +53,21 @@ export async function createFile(
   path: string,
   content?: string,
 ): Promise<void> {
-  return invoke("create_file", { path, content });
+  return runtimeInvoke("create_file", { path, content });
 }
 
 /**
  * Create a new directory.
  */
 export async function createDirectory(path: string): Promise<void> {
-  return invoke("create_directory", { path });
+  return runtimeInvoke("create_directory", { path });
 }
 
 /**
  * Delete a file or empty directory.
  */
 export async function deletePath(path: string): Promise<void> {
-  return invoke("delete_path", { path });
+  return runtimeInvoke("delete_path", { path });
 }
 
 /**
@@ -75,18 +77,17 @@ export async function renamePath(
   oldPath: string,
   newPath: string,
 ): Promise<void> {
-  return invoke("rename_path", { oldPath, newPath });
+  return runtimeInvoke("rename_path", { oldPath, newPath });
 }
 
 /**
  * Open a folder picker dialog and load the selected folder into the file tree.
  */
 export async function openFolder(): Promise<string | null> {
-  const selected = await open({
-    directory: true,
-    multiple: false,
-    title: "Open Folder",
-  });
+  if (!isRuntimeConnected()) {
+    throw new Error("This operation requires the local runtime to be running");
+  }
+  const selected = await runtimeInvoke<string | null>("open_folder_dialog", {});
 
   if (selected && typeof selected === "string") {
     await loadFolder(selected);
@@ -152,10 +153,10 @@ export async function saveTab(
  * Open a file picker dialog.
  */
 export async function openFilePicker(): Promise<string | null> {
-  const selected = await open({
-    multiple: false,
-    title: "Open File",
-  });
+  if (!isRuntimeConnected()) {
+    throw new Error("This operation requires the local runtime to be running");
+  }
+  const selected = await runtimeInvoke<string | null>("open_file_dialog", {});
 
   if (selected && typeof selected === "string") {
     await openFileInTab(selected);
@@ -171,9 +172,11 @@ export async function openFilePicker(): Promise<string | null> {
 export async function saveFileDialog(
   defaultPath?: string,
 ): Promise<string | null> {
-  const selected = await save({
+  if (!isRuntimeConnected()) {
+    throw new Error("This operation requires the local runtime to be running");
+  }
+  const selected = await runtimeInvoke<string | null>("save_file_dialog", {
     defaultPath,
-    title: "Save File",
   });
 
   return selected;

@@ -1,7 +1,7 @@
 // ABOUTME: MCP client service for frontend communication with MCP servers.
 // ABOUTME: Provides reactive state management and Tauri IPC integration.
 
-import { invoke } from "@tauri-apps/api/core";
+import { isRuntimeConnected, runtimeInvoke } from "@/lib/bridge";
 import { createSignal } from "solid-js";
 import { isRecoverableError, parseMcpError } from "./errors";
 import type {
@@ -81,7 +81,7 @@ function createMcpClient() {
 
     try {
       // Connect via Tauri
-      const result = await invoke<McpInitializeResult>("mcp_connect", {
+      const result = await runtimeInvoke<McpInitializeResult>("mcp_connect", {
         serverName,
         command,
         args,
@@ -121,7 +121,7 @@ function createMcpClient() {
    */
   async function disconnect(serverName: string): Promise<void> {
     try {
-      await invoke("mcp_disconnect", { serverName });
+      await runtimeInvoke("mcp_disconnect", { serverName });
     } finally {
       setConnections((prev) => {
         const next = new Map(prev);
@@ -135,14 +135,14 @@ function createMcpClient() {
    * List tools available on an MCP server.
    */
   async function listTools(serverName: string): Promise<McpTool[]> {
-    return invoke<McpTool[]>("mcp_list_tools", { serverName });
+    return runtimeInvoke<McpTool[]>("mcp_list_tools", { serverName });
   }
 
   /**
    * List resources available on an MCP server.
    */
   async function listResources(serverName: string): Promise<McpResource[]> {
-    return invoke<McpResource[]>("mcp_list_resources", { serverName });
+    return runtimeInvoke<McpResource[]>("mcp_list_resources", { serverName });
   }
 
   /**
@@ -194,7 +194,7 @@ function createMcpClient() {
     call: McpToolCall,
     options?: CallToolOptions,
   ): Promise<McpToolResult> {
-    const invocation = invoke<McpToolResult>("mcp_call_tool", {
+    const invocation = runtimeInvoke<McpToolResult>("mcp_call_tool", {
       serverName,
       toolName: call.name,
       arguments: call.arguments,
@@ -276,21 +276,21 @@ function createMcpClient() {
     serverName: string,
     uri: string,
   ): Promise<unknown> {
-    return invoke("mcp_read_resource", { serverName, uri });
+    return runtimeInvoke("mcp_read_resource", { serverName, uri });
   }
 
   /**
    * Check if an MCP server is connected.
    */
   async function isConnected(serverName: string): Promise<boolean> {
-    return invoke<boolean>("mcp_is_connected", { serverName });
+    return runtimeInvoke<boolean>("mcp_is_connected", { serverName });
   }
 
   /**
    * Get list of connected MCP servers.
    */
   async function listConnected(): Promise<string[]> {
-    return invoke<string[]>("mcp_list_connected");
+    return runtimeInvoke<string[]>("mcp_list_connected");
   }
 
   /**
@@ -374,7 +374,7 @@ function createMcpClient() {
 
     try {
       // Connect via Tauri HTTP MCP command
-      const result = await invoke<McpInitializeResult>("mcp_connect_http", {
+      const result = await runtimeInvoke<McpInitializeResult>("mcp_connect_http", {
         serverName,
         url,
         authToken: authToken || null,
@@ -410,7 +410,7 @@ function createMcpClient() {
    */
   async function disconnectHttp(serverName: string): Promise<void> {
     try {
-      await invoke("mcp_disconnect_http", { serverName });
+      await runtimeInvoke("mcp_disconnect_http", { serverName });
     } finally {
       setConnections((prev) => {
         const next = new Map(prev);
@@ -424,7 +424,7 @@ function createMcpClient() {
    * List tools from an HTTP MCP server.
    */
   async function listToolsHttp(serverName: string): Promise<McpTool[]> {
-    return invoke<McpTool[]>("mcp_list_tools_http", { serverName });
+    return runtimeInvoke<McpTool[]>("mcp_list_tools_http", { serverName });
   }
 
   /**
@@ -435,7 +435,7 @@ function createMcpClient() {
     call: McpToolCall,
     options?: CallToolOptions,
   ): Promise<McpToolResult> {
-    const invocation = invoke<McpToolResult>("mcp_call_tool_http", {
+    const invocation = runtimeInvoke<McpToolResult>("mcp_call_tool_http", {
       serverName,
       toolName: call.name,
       arguments: call.arguments,
@@ -450,14 +450,14 @@ function createMcpClient() {
    * Check if an HTTP MCP server is connected.
    */
   async function isConnectedHttp(serverName: string): Promise<boolean> {
-    return invoke<boolean>("mcp_is_connected_http", { serverName });
+    return runtimeInvoke<boolean>("mcp_is_connected_http", { serverName });
   }
 
   /**
    * List connected HTTP MCP servers.
    */
   async function listConnectedHttp(): Promise<string[]> {
-    return invoke<string[]>("mcp_list_connected_http");
+    return runtimeInvoke<string[]>("mcp_list_connected_http");
   }
 
   return {

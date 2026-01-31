@@ -1,7 +1,7 @@
 // ABOUTME: File tree component for displaying folder structure in the sidebar.
 // ABOUTME: Supports right-click context menu with file operations.
 
-import { invoke } from "@tauri-apps/api/core";
+import { isRuntimeConnected, runtimeInvoke } from "@/lib/bridge";
 import { type Component, createMemo, createSignal, For, Show } from "solid-js";
 import {
   ContextMenu,
@@ -56,7 +56,7 @@ export const FileTree: Component<FileTreeProps> = (props) => {
   const handleCopy = async (node: FileNode) => {
     if (node.isDirectory) return;
     try {
-      const content = await invoke<string>("read_file", { path: node.path });
+      const content = await runtimeInvoke<string>("read_file", { path: node.path });
       await navigator.clipboard.writeText(content);
     } catch (err) {
       console.error("Failed to copy file:", err);
@@ -83,7 +83,7 @@ export const FileTree: Component<FileTreeProps> = (props) => {
     const newPath = `${dir}/${newName}`;
 
     try {
-      await invoke("rename_path", { oldPath, newPath });
+      await runtimeInvoke("rename_path", { oldPath, newPath });
       // Refresh the parent directory
       await refreshDirectory(dir);
     } catch (err) {
@@ -101,7 +101,7 @@ export const FileTree: Component<FileTreeProps> = (props) => {
     if (!confirmDelete) return;
 
     try {
-      await invoke("delete_path", { path: node.path });
+      await runtimeInvoke("delete_path", { path: node.path });
       // Refresh the parent directory
       const dir = node.path.substring(0, node.path.lastIndexOf("/"));
       await refreshDirectory(dir);
@@ -114,7 +114,7 @@ export const FileTree: Component<FileTreeProps> = (props) => {
   // Reveal in Finder
   const handleRevealInFinder = async (node: FileNode) => {
     try {
-      await invoke("reveal_in_file_manager", { path: node.path });
+      await runtimeInvoke("reveal_in_file_manager", { path: node.path });
     } catch (err) {
       console.error("Failed to reveal in finder:", err);
     }

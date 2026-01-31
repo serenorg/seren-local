@@ -1,8 +1,7 @@
 // ABOUTME: Image attachment utilities for picking, reading, and validating images.
 // ABOUTME: Provides file dialog integration and base64 conversion for chat image attachments.
 
-import { invoke } from "@tauri-apps/api/core";
-import { open } from "@tauri-apps/plugin-dialog";
+import { isRuntimeConnected, runtimeInvoke } from "@/lib/bridge";
 import type { ImageAttachment } from "@/lib/providers/types";
 
 const SUPPORTED_EXTENSIONS = ["png", "jpg", "jpeg", "gif", "webp"];
@@ -32,15 +31,12 @@ function getFileName(path: string): string {
  * Returns file paths selected by the user.
  */
 export async function pickImageFiles(): Promise<string[]> {
-  const selected = await open({
+  if (!isRuntimeConnected()) {
+    throw new Error("This operation requires the local runtime to be running");
+  }
+  const selected = await runtimeInvoke<string | string[] | null>("open_file_dialog", {
     multiple: true,
-    title: "Attach Images",
-    filters: [
-      {
-        name: "Images",
-        extensions: SUPPORTED_EXTENSIONS,
-      },
-    ],
+    filters: [{ name: "Images", extensions: SUPPORTED_EXTENSIONS }],
   });
 
   if (!selected) return [];
@@ -60,7 +56,10 @@ export async function readImageAttachment(
     throw new Error(`Unsupported image format: .${ext}`);
   }
 
-  const base64 = await invoke<string>("read_file_base64", { path });
+  if (!isRuntimeConnected()) {
+    throw new Error("This operation requires the local runtime to be running");
+  }
+  const base64 = await runtimeInvoke<string>("read_file_base64", { path });
   if (base64.length > MAX_BASE64_SIZE) {
     throw new Error("Image too large (max 20MB)");
   }

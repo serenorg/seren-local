@@ -1,7 +1,7 @@
 // ABOUTME: Indexing orchestration workflow coordinator.
 // ABOUTME: Manages the end-to-end indexing process: discover → chunk → embed → store.
 
-import { invoke } from "@tauri-apps/api/core";
+import { isRuntimeConnected, runtimeInvoke } from "@/lib/bridge";
 import { indexingStore } from "@/stores/indexing.store";
 import { embedTexts } from "@/services/seren-embed";
 import { indexChunks } from "@/services/indexing";
@@ -27,11 +27,11 @@ export async function runIndexing(projectPath: string): Promise<IndexingResult> 
   try {
     // Phase 1: Initialize index database
     indexingStore.setPhase("discovering");
-    await invoke("init_project_index", { projectPath });
+    await runtimeInvoke("init_project_index", { projectPath });
 
     // Phase 2: Discover files
     indexingStore.setPhase("discovering");
-    const files = await invoke<DiscoveredFile[]>("discover_project_files", { projectPath });
+    const files = await runtimeInvoke<DiscoveredFile[]>("discover_project_files", { projectPath });
 
     if (files.length === 0) {
       throw new Error("No indexable files found in project");
@@ -43,7 +43,7 @@ export async function runIndexing(projectPath: string): Promise<IndexingResult> 
     });
 
     // Phase 3: Estimate work
-    const [estimatedChunks, estimatedTokens] = await invoke<[number, number]>("estimate_indexing", {
+    const [estimatedChunks, estimatedTokens] = await runtimeInvoke<[number, number]>("estimate_indexing", {
       files,
     });
 
@@ -63,7 +63,7 @@ export async function runIndexing(projectPath: string): Promise<IndexingResult> 
       });
 
       // Check if file needs indexing
-      const needsIndex = await invoke<boolean>("file_needs_reindex", {
+      const needsIndex = await runtimeInvoke<boolean>("file_needs_reindex", {
         projectPath,
         filePath: file.relative_path,
         fileHash: file.hash,
@@ -74,13 +74,13 @@ export async function runIndexing(projectPath: string): Promise<IndexingResult> 
       }
 
       // Delete old chunks if re-indexing
-      await invoke("delete_file_index", {
+      await runtimeInvoke("delete_file_index", {
         projectPath,
         filePath: file.relative_path,
       });
 
       // Chunk the file
-      const chunked = await invoke<ChunkedFile>("chunk_file", { file });
+      const chunked = await runtimeInvoke<ChunkedFile>("chunk_file", { file });
 
       if (chunked.chunks.length === 0) {
         continue; // Skip files with no chunks
@@ -154,13 +154,13 @@ export async function reindexFile(
 ): Promise<void> {
   try {
     // Read file content
-    const content = await invoke<string>("read_file", { path: filePath });
+    const content = await runtimeInvoke<string>("read_file", { path: filePath });
 
     // Compute hash
-    const hash = await invoke<string>("compute_file_hash", { content });
+    const hash = await runtimeInvoke<string>("compute_file_hash", { content });
 
     // Check if needs reindex
-    const needsIndex = await invoke<boolean>("file_needs_reindex", {
+    const needsIndex = await runtimeInvoke<boolean>("file_needs_reindex", {
       projectPath,
       filePath,
       fileHash: hash,
@@ -171,7 +171,7 @@ export async function reindexFile(
     }
 
     // Get file info
-    const files = await invoke<DiscoveredFile[]>("discover_project_files", { projectPath });
+    const files = await runtimeInvoke<DiscoveredFile[]>("discover_project_files", { projectPath });
     const file = files.find((f) => f.path === filePath);
 
     if (!file) {
@@ -179,10 +179,10 @@ export async function reindexFile(
     }
 
     // Delete old chunks
-    await invoke("delete_file_index", { projectPath, filePath: file.relative_path });
+    await runtimeInvoke("delete_file_index", { projectPath, filePath: file.relative_path });
 
     // Chunk the file
-    const chunked = await invoke<ChunkedFile>("chunk_file", { file });
+    const chunked = await runtimeInvoke<ChunkedFile>("chunk_file", { file });
 
     if (chunked.chunks.length === 0) {
       return;
