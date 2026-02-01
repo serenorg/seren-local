@@ -4,7 +4,8 @@
 import { randomBytes } from "node:crypto";
 import { exec } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, statSync } from "node:fs";
-import { createServer } from "node:http";
+import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import { request as httpsRequest } from "node:https";
 import { homedir, platform } from "node:os";
 import { join, extname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -100,6 +101,63 @@ function isLocalhost(addr: string | undefined): boolean {
   return addr === "127.0.0.1" || addr === "::1" || addr === "::ffff:127.0.0.1";
 }
 
+// ── API Proxy ───────────────────────────────────────────────────────
+// Forwards /api/* requests to the Seren Gateway, bypassing browser CORS.
+
+const GATEWAY_HOST = "api.serendb.com";
+const MCP_GATEWAY_HOST = "mcp.serendb.com";
+
+function proxyToGateway(req: IncomingMessage, res: ServerResponse, host: string): void {
+  const targetPath = (req.url || "").replace(/^\/(api|mcp)/, "");
+
+  // Collect request body
+  const chunks: Buffer[] = [];
+  req.on("data", (chunk: Buffer) => chunks.push(chunk));
+  req.on("end", () => {
+    const body = chunks.length > 0 ? Buffer.concat(chunks) : undefined;
+
+    // Forward headers, stripping host and origin
+    const forwardHeaders: Record<string, string> = {};
+    for (const [key, value] of Object.entries(req.headers)) {
+      if (key === "host" || key === "origin" || key === "referer") continue;
+      if (value) forwardHeaders[key] = Array.isArray(value) ? value.join(", ") : value;
+    }
+    forwardHeaders["host"] = host;
+
+    const proxyReq = httpsRequest(
+      {
+        hostname: host,
+        port: 443,
+        path: targetPath,
+        method: req.method,
+        headers: forwardHeaders,
+      },
+      (proxyRes) => {
+        // Copy response headers, add CORS
+        const responseHeaders: Record<string, string | string[]> = {};
+        for (const [key, value] of Object.entries(proxyRes.headers)) {
+          if (value) responseHeaders[key] = value;
+        }
+        responseHeaders["access-control-allow-origin"] = "*";
+        responseHeaders["access-control-allow-methods"] = "GET, POST, PUT, DELETE, OPTIONS";
+        responseHeaders["access-control-allow-headers"] = "Content-Type, Authorization";
+
+        res.writeHead(proxyRes.statusCode ?? 502, responseHeaders);
+        proxyRes.pipe(res);
+      },
+    );
+
+    proxyReq.on("error", (err) => {
+      console.error("[Runtime] Gateway proxy error:", err.message);
+      res.writeHead(502, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "Gateway proxy error", message: err.message }));
+    });
+
+    if (body) proxyReq.write(body);
+    proxyReq.end();
+  });
+}
+
 const httpServer = createServer((req, res) => {
   // SECURITY: Only allow localhost connections
   if (!isLocalhost(req.socket.remoteAddress)) {
@@ -110,12 +168,24 @@ const httpServer = createServer((req, res) => {
 
   // CORS headers for browser
   res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
 
   if (req.method === "OPTIONS") {
     res.writeHead(204);
     res.end();
+    return;
+  }
+
+  // Proxy /api/* to Seren Gateway (bypasses browser CORS)
+  if (req.url?.startsWith("/api/") || req.url === "/api") {
+    proxyToGateway(req, res, GATEWAY_HOST);
+    return;
+  }
+
+  // Proxy /mcp/* to MCP Gateway
+  if (req.url?.startsWith("/mcp/") || req.url === "/mcp") {
+    proxyToGateway(req, res, MCP_GATEWAY_HOST);
     return;
   }
 

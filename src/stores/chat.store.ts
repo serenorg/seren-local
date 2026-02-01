@@ -22,7 +22,7 @@ import {
 import type { Message } from "@/services/chat";
 import { sendMessage } from "@/services/chat";
 
-const DEFAULT_MODEL = "anthropic/claude-sonnet-4";
+const DEFAULT_MODEL = "anthropic/claude-opus-4.5";
 const MAX_MESSAGES_PER_CONVERSATION = 100;
 
 /**

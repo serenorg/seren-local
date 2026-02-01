@@ -80,7 +80,7 @@ export interface Settings {
  */
 const DEFAULT_SETTINGS: Settings = {
   // Chat
-  chatDefaultModel: "anthropic/claude-sonnet-4",
+  chatDefaultModel: "anthropic/claude-opus-4.5",
   chatMaxHistoryMessages: 50,
   chatEnterToSend: true,
   chatShowThinking: false,

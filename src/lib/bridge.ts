@@ -1,6 +1,8 @@
 // ABOUTME: Browser-native bridge replacing tauri-bridge.ts.
 // ABOUTME: Routes storage to localStorage/IndexedDB, file ops to local runtime via WebSocket.
 
+import { createSignal } from "solid-js";
+
 // ============================================================================
 // Types
 // ============================================================================
@@ -77,8 +79,11 @@ const pendingRpc = new Map<
 >();
 const eventListeners = new Map<string, Set<(payload: unknown) => void>>();
 
+// Reactive signal for runtime connection state
+const [runtimeConnected, setRuntimeConnected] = createSignal(false);
+
 export function isRuntimeConnected(): boolean {
-  return ws !== null && ws.readyState === WebSocket.OPEN;
+  return runtimeConnected();
 }
 
 /**
@@ -142,6 +147,7 @@ export async function connectToRuntime(): Promise<boolean> {
           resolve: () => {
             clearTimeout(timeout);
             ws = socket;
+            setRuntimeConnected(true);
             resolve(true);
           },
           reject: () => {
@@ -168,6 +174,7 @@ export async function connectToRuntime(): Promise<boolean> {
       socket.addEventListener("close", () => {
         const wasConnected = ws === socket;
         ws = null;
+        setRuntimeConnected(false);
         // Reject all pending RPCs
         for (const [, rpc] of pendingRpc) {
           rpc.reject(new Error("Runtime connection closed"));
@@ -219,6 +226,7 @@ export function disconnectRuntime(): void {
   if (ws) {
     ws.close();
     ws = null;
+    setRuntimeConnected(false);
   }
 }
 
