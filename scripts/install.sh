@@ -194,7 +194,7 @@ create_desktop_shortcut() {
 # ── Banner ─────────────────────────────────────────────────────────────
 printf "\n"
 info "╔══════════════════════════════════════════╗"
-info "║       Seren Runtime Installer            ║"
+info "║    Seren Local Desktop Installer         ║"
 info "║  Local AI agents, MCP, and file access   ║"
 info "╚══════════════════════════════════════════╝"
 printf "\n"
@@ -370,7 +370,7 @@ setup_path() {
   if [ -f "$rc_file" ] && grep -qF "${SEREN_BIN}" "$rc_file" 2>/dev/null; then
     ok "PATH already configured in ${rc_file}"
   else
-    printf "\n# Seren runtime\n%s\n" "$path_line" >> "$rc_file"
+    printf "\n# Seren Local Desktop\n%s\n" "$path_line" >> "$rc_file"
     ok "Added ${SEREN_BIN} to PATH in ${rc_file}"
   fi
 

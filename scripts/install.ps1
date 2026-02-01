@@ -17,7 +17,7 @@ $script:SEREN_ICON_PATH = $null
 function Write-Banner {
     Write-Host ""
     Write-Host "  ╔══════════════════════════════════════════╗" -ForegroundColor Cyan
-    Write-Host "  ║       Seren Runtime Installer            ║" -ForegroundColor Cyan
+    Write-Host "  ║       Seren Local Desktop Installer            ║" -ForegroundColor Cyan
     Write-Host "  ║  Local AI agents, MCP, and file access   ║" -ForegroundColor Cyan
     Write-Host "  ╚══════════════════════════════════════════╝" -ForegroundColor Cyan
     Write-Host ""

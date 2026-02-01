@@ -19,7 +19,7 @@ info()  { printf "${BOLD}%s${RESET}\n" "$*"; }
 ok()    { printf "${GREEN}✓ %s${RESET}\n" "$*"; }
 warn()  { printf "${YELLOW}! %s${RESET}\n" "$*"; }
 
-info "Uninstalling Seren Runtime..."
+info "Uninstalling Seren Local Desktop..."
 printf "\n"
 
 # Remove npm package
@@ -44,5 +44,5 @@ if [ -d "$DATA_DIR" ]; then
 fi
 
 printf "\n"
-ok "Seren Runtime uninstalled."
+ok "Seren Local Desktop uninstalled."
 printf "\n"

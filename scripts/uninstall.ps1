@@ -8,7 +8,7 @@ function Write-Warn($msg) { Write-Host "  ! $msg" -ForegroundColor Yellow }
 function Write-Info($msg) { Write-Host "  $msg" -ForegroundColor White }
 
 Write-Host ""
-Write-Host "  Seren Runtime Uninstaller" -ForegroundColor Cyan
+Write-Host "  Seren Local Desktop Uninstaller" -ForegroundColor Cyan
 Write-Host ""
 
 # Remove npm package
