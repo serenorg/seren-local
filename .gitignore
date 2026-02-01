@@ -1,6 +1,9 @@
 # Dependencies
 node_modules/
 
+# Docs (internal plans, QA notes)
+docs/
+
 # Build outputs
 dist/
 runtime/public/
