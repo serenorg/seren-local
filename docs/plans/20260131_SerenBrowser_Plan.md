@@ -21,11 +21,13 @@
 10. [Phase 4: ACP Agent Support via Local Runtime](#10-phase-4-acp-agent-support)
 11. [Phase 5: OpenClaw via Local Runtime](#11-phase-5-openclaw-via-local-runtime)
 12. [Phase 6: Crypto Wallet (x402)](#12-phase-6-crypto-wallet)
-13. [What Gets Deleted / Not Ported](#13-what-gets-deleted)
-14. [Testing Strategy](#14-testing-strategy)
-15. [Deployment](#15-deployment)
-16. [Risk Register](#16-risk-register)
-17. [Final Audit Checklist](#17-final-audit-checklist)
+13. [Phase 7: Embed SPA into Runtime](#13-phase-7-embed-spa-into-runtime)
+14. [Phase 8: Feature Parity with Desktop](#14-phase-8-feature-parity-with-desktop)
+15. [What Gets Deleted / Not Ported](#15-what-gets-deleted)
+16. [Testing Strategy](#16-testing-strategy)
+17. [Deployment](#17-deployment)
+18. [Risk Register](#18-risk-register)
+19. [Final Audit Checklist](#19-final-audit-checklist)
 
 ---
 
@@ -1747,7 +1749,95 @@ Port x402 wallet signing from Rust to JavaScript using `viem`. See original plan
 
 ---
 
-## 13. What Gets Deleted
+## 13. Phase 7: Embed SPA into Runtime
+
+**Goal:** Bundle the SPA build output into the `@serendb/runtime` npm package so `seren` serves the full app on `localhost:19420`. No external hosting needed. Users run one install command and `seren` opens the app in their browser.
+
+**Status:** Complete
+
+### Why
+
+The original plan assumed the SPA would be hosted externally (e.g., `app.seren.com`). This was rejected — Seren should not host any user-facing infrastructure beyond the Gateway API. Instead, the SPA is embedded in the runtime and served locally.
+
+### What Changed
+
+#### 7.1: Build Pipeline (`build:embed` script)
+
+Added `build:embed` to root `package.json`:
+```sh
+pnpm build:embed   # vite build && rm -rf runtime/public && cp -r dist runtime/public
+```
+
+This builds the SPA and copies the output into `runtime/public/` so the runtime npm package includes it.
+
+Added `"public/"` to the `files` array in `runtime/package.json` so npm includes the built SPA when publishing.
+
+#### 7.2: Static File Serving in Runtime Server
+
+Modified `runtime/src/server.ts` to serve the embedded SPA:
+
+- **Static file serving** — MIME type detection for `.html`, `.js`, `.css`, `.json`, `.svg`, `.png`, `.woff2`, `.wasm`, etc.
+- **SPA fallback routing** — Any path that doesn't match a static file serves `index.html` (client-side routing)
+- **Path traversal protection** — Resolved paths must stay within `PUBLIC_DIR`
+- **Cache headers** — `Cache-Control: public, max-age=31536000, immutable` for hashed assets; `no-cache` for `index.html`
+
+#### 7.3: Auto-Open Browser on Startup
+
+On `httpServer.listen`, the runtime:
+1. Detects if `runtime/public/index.html` exists
+2. If yes, opens `http://127.0.0.1:19420` in the default browser using platform-detected commands (`open` on macOS, `xdg-open` on Linux, `start` on Windows)
+3. Suppressed with `--no-open` flag (for CI/headless use)
+
+### Files Modified
+
+- `runtime/src/server.ts` — static file serving, SPA fallback, auto-open browser
+- `runtime/package.json` — `public/` in `files` array
+- `package.json` (root) — `build:embed` script
+
+### Verification
+
+1. `pnpm build:embed` — builds SPA and copies to `runtime/public/`
+2. `cd runtime && pnpm dev` — runtime starts, browser opens
+3. `http://localhost:19420` — SPA loads
+4. `http://localhost:19420/health` — returns JSON health check
+5. `http://localhost:19420/chat/any-id` — SPA fallback works (serves index.html)
+6. WebSocket auth + RPC still works
+7. `cd runtime && pnpm test` — 50 tests pass
+
+---
+
+## 14. Phase 8: Feature Parity with Desktop
+
+**Goal:** Port any features added to `seren-desktop` after the initial migration so the browser version stays current.
+
+**Status:** In Progress
+
+### Features Ported
+
+#### 8.1: Tool Result Formatting
+
+Ported `src/lib/format-tool-result.ts` from seren-desktop. This utility:
+- Pretty-prints JSON in tool result displays
+- Unescapes `\n`, `\t`, `\"` for human-readable output
+
+Updated 3 components to use `formatToolResultText()`:
+- `src/components/chat/ToolStreamingMessage.tsx`
+- `src/components/mcp/McpToolCallApproval.tsx`
+- `src/components/mcp/McpToolsPanel.tsx`
+
+#### 8.2: External Link Interceptor
+
+Added `installExternalLinkInterceptor()` to `src/lib/external-link.ts`. This global click handler intercepts all anchor tag clicks with `https://` URLs and routes them through `openExternalLink()` (which uses `window.open` with `noopener,noreferrer`).
+
+Called at app startup in `src/index.tsx`.
+
+#### 8.3: Chat Scroll-on-Channel-Switch Fix
+
+Added `acpStore.agentModeEnabled` to the scroll effect dependencies in `src/components/chat/ChatContent.tsx`. This ensures the chat scrolls to bottom when switching between chat and agent channels.
+
+---
+
+## 15. What Gets Deleted
 
 These items from `seren-desktop` are NOT ported:
 
@@ -1765,7 +1855,7 @@ These items from `seren-desktop` are NOT ported:
 
 ---
 
-## 14. Testing Strategy
+## 16. Testing Strategy
 
 ### Unit Tests (Vitest)
 
@@ -1829,7 +1919,7 @@ pnpm test:e2e
 
 ---
 
-## 15. Deployment
+## 17. Deployment
 
 ### SPA (Browser App)
 
@@ -1853,7 +1943,7 @@ pnpm test:e2e
 
 ---
 
-## 16. Risk Register
+## 18. Risk Register
 
 | Risk | Impact | Likelihood | Mitigation |
 |------|--------|-----------|------------|
@@ -1871,7 +1961,7 @@ pnpm test:e2e
 
 ---
 
-## 17. Final Audit Checklist
+## 19. Final Audit Checklist
 
 **Run this audit after all phases are complete and before any production deployment.**
 

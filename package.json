@@ -19,7 +19,8 @@
     "test:watch": "NODE_OPTIONS='--no-experimental-webstorage' vitest",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
-    "test:e2e:headed": "playwright test --headed"
+    "test:e2e:headed": "playwright test --headed",
+    "build:embed": "vite build && rm -rf runtime/public && cp -r dist runtime/public"
   },
   "license": "MIT",
   "dependencies": {
