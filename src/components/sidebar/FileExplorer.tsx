@@ -1,7 +1,7 @@
 // ABOUTME: Shared file explorer sidebar for the resizable layout.
 // ABOUTME: Provides folder opening and file tree navigation.
 
-import { type Component, createSignal, Show } from "solid-js";
+import { type Component, createSignal, Show, onMount } from "solid-js";
 import { isRuntimeConnected } from "@/lib/bridge";
 import {
   loadDirectoryChildren,
@@ -35,6 +35,24 @@ function updateNodeChildren(
 
 export const FileExplorer: Component = () => {
   const [isLoading, setIsLoading] = createSignal(false);
+  const [initialConnecting, setInitialConnecting] = createSignal(true);
+
+  onMount(() => {
+    // Give the runtime a few seconds to connect before showing the "required" message
+    const timer = setTimeout(() => setInitialConnecting(false), 3000);
+    // Clear early if runtime connects
+    const check = setInterval(() => {
+      if (isRuntimeConnected()) {
+        clearTimeout(timer);
+        clearInterval(check);
+        setInitialConnecting(false);
+      }
+    }, 100);
+    return () => {
+      clearTimeout(timer);
+      clearInterval(check);
+    };
+  });
 
   const handleOpenFolder = async () => {
     setIsLoading(true);
@@ -91,12 +109,21 @@ export const FileExplorer: Component = () => {
         <Show
           when={runtimeAvailable()}
           fallback={
-            <div class="px-4 py-6 text-center text-[#8b949e] text-xs leading-relaxed">
-              <p class="mb-2">Local runtime required for file access.</p>
-              <p>
-                Run <code class="bg-[#21262d] px-1.5 py-0.5 rounded text-[#e6edf3]">seren</code> locally to enable the file explorer.
-              </p>
-            </div>
+            <Show
+              when={!initialConnecting()}
+              fallback={
+                <div class="px-4 py-6 text-center text-[#8b949e] text-xs">
+                  Connecting...
+                </div>
+              }
+            >
+              <div class="px-4 py-6 text-center text-[#8b949e] text-xs leading-relaxed">
+                <p class="mb-2">Local runtime required for file access.</p>
+                <p>
+                  Run <code class="bg-[#21262d] px-1.5 py-0.5 rounded text-[#e6edf3]">seren</code> locally to enable the file explorer.
+                </p>
+              </div>
+            </Show>
           }
         >
           <FileTree

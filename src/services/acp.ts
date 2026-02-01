@@ -154,7 +154,7 @@ export async function spawnAgent(
     agentType,
     cwd,
     sandboxMode: sandboxMode ?? null,
-  });
+  }, { timeoutMs: 120_000 });
 }
 
 /**
@@ -166,7 +166,7 @@ export async function sendPrompt(
   context?: Array<{ text?: string }>,
 ): Promise<void> {
   requireRuntime();
-  return runtimeInvoke("acp_prompt", { sessionId, prompt, context });
+  return runtimeInvoke("acp_prompt", { sessionId, prompt, context }, { timeoutMs: null });
 }
 
 /**

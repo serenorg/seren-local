@@ -239,22 +239,27 @@ function requireRuntime(): void {
 export function runtimeInvoke<T>(
   method: string,
   params?: Record<string, unknown>,
+  options?: { timeoutMs?: number | null },
 ): Promise<T> {
   requireRuntime();
   const id = ++rpcId;
+  const timeoutMs = options?.timeoutMs === undefined ? RPC_TIMEOUT_MS : options.timeoutMs;
   return new Promise<T>((resolve, reject) => {
-    const timeout = setTimeout(() => {
-      pendingRpc.delete(id);
-      reject(new Error(`RPC timeout: ${method}`));
-    }, RPC_TIMEOUT_MS);
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    if (timeoutMs !== null) {
+      timer = setTimeout(() => {
+        pendingRpc.delete(id);
+        reject(new Error(`RPC timeout: ${method}`));
+      }, timeoutMs);
+    }
 
     pendingRpc.set(id, {
       resolve: (v) => {
-        clearTimeout(timeout);
+        if (timer) clearTimeout(timer);
         resolve(v as T);
       },
       reject: (e) => {
-        clearTimeout(timeout);
+        if (timer) clearTimeout(timer);
         reject(e);
       },
     });

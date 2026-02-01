@@ -956,8 +956,14 @@ export const ChatContent: Component<ChatContentProps> = (_props) => {
                               event.preventDefault();
                               const selected = matches[commandPopupIndex()];
                               if (selected) {
-                                setInput(`/${selected.name} `);
-                                setCommandPopupIndex(0);
+                                if (!selected.argHint && event.key === "Enter") {
+                                  setInput(`/${selected.name}`);
+                                  setCommandPopupIndex(0);
+                                  sendMessage();
+                                } else {
+                                  setInput(`/${selected.name} `);
+                                  setCommandPopupIndex(0);
+                                }
                               }
                               return;
                             }

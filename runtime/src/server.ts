@@ -64,7 +64,11 @@ function serveStatic(urlPath: string, res: import("node:http").ServerResponse): 
       const ext = extname(filePath).toLowerCase();
       const mime = MIME_TYPES[ext] || "application/octet-stream";
       const content = readFileSync(filePath);
-      res.writeHead(200, { "Content-Type": mime, "Cache-Control": "public, max-age=31536000, immutable" });
+      // HTML files should not be cached (they reference hashed assets)
+      const cacheControl = ext === ".html"
+        ? "no-cache, no-store, must-revalidate"
+        : "public, max-age=31536000, immutable";
+      res.writeHead(200, { "Content-Type": mime, "Cache-Control": cacheControl });
       res.end(content);
       return true;
     }

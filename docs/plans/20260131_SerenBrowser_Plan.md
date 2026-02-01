@@ -1835,6 +1835,48 @@ Called at app startup in `src/index.tsx`.
 
 Added `acpStore.agentModeEnabled` to the scroll effect dependencies in `src/components/chat/ChatContent.tsx`. This ensures the chat scrolls to bottom when switching between chat and agent channels.
 
+#### 8.4: ACP Agent Binary Fix
+
+Desktop spawns `acp_agent` binary (not `claude --acp`). Fixed `runtime/src/handlers/acp.ts`:
+- Added `findAcpAgentBinary()` searching `runtime/bin/`, `~/.seren-local/bin/`, and Desktop dev path
+- Removed `--acp` flag — empty args like Desktop
+- Codex marked as "not yet supported" matching Desktop behavior
+- Copied `acp_agent` binary from Desktop to `runtime/bin/` (gitignored)
+
+#### 8.5: RPC Timeout & Attachment Fixes
+
+- Added optional `timeoutMs` parameter to `runtimeInvoke` in `src/lib/bridge.ts`
+  - `acp_prompt`: `null` (no timeout — long-running)
+  - `acp_spawn`: `120_000ms`
+- Added "Connecting..." loading state in `FileExplorer.tsx` with 3s grace period instead of flashing "runtime required"
+- Added missing `read_file_base64` handler in `runtime/src/handlers/fs.ts` for image attachments
+
+#### 8.6: Missing Handler Implementation
+
+Implemented all 6 previously-stubbed handlers:
+- `start_watching` / `stop_watching` — file watcher using Node's `fs.watch` (`runtime/src/handlers/sync.ts`)
+- `mcp_disconnect` / `mcp_read_resource` — MCP server management via stdio JSON-RPC (`runtime/src/handlers/mcp.ts`)
+- `init_project_index` / `delete_file_index` — now backed by real vector store (see 8.7)
+
+#### 8.7: Semantic Indexing System (Full Port)
+
+Ported Desktop's Rust vector store and code chunker to Node.js:
+
+**`runtime/src/services/vector-store.ts`** — SQLite + sqlite-vec vector store:
+- `better-sqlite3` for synchronous SQLite, `sqlite-vec` extension for KNN search
+- Per-project DB at `~/.seren-local/data/indexes/{hash}.db`
+- Tables: `code_chunks` (metadata), `code_embeddings` (vec0 virtual table, float[1536])
+- Functions: `initVectorDb`, `getStats`, `insertChunks`, `deleteFileChunks`, `searchSimilar`, `fileNeedsReindex`, `hasIndex`
+
+**`runtime/src/services/chunker.ts`** — File discovery and semantic chunking:
+- Language detection for 30+ file extensions
+- Language-specific chunking: Rust/JS/TS (brace-based), Python (indentation-based)
+- Generic fallback (100-line blocks)
+- File discovery with ignore patterns (node_modules, .git, dist, etc.)
+
+**12 indexing handlers registered** in `runtime/src/handlers/indexing.ts`:
+`initProjectIndex`, `getIndexStatus`, `hasProjectIndex`, `searchCodebase`, `fileNeedsReindex`, `deleteFileIndex`, `indexChunks`, `discoverProjectFiles`, `chunkFile`, `estimateIndexing`, `computeFileHash`, `getEmbeddingDimension`
+
 ---
 
 ## 15. What Gets Deleted

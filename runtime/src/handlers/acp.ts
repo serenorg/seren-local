@@ -4,6 +4,7 @@
 import * as acp from "@agentclientprotocol/sdk";
 import { spawn, type ChildProcess, execFile } from "node:child_process";
 import { Readable, Writable } from "node:stream";
+import { existsSync } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { resolve } from "node:path";
@@ -194,12 +195,42 @@ function handleSessionUpdate(
 function findAgentCommand(agentType: string): string {
   switch (agentType) {
     case "claude-code":
-      return "claude";
+      return findAcpAgentBinary();
     case "codex":
-      return "codex";
+      throw new Error("Codex agent not yet supported");
     default:
       throw new Error(`Unknown agent type: ${agentType}`);
   }
+}
+
+/**
+ * Locate the acp_agent binary, matching the same search pattern as Seren Desktop.
+ * Checks several candidate locations in priority order.
+ */
+function findAcpAgentBinary(): string {
+  const ext = platform() === "win32" ? ".exe" : "";
+  const binName = `acp_agent${ext}`;
+  const home = process.env.HOME ?? "~";
+
+  const candidates = [
+    // 1. runtime/bin/ (bundled with seren-local)
+    resolve(import.meta.dirname, "../../bin", binName),
+    // 2. ~/.seren-local/bin/ (user install location)
+    resolve(home, ".seren-local/bin", binName),
+    // 3. Seren Desktop embedded-runtime (development)
+    resolve(home, "Projects/Seren_Projects/seren-desktop/src-tauri/embedded-runtime/bin", binName),
+  ];
+
+  for (const candidate of candidates) {
+    if (existsSync(candidate)) {
+      console.log(`[ACP] Found agent binary at: ${candidate}`);
+      return candidate;
+    }
+  }
+
+  throw new Error(
+    `Agent binary 'acp_agent' not found. Checked locations:\n${candidates.map((p) => `  - ${p}`).join("\n")}`,
+  );
 }
 
 async function isCommandAvailable(command: string): Promise<boolean> {
@@ -217,8 +248,8 @@ export async function acpSpawn(params: any): Promise<any> {
   const command = findAgentCommand(agentType);
   const resolvedCwd = resolve(cwd);
 
-  // Spawn agent process
-  const args = ["--acp"];
+  // Spawn agent process (no flags needed — acp_agent speaks ACP natively over stdio)
+  const args: string[] = [];
   if (sandboxMode) {
     args.push("--sandbox", sandboxMode);
   }
@@ -314,7 +345,7 @@ export async function acpSpawn(params: any): Promise<any> {
     session.status = "error";
     emit("acp://error", {
       sessionId,
-      error: `Failed to initialize agent: ${err}`,
+      error: `Failed to initialize agent: ${err instanceof Error ? err.message : JSON.stringify(err)}`,
     });
     throw err;
   }
@@ -364,7 +395,7 @@ export async function acpPrompt(params: any): Promise<void> {
   } catch (err) {
     emit("acp://error", {
       sessionId,
-      error: `Prompt failed: ${err}`,
+      error: `Prompt failed: ${err instanceof Error ? err.message : JSON.stringify(err)}`,
     });
     throw err;
   } finally {
@@ -442,14 +473,23 @@ export async function acpRespondToDiffProposal(params: any): Promise<void> {
 }
 
 export async function acpGetAvailableAgents(): Promise<any[]> {
-  const agents = [
+  let claudeAvailable = false;
+  let claudeUnavailableReason: string | undefined;
+  try {
+    findAcpAgentBinary();
+    claudeAvailable = true;
+  } catch (err: any) {
+    claudeUnavailableReason = err.message;
+  }
+
+  return [
     {
       type: "claude-code",
       name: "Claude Code",
       description: "AI coding assistant by Anthropic",
-      command: "claude",
-      available: false,
-      unavailableReason: undefined as string | undefined,
+      command: "acp_agent",
+      available: claudeAvailable,
+      unavailableReason: claudeUnavailableReason,
     },
     {
       type: "codex",
@@ -457,24 +497,18 @@ export async function acpGetAvailableAgents(): Promise<any[]> {
       description: "AI coding assistant by OpenAI",
       command: "codex",
       available: false,
-      unavailableReason: undefined as string | undefined,
+      unavailableReason: "Codex agent not yet supported",
     },
   ];
-
-  for (const agent of agents) {
-    agent.available = await isCommandAvailable(agent.command);
-    if (!agent.available) {
-      agent.unavailableReason = `${agent.command} not found in PATH`;
-    }
-  }
-
-  return agents;
 }
 
 export async function acpCheckAgentAvailable(params: any): Promise<boolean> {
-  const { agentType } = params;
-  const command = findAgentCommand(agentType);
-  return isCommandAvailable(command);
+  try {
+    findAgentCommand(params.agentType);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export async function acpEnsureClaudeCli(): Promise<string> {

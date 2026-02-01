@@ -105,6 +105,12 @@ export async function readFile(params: { path: string }): Promise<string> {
   return fsReadFile(filePath, "utf-8");
 }
 
+export async function readFileBase64(params: { path: string }): Promise<string> {
+  const filePath = await validatePathReal(params.path);
+  const buffer = await fsReadFile(filePath);
+  return Buffer.from(buffer).toString("base64");
+}
+
 export async function writeFile(params: {
   path: string;
   content: string;

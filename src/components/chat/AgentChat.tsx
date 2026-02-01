@@ -233,8 +233,15 @@ export const AgentChat: Component<AgentChatProps> = (props) => {
           event.preventDefault();
           const selected = matches[commandPopupIndex()];
           if (selected) {
-            setInput(`/${selected.name} `);
-            setCommandPopupIndex(0);
+            if (!selected.argHint && event.key === "Enter") {
+              // No args needed — execute immediately
+              setInput(`/${selected.name}`);
+              setCommandPopupIndex(0);
+              sendMessage();
+            } else {
+              setInput(`/${selected.name} `);
+              setCommandPopupIndex(0);
+            }
           }
           return;
         }

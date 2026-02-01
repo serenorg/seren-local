@@ -6,13 +6,17 @@ import * as acp from "./acp.js";
 import * as chat from "./chat.js";
 import * as dialogs from "./dialogs.js";
 import * as fs from "./fs.js";
+import * as indexing from "./indexing.js";
+import * as mcp from "./mcp.js";
 import * as openclaw from "./openclaw.js";
+import * as sync from "./sync.js";
 import * as wallet from "./wallet.js";
 
 export function registerAllHandlers(): void {
   // File system handlers
   registerHandler("list_directory", fs.listDirectory);
   registerHandler("read_file", fs.readFile);
+  registerHandler("read_file_base64", fs.readFileBase64);
   registerHandler("write_file", fs.writeFile);
   registerHandler("path_exists", fs.pathExists);
   registerHandler("is_directory", fs.isDirectory);
@@ -63,6 +67,28 @@ export function registerAllHandlers(): void {
   registerHandler("clear_crypto_wallet", wallet.clearCryptoWallet);
   registerHandler("sign_x402_payment", wallet.signX402Payment);
   registerHandler("get_crypto_usdc_balance", wallet.getCryptoUsdcBalance);
+
+  // File watcher handlers
+  registerHandler("start_watching", sync.startWatching);
+  registerHandler("stop_watching", sync.stopWatching);
+
+  // Indexing handlers
+  registerHandler("init_project_index", indexing.initProjectIndex);
+  registerHandler("get_index_status", indexing.getIndexStatus);
+  registerHandler("has_project_index", indexing.hasProjectIndex);
+  registerHandler("search_codebase", indexing.searchCodebase);
+  registerHandler("file_needs_reindex", indexing.fileNeedsReindex);
+  registerHandler("delete_file_index", indexing.deleteFileIndex);
+  registerHandler("index_chunks", indexing.indexChunks);
+  registerHandler("discover_project_files", indexing.discoverProjectFiles);
+  registerHandler("chunk_file", indexing.chunkFile);
+  registerHandler("estimate_indexing", indexing.estimateIndexing);
+  registerHandler("compute_file_hash", indexing.computeFileHash);
+  registerHandler("get_embedding_dimension", indexing.getEmbeddingDimension);
+
+  // MCP handlers
+  registerHandler("mcp_disconnect", mcp.mcpDisconnect);
+  registerHandler("mcp_read_resource", mcp.mcpReadResource);
 
   // Chat/conversation handlers
   registerHandler("create_conversation", chat.createConversation);
