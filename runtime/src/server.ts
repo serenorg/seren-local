@@ -93,7 +93,7 @@ function openBrowser(url: string): void {
     platform() === "win32" ? `start "" "${url}"` :
     `xdg-open "${url}"`;
   exec(cmd, (err) => {
-    if (err) console.log(`[Runtime] Could not open browser: ${err.message}`);
+    if (err) console.log(`[Seren Local] Could not open browser: ${err.message}`);
   });
 }
 
@@ -148,7 +148,7 @@ function proxyToGateway(req: IncomingMessage, res: ServerResponse, host: string)
     );
 
     proxyReq.on("error", (err) => {
-      console.error("[Runtime] Gateway proxy error:", err.message);
+      console.error("[Seren Local] Gateway proxy error:", err.message);
       res.writeHead(502, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ error: "Gateway proxy error", message: err.message }));
     });
@@ -218,12 +218,12 @@ wss.on("connection", (ws, req) => {
     return;
   }
 
-  console.log("[Runtime] Browser connecting (awaiting auth)...");
+  console.log("[Seren Local] Browser connecting (awaiting auth)...");
 
   // Set a timeout: client must authenticate within 5 seconds
   const authTimeout = setTimeout(() => {
     if (!authenticatedSockets.has(ws)) {
-      console.warn("[Runtime] Auth timeout, closing connection");
+      console.warn("[Seren Local] Auth timeout, closing connection");
       ws.close(4001, "Authentication timeout");
     }
   }, 5000);
@@ -239,7 +239,7 @@ wss.on("connection", (ws, req) => {
         if (authMsg.method === "auth" && authMsg.params?.token === AUTH_TOKEN) {
           authenticatedSockets.add(ws);
           addClient(ws);
-          console.log("[Runtime] Browser authenticated");
+          console.log("[Seren Local] Browser authenticated");
           // Send auth success response
           if (authMsg.id != null) {
             ws.send(JSON.stringify({ jsonrpc: "2.0", result: { authenticated: true }, id: authMsg.id }));
@@ -249,7 +249,7 @@ wss.on("connection", (ws, req) => {
       } catch {
         // Not valid JSON, treat as failed auth
       }
-      console.warn("[Runtime] Invalid auth token, closing connection");
+      console.warn("[Seren Local] Invalid auth token, closing connection");
       ws.close(4002, "Invalid auth token");
       return;
     }
@@ -262,7 +262,7 @@ wss.on("connection", (ws, req) => {
 
   ws.on("close", () => {
     clearTimeout(authTimeout);
-    console.log("[Runtime] Browser disconnected");
+    console.log("[Seren Local] Browser disconnected");
   });
 });
 
@@ -276,12 +276,12 @@ registerAllHandlers();
 httpServer.listen(PORT, "127.0.0.1", () => {
   const url = `http://127.0.0.1:${PORT}`;
   const hasSpa = existsSync(join(PUBLIC_DIR, "index.html"));
-  console.log(`[Seren Runtime] Listening on ${url}`);
+  console.log(`[Seren Local] Listening on ${url}`);
   if (hasSpa) {
-    console.log(`[Seren Runtime] Serving app at ${url}`);
+    console.log(`[Seren Local] Serving app at ${url}`);
     if (!NO_OPEN) openBrowser(url);
   } else {
-    console.log("[Seren Runtime] No embedded SPA found (runtime/public/). Run build:embed to bundle the app.");
+    console.log("[Seren Local] No embedded SPA found (runtime/public/). Run build:embed to bundle the app.");
   }
   checkForUpdates();
 });

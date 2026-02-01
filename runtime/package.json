@@ -1,7 +1,7 @@
 {
   "name": "@serendb/runtime",
   "version": "0.1.0",
-  "description": "Seren local runtime — enables ACP agents, local MCP, and file access",
+  "description": "Seren Local runtime — enables ACP agents, local MCP, and file access",
   "type": "module",
   "bin": {
     "seren-local": "./bin/seren.js"
