@@ -34,6 +34,22 @@
     "tailwind-merge": "^3.4.0",
     "tailwindcss": "4"
   },
+  "sidecars": {
+    "seren-acp-claude": {
+      "name": "Claude Code",
+      "git": "https://github.com/serenorg/seren-acp-claude",
+      "tag": "v0.1.0",
+      "bin": "seren-acp-claude",
+      "dest": "seren-acp-claude"
+    },
+    "seren-acp-codex": {
+      "name": "Codex",
+      "git": "https://github.com/serenorg/seren-acp-codex",
+      "tag": "v0.1.0",
+      "bin": "seren-acp-codex",
+      "dest": "seren-acp-codex"
+    }
+  },
   "devDependencies": {
     "@biomejs/biome": "2.3.11",
     "@hey-api/openapi-ts": "0.90.10",
