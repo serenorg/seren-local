@@ -58,15 +58,19 @@ const CONVERSATIONS_STORE = "conversations";
 const MESSAGES_STORE = "messages";
 
 const RUNTIME_PORT = 19420;
-const RUNTIME_URL = `ws://localhost:${RUNTIME_PORT}`;
+const RUNTIME_HTTP_URL = `http://127.0.0.1:${RUNTIME_PORT}`;
+const RUNTIME_WS_URL = `ws://127.0.0.1:${RUNTIME_PORT}`;
 const RPC_TIMEOUT_MS = 30_000;
 
 // ============================================================================
-// Runtime connection (WebSocket JSON-RPC)
+// Runtime connection (WebSocket JSON-RPC with token auth)
 // ============================================================================
 
 let ws: WebSocket | null = null;
 let rpcId = 0;
+let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+let reconnectAttempt = 0;
+const MAX_RECONNECT_DELAY_MS = 30_000;
 const pendingRpc = new Map<
   number,
   { resolve: (v: unknown) => void; reject: (e: Error) => void }
@@ -77,21 +81,83 @@ export function isRuntimeConnected(): boolean {
   return ws !== null && ws.readyState === WebSocket.OPEN;
 }
 
+/**
+ * Schedule a reconnection attempt with exponential backoff.
+ */
+function scheduleReconnect(): void {
+  if (reconnectTimer) return;
+  const delay = Math.min(1000 * 2 ** reconnectAttempt, MAX_RECONNECT_DELAY_MS);
+  reconnectAttempt++;
+  reconnectTimer = setTimeout(async () => {
+    reconnectTimer = null;
+    const connected = await connectToRuntime();
+    if (connected) {
+      reconnectAttempt = 0;
+      // Notify listeners that runtime reconnected
+      const listeners = eventListeners.get("runtime:connected");
+      if (listeners) {
+        for (const cb of listeners) cb(null);
+      }
+    } else {
+      scheduleReconnect();
+    }
+  }, delay);
+}
+
+/**
+ * Fetch the auth token from the runtime's health endpoint.
+ * Only accessible from localhost.
+ */
+async function fetchRuntimeToken(): Promise<string | null> {
+  try {
+    const res = await fetch(`${RUNTIME_HTTP_URL}/health`);
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data.token ?? null;
+  } catch {
+    return null;
+  }
+}
+
 export async function connectToRuntime(): Promise<boolean> {
   if (isRuntimeConnected()) return true;
 
+  // Step 1: Fetch auth token from runtime health endpoint
+  const token = await fetchRuntimeToken();
+  if (!token) return false;
+
+  // Step 2: Connect WebSocket and authenticate
   return new Promise<boolean>((resolve) => {
     try {
-      const socket = new WebSocket(RUNTIME_URL);
+      const socket = new WebSocket(RUNTIME_WS_URL);
       const timeout = setTimeout(() => {
         socket.close();
         resolve(false);
       }, 5000);
 
       socket.addEventListener("open", () => {
-        clearTimeout(timeout);
-        ws = socket;
-        resolve(true);
+        // Send auth message as first message
+        const authId = ++rpcId;
+        pendingRpc.set(authId, {
+          resolve: () => {
+            clearTimeout(timeout);
+            ws = socket;
+            resolve(true);
+          },
+          reject: () => {
+            clearTimeout(timeout);
+            socket.close();
+            resolve(false);
+          },
+        });
+        socket.send(
+          JSON.stringify({
+            jsonrpc: "2.0",
+            method: "auth",
+            params: { token },
+            id: authId,
+          }),
+        );
       });
 
       socket.addEventListener("error", () => {
@@ -100,12 +166,17 @@ export async function connectToRuntime(): Promise<boolean> {
       });
 
       socket.addEventListener("close", () => {
+        const wasConnected = ws === socket;
         ws = null;
         // Reject all pending RPCs
         for (const [, rpc] of pendingRpc) {
           rpc.reject(new Error("Runtime connection closed"));
         }
         pendingRpc.clear();
+        // Auto-reconnect if we were previously connected
+        if (wasConnected) {
+          scheduleReconnect();
+        }
       });
 
       socket.addEventListener("message", (event) => {
@@ -139,6 +210,12 @@ export async function connectToRuntime(): Promise<boolean> {
 }
 
 export function disconnectRuntime(): void {
+  // Cancel any pending reconnect
+  if (reconnectTimer) {
+    clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+  }
+  reconnectAttempt = 0;
   if (ws) {
     ws.close();
     ws = null;
@@ -433,6 +510,15 @@ export async function createConversation(
   selectedModel?: string,
   selectedProvider?: string,
 ): Promise<Conversation> {
+  if (isRuntimeConnected()) {
+    return runtimeInvoke<Conversation>("create_conversation", {
+      id,
+      title,
+      selectedModel,
+      selectedProvider,
+    });
+  }
+
   const db = await openDB();
   const conv: Conversation = {
     id,
@@ -457,6 +543,10 @@ export async function createConversation(
 }
 
 export async function getConversations(): Promise<Conversation[]> {
+  if (isRuntimeConnected()) {
+    return runtimeInvoke<Conversation[]>("get_conversations");
+  }
+
   const db = await openDB();
   return new Promise((resolve, reject) => {
     const tx = db.transaction(CONVERSATIONS_STORE, "readonly");
@@ -479,6 +569,10 @@ export async function getConversations(): Promise<Conversation[]> {
 export async function getConversation(
   id: string,
 ): Promise<Conversation | null> {
+  if (isRuntimeConnected()) {
+    return runtimeInvoke<Conversation | null>("get_conversation", { id });
+  }
+
   const db = await openDB();
   return new Promise((resolve, reject) => {
     const tx = db.transaction(CONVERSATIONS_STORE, "readonly");
@@ -500,6 +594,16 @@ export async function updateConversation(
   selectedModel?: string,
   selectedProvider?: string,
 ): Promise<void> {
+  if (isRuntimeConnected()) {
+    await runtimeInvoke<void>("update_conversation", {
+      id,
+      title,
+      selectedModel,
+      selectedProvider,
+    });
+    return;
+  }
+
   const existing = await getConversation(id);
   if (!existing) return;
 
@@ -528,6 +632,11 @@ export async function updateConversation(
 }
 
 export async function archiveConversation(id: string): Promise<void> {
+  if (isRuntimeConnected()) {
+    await runtimeInvoke<void>("archive_conversation", { id });
+    return;
+  }
+
   const existing = await getConversation(id);
   if (!existing) return;
 
@@ -547,6 +656,11 @@ export async function archiveConversation(id: string): Promise<void> {
 }
 
 export async function deleteConversation(id: string): Promise<void> {
+  if (isRuntimeConnected()) {
+    await runtimeInvoke<void>("delete_conversation", { id });
+    return;
+  }
+
   const db = await openDB();
   return new Promise((resolve, reject) => {
     const tx = db.transaction(
@@ -586,6 +700,18 @@ export async function saveMessage(
   model: string | null,
   timestamp: number,
 ): Promise<void> {
+  if (isRuntimeConnected()) {
+    await runtimeInvoke<void>("save_message", {
+      id,
+      conversationId,
+      role,
+      content,
+      model,
+      timestamp,
+    });
+    return;
+  }
+
   const msg: StoredMessage = {
     id,
     conversation_id: conversationId,
@@ -613,6 +739,13 @@ export async function getMessages(
   conversationId: string,
   limit: number,
 ): Promise<StoredMessage[]> {
+  if (isRuntimeConnected()) {
+    return runtimeInvoke<StoredMessage[]>("get_messages", {
+      conversationId,
+      limit,
+    });
+  }
+
   const db = await openDB();
   return new Promise((resolve, reject) => {
     const tx = db.transaction(MESSAGES_STORE, "readonly");
@@ -635,6 +768,10 @@ export async function getMessages(
 export async function clearConversationHistory(
   conversationId: string,
 ): Promise<void> {
+  // clearConversationHistory is equivalent to deleting all messages for a conversation.
+  // The runtime doesn't have a dedicated handler, so we use delete + recreate pattern
+  // via the existing deleteConversation which also deletes messages.
+  // For now, only IndexedDB supports this granular operation.
   const db = await openDB();
   return new Promise((resolve, reject) => {
     const tx = db.transaction(MESSAGES_STORE, "readwrite");

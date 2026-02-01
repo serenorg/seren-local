@@ -3,9 +3,11 @@
 
 import { registerHandler } from "../rpc";
 import * as chat from "./chat";
+import * as dialogs from "./dialogs";
 import * as fs from "./fs";
 
 export function registerAllHandlers(): void {
+  // File system handlers
   registerHandler("list_directory", fs.listDirectory);
   registerHandler("read_file", fs.readFile);
   registerHandler("write_file", fs.writeFile);
@@ -15,6 +17,12 @@ export function registerAllHandlers(): void {
   registerHandler("create_directory", fs.createDirectory);
   registerHandler("delete_path", fs.deletePath);
   registerHandler("rename_path", fs.renamePath);
+
+  // Dialog handlers
+  registerHandler("open_folder_dialog", dialogs.openFolderDialog);
+  registerHandler("open_file_dialog", dialogs.openFileDialog);
+  registerHandler("save_file_dialog", dialogs.saveFileDialog);
+  registerHandler("reveal_in_file_manager", dialogs.revealInFileManager);
 
   // Chat/conversation handlers
   registerHandler("create_conversation", chat.createConversation);

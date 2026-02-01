@@ -1,7 +1,8 @@
 // ABOUTME: JSON-RPC 2.0 command router for the local runtime.
 // ABOUTME: Dispatches incoming WebSocket messages to registered handlers.
 
-type RpcHandler = (params: unknown) => Promise<unknown>;
+// biome-ignore lint: handlers accept various typed params, cast at registration
+type RpcHandler = (params: any) => Promise<unknown>;
 
 const handlers = new Map<string, RpcHandler>();
 
