@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ABOUTME: Cross-platform install script for Seren local runtime (macOS/Linux).
-# ABOUTME: Auto-downloads Node.js if missing, installs @serendb/runtime into ~/.seren.
+# ABOUTME: Auto-downloads Node.js if missing, installs @serendb/runtime into ~/.seren-local.
 #
 # Usage: curl -fsSL https://seren.com/install | sh
 
@@ -15,7 +15,7 @@ RESET='\033[0m'
 NODE_VERSION="22.13.1"
 MIN_NODE_MAJOR=20
 PACKAGE="@serendb/runtime"
-SEREN_DIR="${HOME}/.seren"
+SEREN_DIR="${HOME}/.seren-local"
 SEREN_NODE_DIR="${SEREN_DIR}/node"
 SEREN_BIN="${SEREN_DIR}/bin"
 
@@ -104,7 +104,7 @@ install_node() {
     exit 1
   fi
 
-  # Extract to ~/.seren/node/
+  # Extract to ~/.seren-local/node/
   mkdir -p "$SEREN_NODE_DIR"
   tar xzf "$tmp_tar" -C "$SEREN_NODE_DIR" --strip-components=1
   rm -f "$tmp_tar"
@@ -240,7 +240,7 @@ main() {
   echo "    ${BOLD}seren${RESET}"
   printf "\n"
   echo "  Then open Seren in your browser:"
-  echo "    ${BOLD}https://app.seren.com${RESET}"
+  echo "    ${BOLD}https://app.seren-local.com${RESET}"
   printf "\n"
   echo "  The browser will automatically connect to your local runtime."
   printf "\n"

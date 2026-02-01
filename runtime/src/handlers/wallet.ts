@@ -25,7 +25,7 @@ import { base } from "viem/chains";
 
 // ── Constants ─────────────────────────────────────────────────────────
 
-const SEREN_DIR = join(homedir(), ".seren");
+const SEREN_DIR = join(homedir(), ".seren-local");
 const WALLET_FILE = join(SEREN_DIR, "data", "crypto-wallet.json");
 const USDC_CONTRACT_BASE: Address =
   "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";

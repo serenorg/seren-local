@@ -267,7 +267,7 @@ wss.on("connection", (ws, req) => {
 });
 
 // Initialize SQLite database for conversation storage
-const dataDir = join(homedir(), ".seren");
+const dataDir = join(homedir(), ".seren-local");
 mkdirSync(dataDir, { recursive: true });
 initChatDb(join(dataDir, "conversations.db"));
 

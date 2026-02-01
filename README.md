@@ -37,9 +37,9 @@ irm https://seren.com/install.ps1 | iex
 
 ### What the installer does
 
-1. Downloads Node.js to `~/.seren/node/` (if you don't have Node 20+)
-2. Installs `@serendb/runtime` via npm into `~/.seren/`
-3. Adds `~/.seren/bin` to your PATH
+1. Downloads Node.js to `~/.seren-local/node/` (if you don't have Node 20+)
+2. Installs `@serendb/runtime` via npm into `~/.seren-local/`
+3. Adds `~/.seren-local/bin` to your PATH
 
 ### Running Seren
 
@@ -54,13 +54,13 @@ The runtime starts on `localhost:19420` and opens your browser automatically.
 Remove the Seren directory:
 
 ```sh
-rm -rf ~/.seren
+rm -rf ~/.seren-local
 ```
 
 On Windows:
 
 ```powershell
-Remove-Item -Recurse -Force "$env:USERPROFILE\.seren"
+Remove-Item -Recurse -Force "$env:USERPROFILE\.seren-local"
 ```
 
 ## For Developers

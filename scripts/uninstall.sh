@@ -13,7 +13,7 @@ RED='\033[0;31m'
 RESET='\033[0m'
 
 PACKAGE="@serendb/runtime"
-DATA_DIR="${HOME}/.seren"
+DATA_DIR="${HOME}/.seren-local"
 
 info()  { printf "${BOLD}%s${RESET}\n" "$*"; }
 ok()    { printf "${GREEN}✓ %s${RESET}\n" "$*"; }

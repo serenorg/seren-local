@@ -59,7 +59,7 @@ const CONFIG_PATH = join(OPENCLAW_DIR, "openclaw.json");
 
 // ── Settings (simple JSON persistence) ───────────────────────────────
 
-const SETTINGS_PATH = join(homedir(), ".seren", "settings.json");
+const SETTINGS_PATH = join(homedir(), ".seren-local", "settings.json");
 
 async function loadSettings(): Promise<Record<string, unknown>> {
   try {
@@ -71,7 +71,7 @@ async function loadSettings(): Promise<Record<string, unknown>> {
 }
 
 async function saveSettings(settings: Record<string, unknown>): Promise<void> {
-  await mkdir(join(homedir(), ".seren"), { recursive: true });
+  await mkdir(join(homedir(), ".seren-local"), { recursive: true });
   await writeFile(SETTINGS_PATH, JSON.stringify(settings, null, 2), "utf-8");
 }
 
@@ -142,7 +142,7 @@ async function getOrCreateToken(): Promise<string> {
 async function findOpenClawEntrypoint(): Promise<string> {
   const candidates = [
     // Global npm install
-    join(homedir(), ".seren", "lib", "node_modules", "openclaw", "openclaw.mjs"),
+    join(homedir(), ".seren-local", "lib", "node_modules", "openclaw", "openclaw.mjs"),
     // Development
     join(homedir(), ".openclaw", "openclaw.mjs"),
   ];

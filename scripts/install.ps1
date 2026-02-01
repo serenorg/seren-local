@@ -1,5 +1,5 @@
 # ABOUTME: Windows install script for Seren local runtime.
-# ABOUTME: Auto-downloads Node.js if missing, installs @serendb/runtime into ~/.seren.
+# ABOUTME: Auto-downloads Node.js if missing, installs @serendb/runtime into ~/.seren-local.
 #
 # Usage: irm https://seren.com/install.ps1 | iex
 
@@ -8,7 +8,7 @@ $ErrorActionPreference = "Stop"
 $NODE_VERSION = "22.13.1"
 $MIN_NODE_MAJOR = 20
 $PACKAGE = "@serendb/runtime"
-$SEREN_DIR = Join-Path $env:USERPROFILE ".seren"
+$SEREN_DIR = Join-Path $env:USERPROFILE ".seren-local"
 $SEREN_NODE_DIR = Join-Path $SEREN_DIR "node"
 $SEREN_BIN = Join-Path $SEREN_DIR "bin"
 
@@ -79,7 +79,7 @@ function Install-Node {
         New-Item -ItemType Directory -Path $tmpExtract -Force | Out-Null
         Expand-Archive -Path $tmpZip -DestinationPath $tmpExtract -Force
 
-        # Move to ~/.seren/node/
+        # Move to ~/.seren-local/node/
         $extracted = Get-ChildItem -Path $tmpExtract -Directory | Select-Object -First 1
         if (Test-Path $SEREN_NODE_DIR) { Remove-Item -Recurse -Force $SEREN_NODE_DIR }
         Move-Item -Path $extracted.FullName -Destination $SEREN_NODE_DIR
@@ -232,7 +232,7 @@ Write-Host "  Start the runtime:" -ForegroundColor White
 Write-Host "    seren" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "  Then open Seren in your browser:" -ForegroundColor White
-Write-Host "    https://app.seren.com" -ForegroundColor Cyan
+Write-Host "    https://app.seren-local.com" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "  The browser will automatically connect to your local runtime." -ForegroundColor Gray
 if (Test-Path (Join-Path $SEREN_NODE_DIR "node.exe")) {

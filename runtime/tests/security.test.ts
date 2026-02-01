@@ -48,7 +48,7 @@ describe("validatePathReal (symlink-aware check)", () => {
   });
 
   it("allows real paths within home directory", async () => {
-    const result = await validatePathReal(join(homedir(), ".seren"));
+    const result = await validatePathReal(join(homedir(), ".seren-local"));
     expect(result).toContain(homedir());
   });
 

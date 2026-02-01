@@ -21,7 +21,7 @@ catch {
 }
 
 # Ask about data directory
-$dataDir = Join-Path $env:USERPROFILE ".seren"
+$dataDir = Join-Path $env:USERPROFILE ".seren-local"
 if (Test-Path $dataDir) {
     $answer = Read-Host "  Remove data directory ($dataDir)? [y/N]"
     if ($answer -eq "y" -or $answer -eq "Y") {
