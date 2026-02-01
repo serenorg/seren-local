@@ -348,11 +348,74 @@ function createMcpClient() {
 
   // ============================================================================
   // HTTP MCP Client (for remote servers like mcp.serendb.com)
+  // Uses browser fetch directly — no runtime required.
   // ============================================================================
+
+  // Track HTTP MCP connections: serverName → { url, authToken, sessionId }
+  const httpConnections = new Map<
+    string,
+    { url: string; authToken?: string; sessionId?: string }
+  >();
+
+  let httpRpcId = 0;
+
+  /**
+   * Send a JSON-RPC request to an HTTP MCP server.
+   */
+  async function httpRpc<T>(
+    serverName: string,
+    method: string,
+    params?: Record<string, unknown>,
+  ): Promise<T> {
+    const conn = httpConnections.get(serverName);
+    if (!conn) {
+      throw new Error(`HTTP MCP server "${serverName}" is not connected`);
+    }
+
+    const id = ++httpRpcId;
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    };
+    if (conn.authToken) {
+      headers.Authorization = `Bearer ${conn.authToken}`;
+    }
+    if (conn.sessionId) {
+      headers["Mcp-Session-Id"] = conn.sessionId;
+    }
+
+    const response = await fetch(conn.url, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id,
+        method,
+        params: params ?? {},
+      }),
+    });
+
+    // Capture session ID from response headers
+    const sessionId = response.headers.get("Mcp-Session-Id");
+    if (sessionId && sessionId !== conn.sessionId) {
+      conn.sessionId = sessionId;
+    }
+
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(`MCP HTTP error ${response.status}: ${text}`);
+    }
+
+    const data = await response.json();
+    if (data.error) {
+      throw new Error(data.error.message || "MCP RPC error");
+    }
+    return data.result as T;
+  }
 
   /**
    * Connect to a remote MCP server via HTTP streaming transport.
-   * This is for servers like mcp.serendb.com that use MCP over HTTP.
+   * Uses browser fetch directly — no runtime required.
    */
   async function connectHttp(
     serverName: string,
@@ -372,16 +435,41 @@ function createMcpClient() {
       return next;
     });
 
+    // Track the HTTP connection
+    httpConnections.set(serverName, { url, authToken });
+
     try {
-      // Connect via Tauri HTTP MCP command
-      const result = await runtimeInvoke<McpInitializeResult>(
-        "mcp_connect_http",
+      // Send MCP initialize request
+      const result = await httpRpc<McpInitializeResult>(
+        serverName,
+        "initialize",
         {
-          serverName,
-          url,
-          authToken: authToken || null,
+          protocolVersion: "2024-11-05",
+          capabilities: {},
+          clientInfo: { name: "seren-browser", version: "0.1.0" },
         },
       );
+
+      // Send initialized notification (no response expected, but some servers need it)
+      await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+          ...(httpConnections.get(serverName)?.sessionId
+            ? {
+                "Mcp-Session-Id":
+                  httpConnections.get(serverName)!.sessionId!,
+              }
+            : {}),
+        },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          method: "notifications/initialized",
+        }),
+      }).catch(() => {
+        // Ignore — some servers don't accept notifications
+      });
 
       // Fetch tools from HTTP MCP server
       const tools = await listToolsHttp(serverName);
@@ -394,11 +482,12 @@ function createMcpClient() {
           status: "connected",
           capabilities: result,
           tools,
-          resources: [], // HTTP MCP doesn't have resources typically
+          resources: [],
         });
         return next;
       });
     } catch (error) {
+      httpConnections.delete(serverName);
       setConnectionStatus(
         serverName,
         "error",
@@ -412,22 +501,23 @@ function createMcpClient() {
    * Disconnect from an HTTP MCP server.
    */
   async function disconnectHttp(serverName: string): Promise<void> {
-    try {
-      await runtimeInvoke("mcp_disconnect_http", { serverName });
-    } finally {
-      setConnections((prev) => {
-        const next = new Map(prev);
-        next.delete(serverName);
-        return next;
-      });
-    }
+    httpConnections.delete(serverName);
+    setConnections((prev) => {
+      const next = new Map(prev);
+      next.delete(serverName);
+      return next;
+    });
   }
 
   /**
    * List tools from an HTTP MCP server.
    */
   async function listToolsHttp(serverName: string): Promise<McpTool[]> {
-    return runtimeInvoke<McpTool[]>("mcp_list_tools_http", { serverName });
+    const result = await httpRpc<{ tools: McpTool[] }>(
+      serverName,
+      "tools/list",
+    );
+    return result.tools ?? [];
   }
 
   /**
@@ -438,9 +528,8 @@ function createMcpClient() {
     call: McpToolCall,
     options?: CallToolOptions,
   ): Promise<McpToolResult> {
-    const invocation = runtimeInvoke<McpToolResult>("mcp_call_tool_http", {
-      serverName,
-      toolName: call.name,
+    const invocation = httpRpc<McpToolResult>(serverName, "tools/call", {
+      name: call.name,
       arguments: call.arguments,
     }).catch((error) => {
       throw parseMcpError(error, serverName);
@@ -453,14 +542,14 @@ function createMcpClient() {
    * Check if an HTTP MCP server is connected.
    */
   async function isConnectedHttp(serverName: string): Promise<boolean> {
-    return runtimeInvoke<boolean>("mcp_is_connected_http", { serverName });
+    return httpConnections.has(serverName);
   }
 
   /**
    * List connected HTTP MCP servers.
    */
   async function listConnectedHttp(): Promise<string[]> {
-    return runtimeInvoke<string[]>("mcp_list_connected_http");
+    return Array.from(httpConnections.keys());
   }
 
   return {
