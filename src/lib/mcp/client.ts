@@ -458,8 +458,7 @@ function createMcpClient() {
           ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
           ...(httpConnections.get(serverName)?.sessionId
             ? {
-                "Mcp-Session-Id":
-                  httpConnections.get(serverName)!.sessionId!,
+                "Mcp-Session-Id": httpConnections.get(serverName)!.sessionId!,
               }
             : {}),
         },

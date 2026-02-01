@@ -11,11 +11,6 @@ import {
   Switch,
   untrack,
 } from "solid-js";
-import { connectToRuntime, storeOAuthCredentials } from "@/lib/bridge";
-import {
-  getPendingOAuthProvider,
-  handleOAuthCallback,
-} from "@/services/oauth";
 import { SignIn } from "@/components/auth/SignIn";
 import { CatalogPanel } from "@/components/catalog";
 import { ChatContent } from "@/components/chat/ChatContent";
@@ -32,9 +27,11 @@ import { SettingsPanel } from "@/components/settings/SettingsPanel";
 import { DatabasePanel } from "@/components/sidebar/DatabasePanel";
 import { FileExplorer } from "@/components/sidebar/FileExplorer";
 import { DailyClaimPopup } from "@/components/wallet/DailyClaimPopup";
+import { connectToRuntime, storeOAuthCredentials } from "@/lib/bridge";
 import { shortcuts } from "@/lib/shortcuts";
 import { Phase3Playground } from "@/playground/Phase3Playground";
 import { initAutoTopUp } from "@/services/autoTopUp";
+import { getPendingOAuthProvider, handleOAuthCallback } from "@/services/oauth";
 import {
   startOpenClawAgent,
   stopOpenClawAgent,

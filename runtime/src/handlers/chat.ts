@@ -86,7 +86,9 @@ export async function getConversations(): Promise<Conversation[]> {
     .prepare(
       `SELECT * FROM conversations WHERE is_archived = 0 ORDER BY created_at DESC`,
     )
-    .all() as Array<Omit<Conversation, "is_archived"> & { is_archived: number }>;
+    .all() as Array<
+    Omit<Conversation, "is_archived"> & { is_archived: number }
+  >;
   return rows.map((r) => ({ ...r, is_archived: r.is_archived === 1 }));
 }
 
@@ -125,7 +127,12 @@ export async function updateConversation(params: {
 
   db.prepare(
     `UPDATE conversations SET title = ?, selected_model = ?, selected_provider = ? WHERE id = ?`,
-  ).run(updated.title, updated.selected_model, updated.selected_provider, params.id);
+  ).run(
+    updated.title,
+    updated.selected_model,
+    updated.selected_provider,
+    params.id,
+  );
 }
 
 export async function archiveConversation(params: {

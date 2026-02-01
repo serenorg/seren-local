@@ -1,23 +1,19 @@
 // ABOUTME: Local runtime server for Seren Browser.
 // ABOUTME: HTTP + WebSocket server on localhost, bridges browser to local capabilities.
 
-import { createServer } from "node:http";
-import { WebSocketServer } from "ws";
-import { join } from "node:path";
-import { homedir } from "node:os";
 import { mkdirSync } from "node:fs";
-import { handleMessage } from "./rpc";
-import { registerAllHandlers } from "./handlers/index";
+import { createServer } from "node:http";
+import { homedir } from "node:os";
+import { join } from "node:path";
+import { WebSocketServer } from "ws";
 import { initChatDb } from "./handlers/chat";
+import { registerAllHandlers } from "./handlers/index";
+import { handleMessage } from "./rpc";
 
 const PORT = Number(process.env.SEREN_PORT) || 19420;
 
 function isLocalhost(addr: string | undefined): boolean {
-  return (
-    addr === "127.0.0.1" ||
-    addr === "::1" ||
-    addr === "::ffff:127.0.0.1"
-  );
+  return addr === "127.0.0.1" || addr === "::1" || addr === "::ffff:127.0.0.1";
 }
 
 const httpServer = createServer((req, res) => {

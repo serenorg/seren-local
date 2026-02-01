@@ -188,7 +188,8 @@ export const FileExplorerPanel: Component<FileExplorerPanelProps> = (props) => {
                       Local runtime required
                     </p>
                     <p class="m-0 text-muted-foreground text-[11px]">
-                      Run <code>npx @serendb/runtime</code> to enable file browsing
+                      Run <code>npx @serendb/runtime</code> to enable file
+                      browsing
                     </p>
                   </>
                 }

@@ -2,8 +2,8 @@
 // ABOUTME: Called once at server startup.
 
 import { registerHandler } from "../rpc";
-import * as fs from "./fs";
 import * as chat from "./chat";
+import * as fs from "./fs";
 
 export function registerAllHandlers(): void {
   registerHandler("list_directory", fs.listDirectory);

@@ -1,9 +1,18 @@
 // ABOUTME: File system handlers for the local runtime.
 // ABOUTME: All paths validated against home directory to prevent traversal attacks.
 
-import { readdir, readFile as fsReadFile, writeFile as fsWriteFile, mkdir, rm, rename, stat, access } from "node:fs/promises";
-import { resolve, join } from "node:path";
+import {
+  access,
+  readFile as fsReadFile,
+  writeFile as fsWriteFile,
+  mkdir,
+  readdir,
+  rename,
+  rm,
+  stat,
+} from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 
 interface FileEntry {
   name: string;
@@ -26,7 +35,9 @@ export function validatePath(requestedPath: string): string {
   throw new Error("Access denied: path must be within home directory");
 }
 
-export async function listDirectory(params: { path: string }): Promise<FileEntry[]> {
+export async function listDirectory(params: {
+  path: string;
+}): Promise<FileEntry[]> {
   const dir = validatePath(params.path);
   const entries = await readdir(dir, { withFileTypes: true });
   return entries.map((entry) => ({
@@ -41,7 +52,10 @@ export async function readFile(params: { path: string }): Promise<string> {
   return fsReadFile(filePath, "utf-8");
 }
 
-export async function writeFile(params: { path: string; content: string }): Promise<void> {
+export async function writeFile(params: {
+  path: string;
+  content: string;
+}): Promise<void> {
   const filePath = validatePath(params.path);
   await fsWriteFile(filePath, params.content, "utf-8");
 }
@@ -66,7 +80,10 @@ export async function isDirectory(params: { path: string }): Promise<boolean> {
   }
 }
 
-export async function createFile(params: { path: string; content?: string }): Promise<void> {
+export async function createFile(params: {
+  path: string;
+  content?: string;
+}): Promise<void> {
   const filePath = validatePath(params.path);
   await fsWriteFile(filePath, params.content ?? "", "utf-8");
 }
@@ -81,7 +98,10 @@ export async function deletePath(params: { path: string }): Promise<void> {
   await rm(p, { recursive: true, force: true });
 }
 
-export async function renamePath(params: { oldPath: string; newPath: string }): Promise<void> {
+export async function renamePath(params: {
+  oldPath: string;
+  newPath: string;
+}): Promise<void> {
   const oldP = validatePath(params.oldPath);
   const newP = validatePath(params.newPath);
   await rename(oldP, newP);

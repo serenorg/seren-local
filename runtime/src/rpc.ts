@@ -32,10 +32,7 @@ function errorResponse(
   return JSON.stringify(response);
 }
 
-function successResponse(
-  result: unknown,
-  id: string | number | null,
-): string {
+function successResponse(result: unknown, id: string | number | null): string {
   const response: JsonRpcResponse = {
     jsonrpc: "2.0",
     result,
