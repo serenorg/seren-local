@@ -1,7 +1,8 @@
 // ABOUTME: Shared file explorer sidebar for the resizable layout.
 // ABOUTME: Provides folder opening and file tree navigation.
 
-import { type Component, createSignal } from "solid-js";
+import { type Component, createSignal, Show } from "solid-js";
+import { isRuntimeConnected } from "@/lib/bridge";
 import {
   loadDirectoryChildren,
   openFileInTab,
@@ -70,6 +71,8 @@ export const FileExplorer: Component = () => {
     }
   };
 
+  const runtimeAvailable = () => isRuntimeConnected();
+
   return (
     <aside class="flex flex-col h-full bg-[#161b22] border-r border-[#21262d]">
       <div class="flex justify-between items-center px-3 py-2.5 border-b border-[#21262d] text-[11px] font-semibold uppercase tracking-wide text-[#8b949e]">
@@ -77,18 +80,30 @@ export const FileExplorer: Component = () => {
         <button
           type="button"
           onClick={handleOpenFolder}
-          disabled={isLoading()}
-          title="Open Folder"
+          disabled={isLoading() || !runtimeAvailable()}
+          title={runtimeAvailable() ? "Open Folder" : "Local runtime required"}
           class="bg-transparent border-none text-[#8b949e] cursor-pointer px-1 py-0.5 text-sm leading-none transition-colors hover:text-[#e6edf3] disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {isLoading() ? "..." : "+"}
         </button>
       </div>
       <div class="flex-1 overflow-y-auto py-1">
-        <FileTree
-          onFileSelect={handleFileSelect}
-          onDirectoryToggle={handleDirectoryToggle}
-        />
+        <Show
+          when={runtimeAvailable()}
+          fallback={
+            <div class="px-4 py-6 text-center text-[#8b949e] text-xs leading-relaxed">
+              <p class="mb-2">Local runtime required for file access.</p>
+              <p>
+                Run <code class="bg-[#21262d] px-1.5 py-0.5 rounded text-[#e6edf3]">seren</code> locally to enable the file explorer.
+              </p>
+            </div>
+          }
+        >
+          <FileTree
+            onFileSelect={handleFileSelect}
+            onDirectoryToggle={handleDirectoryToggle}
+          />
+        </Show>
       </div>
     </aside>
   );

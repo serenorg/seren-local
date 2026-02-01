@@ -21,10 +21,14 @@ export async function connectPublisher(providerSlug: string): Promise<void> {
   }
 
   const redirectUri = `${window.location.origin}/oauth/callback`;
-  const authUrl = `${apiBase}/oauth/${providerSlug}/authorize?redirect_uri=${encodeURIComponent(redirectUri)}`;
+  const params = new URLSearchParams({
+    redirect_uri: redirectUri,
+    access_token: token,
+  });
+  const authUrl = `${apiBase}/oauth/${providerSlug}/authorize?${params.toString()}`;
 
-  // Navigate to Gateway authorize endpoint.
-  // The Gateway will 302 to the provider's auth page.
+  // Navigate to Gateway authorize endpoint with access_token for authentication.
+  // The Gateway verifies the token, then 302s to the provider's auth page.
   // After the user authorizes, the provider redirects back to our redirect_uri.
   // The Gateway handles the token exchange server-side.
   window.location.assign(authUrl);

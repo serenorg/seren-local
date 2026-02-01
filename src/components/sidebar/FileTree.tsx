@@ -127,11 +127,13 @@ export const FileTree: Component<FileTreeProps> = (props) => {
 
   const getContextMenuItems = (node: FileNode): ContextMenuItem[] => {
     const items: ContextMenuItem[] = [];
+    const runtimeUp = isRuntimeConnected();
 
     if (!node.isDirectory) {
       items.push({
         label: "Copy",
         icon: "📋",
+        disabled: !runtimeUp,
         onClick: () => handleCopy(node),
       });
     }
@@ -147,12 +149,14 @@ export const FileTree: Component<FileTreeProps> = (props) => {
     items.push({
       label: "Rename",
       icon: "✏️",
+      disabled: !runtimeUp,
       onClick: () => handleRename(node),
     });
 
     items.push({
       label: "Delete",
       icon: "🗑️",
+      disabled: !runtimeUp,
       onClick: () => handleDelete(node),
     });
 
@@ -161,6 +165,7 @@ export const FileTree: Component<FileTreeProps> = (props) => {
     items.push({
       label: "Reveal in Finder",
       icon: "📂",
+      disabled: !runtimeUp,
       onClick: () => handleRevealInFinder(node),
     });
 
