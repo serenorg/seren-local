@@ -6,6 +6,7 @@ import * as acp from "./acp.js";
 import * as chat from "./chat.js";
 import * as dialogs from "./dialogs.js";
 import * as fs from "./fs.js";
+import * as openclaw from "./openclaw.js";
 
 export function registerAllHandlers(): void {
   // File system handlers
@@ -37,6 +38,23 @@ export function registerAllHandlers(): void {
   registerHandler("acp_get_available_agents", acp.acpGetAvailableAgents);
   registerHandler("acp_check_agent_available", acp.acpCheckAgentAvailable);
   registerHandler("acp_ensure_claude_cli", acp.acpEnsureClaudeCli);
+
+  // OpenClaw messaging gateway handlers
+  registerHandler("openclaw_start", openclaw.openclawStart);
+  registerHandler("openclaw_stop", openclaw.openclawStop);
+  registerHandler("openclaw_restart", openclaw.openclawRestart);
+  registerHandler("openclaw_status", openclaw.openclawStatus);
+  registerHandler("openclaw_list_channels", openclaw.openclawListChannels);
+  registerHandler("openclaw_connect_channel", openclaw.openclawConnectChannel);
+  registerHandler("openclaw_disconnect_channel", openclaw.openclawDisconnectChannel);
+  registerHandler("openclaw_set_trust", openclaw.openclawSetTrust);
+  registerHandler("openclaw_send", openclaw.openclawSend);
+  registerHandler("openclaw_grant_approval", openclaw.openclawGrantApproval);
+  registerHandler("openclaw_get_qr", openclaw.openclawGetQr);
+
+  // Settings handlers
+  registerHandler("get_setting", openclaw.getSetting);
+  registerHandler("set_setting", openclaw.setSetting);
 
   // Chat/conversation handlers
   registerHandler("create_conversation", chat.createConversation);
