@@ -191,24 +191,28 @@ function handleSessionUpdate(
 
 // ── Agent Discovery ──────────────────────────────────────────────────
 
+/** Map agent types to their sidecar binary names (matches seren-desktop naming) */
+const AGENT_BINARIES: Record<string, string> = {
+  "claude-code": "seren-acp-claude",
+  codex: "seren-acp-codex",
+};
+
 function findAgentCommand(agentType: string): string {
-  switch (agentType) {
-    case "claude-code":
-      return findAcpAgentBinary();
-    case "codex":
-      throw new Error("Codex agent not yet supported");
-    default:
-      throw new Error(`Unknown agent type: ${agentType}`);
+  const binBase = AGENT_BINARIES[agentType];
+  if (!binBase) {
+    throw new Error(`Unknown agent type: ${agentType}`);
   }
+  return findAgentBinary(binBase);
 }
 
 /**
- * Locate the acp_agent binary, matching the same search pattern as Seren Desktop.
- * Checks several candidate locations in priority order.
+ * Locate an ACP agent sidecar binary by name.
+ * Checks several candidate locations in priority order, also falling back
+ * to the legacy `acp_agent` name for Claude for backwards compatibility.
  */
-function findAcpAgentBinary(): string {
+function findAgentBinary(binBase: string): string {
   const ext = platform() === "win32" ? ".exe" : "";
-  const binName = `acp_agent${ext}`;
+  const binName = `${binBase}${ext}`;
   const home = process.env.HOME ?? "~";
 
   const candidates = [
@@ -220,15 +224,25 @@ function findAcpAgentBinary(): string {
     resolve(home, "Projects/Seren_Projects/seren-desktop/src-tauri/embedded-runtime/bin", binName),
   ];
 
+  // For claude agent, also check legacy acp_agent binary name
+  if (binBase === "seren-acp-claude") {
+    const legacyName = `acp_agent${ext}`;
+    candidates.push(
+      resolve(import.meta.dirname, "../../bin", legacyName),
+      resolve(home, ".seren-local/bin", legacyName),
+      resolve(home, "Projects/Seren_Projects/seren-desktop/src-tauri/embedded-runtime/bin", legacyName),
+    );
+  }
+
   for (const candidate of candidates) {
     if (existsSync(candidate)) {
-      console.log(`[ACP] Found agent binary at: ${candidate}`);
+      console.log(`[ACP] Found ${binBase} binary at: ${candidate}`);
       return candidate;
     }
   }
 
   throw new Error(
-    `Agent binary 'acp_agent' not found. Checked locations:\n${candidates.map((p) => `  - ${p}`).join("\n")}`,
+    `Agent binary '${binBase}' not found. Checked locations:\n${candidates.map((p) => `  - ${p}`).join("\n")}`,
   );
 }
 
@@ -477,33 +491,22 @@ export async function acpRespondToDiffProposal(params: any): Promise<void> {
 }
 
 export async function acpGetAvailableAgents(): Promise<any[]> {
-  let claudeAvailable = false;
-  let claudeUnavailableReason: string | undefined;
-  try {
-    findAcpAgentBinary();
-    claudeAvailable = true;
-  } catch (err: any) {
-    claudeUnavailableReason = err.message;
-  }
-
-  return [
-    {
-      type: "claude-code",
-      name: "Claude Code",
-      description: "AI coding assistant by Anthropic",
-      command: "acp_agent",
-      available: claudeAvailable,
-      unavailableReason: claudeUnavailableReason,
-    },
-    {
-      type: "codex",
-      name: "Codex CLI",
-      description: "AI coding assistant by OpenAI",
-      command: "codex",
-      available: false,
-      unavailableReason: "Codex agent not yet supported",
-    },
+  const agents = [
+    { type: "claude-code", name: "Claude Code", description: "AI coding assistant by Anthropic", command: "seren-acp-claude" },
+    { type: "codex", name: "Codex", description: "AI coding assistant powered by OpenAI Codex", command: "seren-acp-codex" },
   ];
+
+  return agents.map((agent) => {
+    let available = false;
+    let unavailableReason: string | undefined;
+    try {
+      findAgentCommand(agent.type);
+      available = true;
+    } catch (err: any) {
+      unavailableReason = err.message;
+    }
+    return { ...agent, available, unavailableReason };
+  });
 }
 
 export async function acpCheckAgentAvailable(params: any): Promise<boolean> {
