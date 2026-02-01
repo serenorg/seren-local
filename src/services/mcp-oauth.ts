@@ -341,7 +341,7 @@ export async function getValidAccessToken(): Promise<string | null> {
 
   // Check if token is expired (with 60 second buffer)
   if (expiry && Date.now() >= expiry - 60000) {
-    console.log("[MCP OAuth] Token expired, refreshing...");
+    console.log("[MCP OAuth] Credentials expired, refreshing...");
     const refreshed = await refreshAccessToken();
     return refreshed?.access_token || null;
   }
@@ -623,7 +623,7 @@ export async function startOAuthBrowserFlow(): Promise<TokenResponse> {
   }
 
   // Exchange code for tokens
-  console.log("[MCP OAuth] Exchanging code for tokens...");
+  console.log("[MCP OAuth] Exchanging authorization code...");
   const tokenResponse = await appFetch(`${MCP_OAUTH_BASE}/token`, {
     method: "POST",
     headers: {
@@ -644,7 +644,7 @@ export async function startOAuthBrowserFlow(): Promise<TokenResponse> {
   }
 
   const tokens: TokenResponse = await tokenResponse.json();
-  console.log("[MCP OAuth] Tokens received successfully");
+  console.log("[MCP OAuth] Authorization exchange complete");
 
   // Store tokens and client ID
   await storeTokens(tokens);

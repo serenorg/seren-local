@@ -45,15 +45,15 @@ async function ensureApiKey(): Promise<boolean> {
     // Check if we already have a stored API key
     const existingKey = await getSerenApiKey();
     if (existingKey) {
-      console.log("[Auth Store] Using existing stored API key");
+      console.log("[Auth Store] Using existing stored credentials");
       return true;
     }
 
     // No stored key - create a new one
-    console.log("[Auth Store] No stored API key, creating new one...");
+    console.log("[Auth Store] No stored credentials, creating...");
     const apiKey = await createApiKey();
     await storeSerenApiKey(apiKey);
-    console.log("[Auth Store] API key created and stored successfully");
+    console.log("[Auth Store] Credentials created and stored");
     return true;
   } catch (error) {
     console.error("[Auth Store] Failed to ensure API key:", error);

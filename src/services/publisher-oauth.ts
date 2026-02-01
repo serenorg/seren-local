@@ -21,17 +21,30 @@ export async function connectPublisher(providerSlug: string): Promise<void> {
   }
 
   const redirectUri = `${window.location.origin}/oauth/callback`;
-  const params = new URLSearchParams({
-    redirect_uri: redirectUri,
-    access_token: token,
-  });
-  const authUrl = `${apiBase}/oauth/${providerSlug}/authorize?${params.toString()}`;
+  const authUrl = `${apiBase}/oauth/${providerSlug}/authorize`;
 
-  // Navigate to Gateway authorize endpoint with access_token for authentication.
-  // The Gateway verifies the token, then 302s to the provider's auth page.
-  // After the user authorizes, the provider redirects back to our redirect_uri.
-  // The Gateway handles the token exchange server-side.
-  window.location.assign(authUrl);
+  // Use a POST form submission to send the token in the request body,
+  // not as a query parameter. Query params leak to browser history,
+  // referrer headers, and proxy logs.
+  const form = document.createElement("form");
+  form.method = "POST";
+  form.action = authUrl;
+  form.style.display = "none";
+
+  const tokenInput = document.createElement("input");
+  tokenInput.type = "hidden";
+  tokenInput.name = "access_token";
+  tokenInput.value = token;
+  form.appendChild(tokenInput);
+
+  const redirectInput = document.createElement("input");
+  redirectInput.type = "hidden";
+  redirectInput.name = "redirect_uri";
+  redirectInput.value = redirectUri;
+  form.appendChild(redirectInput);
+
+  document.body.appendChild(form);
+  form.submit();
 }
 
 /**
