@@ -11,6 +11,7 @@ import { addClient } from "./events";
 import { initChatDb } from "./handlers/chat";
 import { registerAllHandlers } from "./handlers/index";
 import { handleMessage } from "./rpc";
+import { checkForUpdates } from "./update-check";
 
 const PORT = Number(process.env.SEREN_PORT) || 19420;
 
@@ -121,6 +122,7 @@ registerAllHandlers();
 
 httpServer.listen(PORT, "127.0.0.1", () => {
   console.log(`[Seren Runtime] Listening on http://127.0.0.1:${PORT}`);
+  checkForUpdates();
 });
 
 export { httpServer, wss, PORT, AUTH_TOKEN };
