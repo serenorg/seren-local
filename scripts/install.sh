@@ -2,7 +2,7 @@
 # ABOUTME: Cross-platform install script for Seren local runtime (macOS/Linux).
 # ABOUTME: Auto-downloads Node.js if missing, installs @serendb/runtime into ~/.seren-local.
 #
-# Usage: curl -fsSL https://seren.com/install | sh
+# Usage: curl -fsSL https://serendb.com/install | sh
 
 set -euo pipefail
 

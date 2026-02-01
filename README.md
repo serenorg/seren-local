@@ -26,13 +26,13 @@ One install command downloads the Seren Local runtime. Run `seren-local` and the
 ### macOS / Linux
 
 ```sh
-curl -fsSL https://seren.com/install | sh
+curl -fsSL https://serendb.com/install | sh
 ```
 
 ### Windows (PowerShell)
 
 ```powershell
-irm https://seren.com/install.ps1 | iex
+irm https://serendb.com/install.ps1 | iex
 ```
 
 ### What the installer does

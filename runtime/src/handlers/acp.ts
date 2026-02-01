@@ -23,6 +23,7 @@ interface AcpSession {
   process: ChildProcess;
   pendingPermissions: Map<string, (optionId: string) => void>;
   pendingDiffProposals: Map<string, (accepted: boolean) => void>;
+  cancelling: boolean;
 }
 
 const sessions = new Map<string, AcpSession>();
@@ -309,6 +310,7 @@ export async function acpSpawn(params: any): Promise<any> {
     process: agentProcess,
     pendingPermissions: new Map(),
     pendingDiffProposals: new Map(),
+    cancelling: false,
   };
 
   sessions.set(sessionId, session);
@@ -417,6 +419,7 @@ export async function acpPrompt(params: any): Promise<void> {
     });
     throw err;
   } finally {
+    session.cancelling = false;
     if (session.status === "prompting") {
       session.status = "ready";
     }
@@ -428,8 +431,19 @@ export async function acpCancel(params: any): Promise<void> {
   const session = sessions.get(sessionId);
   if (!session) throw new Error(`Session not found: ${sessionId}`);
 
-  const acpSessionId = (session as any).acpSessionId ?? sessionId;
-  await session.connection.cancel({ sessionId: acpSessionId });
+  // Debounce: ignore duplicate cancel requests while one is in-flight
+  if (session.cancelling) {
+    console.log(`[ACP] Cancel already in progress for ${sessionId}, ignoring duplicate`);
+    return;
+  }
+
+  session.cancelling = true;
+  try {
+    const acpSessionId = (session as any).acpSessionId ?? sessionId;
+    await session.connection.cancel({ sessionId: acpSessionId });
+  } finally {
+    session.cancelling = false;
+  }
 }
 
 export async function acpTerminate(params: any): Promise<void> {

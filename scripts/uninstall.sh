@@ -2,7 +2,7 @@
 # ABOUTME: Uninstall script for Seren local runtime (macOS/Linux).
 # ABOUTME: Removes the npm package and optionally the data directory.
 #
-# Usage: curl -fsSL https://seren.com/uninstall | sh
+# Usage: curl -fsSL https://serendb.com/uninstall | sh
 
 set -euo pipefail
 

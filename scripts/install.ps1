@@ -1,7 +1,7 @@
 # ABOUTME: Windows install script for Seren local runtime.
 # ABOUTME: Auto-downloads Node.js if missing, installs @serendb/runtime into ~/.seren-local.
 #
-# Usage: irm https://seren.com/install.ps1 | iex
+# Usage: irm https://serendb.com/install.ps1 | iex
 
 $ErrorActionPreference = "Stop"
 
