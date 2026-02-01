@@ -6,7 +6,7 @@ import {
   ContextMenu,
   type ContextMenuItem,
 } from "@/components/common/ContextMenu";
-import { runtimeInvoke } from "@/lib/bridge";
+import { isRuntimeConnected, runtimeInvoke } from "@/lib/bridge";
 import {
   type FileNode,
   fileTreeState,
@@ -55,6 +55,7 @@ export const FileTree: Component<FileTreeProps> = (props) => {
   // Copy file content to clipboard
   const handleCopy = async (node: FileNode) => {
     if (node.isDirectory) return;
+    if (!isRuntimeConnected()) return;
     try {
       const content = await runtimeInvoke<string>("read_file", {
         path: node.path,
@@ -81,6 +82,7 @@ export const FileTree: Component<FileTreeProps> = (props) => {
 
   // Complete rename operation
   const handleRenameSubmit = async (oldPath: string, newName: string) => {
+    if (!isRuntimeConnected()) return;
     const dir = oldPath.substring(0, oldPath.lastIndexOf("/"));
     const newPath = `${dir}/${newName}`;
 
@@ -97,6 +99,7 @@ export const FileTree: Component<FileTreeProps> = (props) => {
 
   // Delete file or directory
   const handleDelete = async (node: FileNode) => {
+    if (!isRuntimeConnected()) return;
     const confirmDelete = window.confirm(
       `Delete "${node.name}"?${node.isDirectory ? " This will delete all contents." : ""}`,
     );

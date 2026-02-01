@@ -180,16 +180,30 @@ export const FileExplorerPanel: Component<FileExplorerPanelProps> = (props) => {
           when={fileTreeState.rootPath}
           fallback={
             <div class="flex flex-col items-center justify-center gap-4 px-4 py-12 text-center">
-              <p class="m-0 text-muted-foreground text-[13px]">
-                No folder open
-              </p>
-              <button
-                type="button"
-                class="px-4 py-2 bg-primary border-none rounded text-primary-foreground text-[13px] font-medium cursor-pointer transition-opacity hover:opacity-90"
-                onClick={handleOpenFolder}
+              <Show
+                when={isRuntimeConnected()}
+                fallback={
+                  <>
+                    <p class="m-0 text-muted-foreground text-[13px]">
+                      Local runtime required
+                    </p>
+                    <p class="m-0 text-muted-foreground text-[11px]">
+                      Run <code>npx @serendb/runtime</code> to enable file browsing
+                    </p>
+                  </>
+                }
               >
-                Open Folder
-              </button>
+                <p class="m-0 text-muted-foreground text-[13px]">
+                  No folder open
+                </p>
+                <button
+                  type="button"
+                  class="px-4 py-2 bg-primary border-none rounded text-primary-foreground text-[13px] font-medium cursor-pointer transition-opacity hover:opacity-90"
+                  onClick={handleOpenFolder}
+                >
+                  Open Folder
+                </button>
+              </Show>
             </div>
           }
         >
