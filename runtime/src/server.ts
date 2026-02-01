@@ -1,4 +1,4 @@
-// ABOUTME: Local runtime server for Seren Browser.
+// ABOUTME: Local runtime server for Seren Local.
 // ABOUTME: HTTP + WebSocket server on localhost serving embedded SPA with token-authenticated JSON-RPC.
 
 import { randomBytes } from "node:crypto";

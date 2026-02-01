@@ -1,7 +1,7 @@
 {
-  "name": "seren-browser",
+  "name": "seren-local",
   "version": "0.1.0",
-  "description": "Browser-first AI agent platform with optional local runtime",
+  "description": "Local AI agent platform — install once, runs in your browser",
   "type": "module",
   "scripts": {
     "start": "vite",

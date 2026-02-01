@@ -1,4 +1,4 @@
-# Seren Browser
+# Seren Local
 
 AI chat with 90+ tools, running locally on your machine.
 
@@ -73,8 +73,8 @@ Remove-Item -Recurse -Force "$env:USERPROFILE\.seren"
 ### Setup
 
 ```sh
-git clone https://github.com/serenorg/seren-browser.git
-cd seren-browser
+git clone https://github.com/serenorg/seren-local.git
+cd seren-local
 pnpm install
 ```
 
@@ -126,7 +126,7 @@ pnpm check:fix        # Auto-fix
 ## Project Structure
 
 ```
-seren-browser/
+seren-local/
   src/                    # Browser SPA (SolidJS + TypeScript)
     components/           # UI components
     services/             # API and service layer
