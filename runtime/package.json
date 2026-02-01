@@ -8,7 +8,7 @@
   "homepage": "https://serendb.com",
   "repository": {
     "type": "git",
-    "url": "https://github.com/serenorg/seren-local.git",
+    "url": "git+https://github.com/serenorg/seren-local.git",
     "directory": "runtime"
   },
   "bugs": "https://github.com/serenorg/seren-local/issues",
@@ -23,7 +23,7 @@
     "sqlite"
   ],
   "bin": {
-    "serendesktop": "./bin/serendesktop.js"
+    "serendesktop": "bin/serendesktop.js"
   },
   "files": [
     "bin/",
