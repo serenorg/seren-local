@@ -428,6 +428,23 @@ export async function openclawListChannels(_params: any): Promise<any[]> {
 export async function openclawConnectChannel(params: any): Promise<any> {
   const { platform: plat, credentials } = params;
 
+  // Validate required credentials per platform
+  switch (plat) {
+    case "signal":
+      if (!credentials?.phone) throw new Error("Signal requires a phone number");
+      break;
+    case "telegram":
+      if (!credentials?.botToken) throw new Error("Telegram requires a bot token");
+      break;
+    case "discord":
+      if (!credentials?.botToken) throw new Error("Discord requires a bot token");
+      break;
+    case "slack":
+      if (!credentials?.botToken || !credentials?.appToken)
+        throw new Error("Slack requires both botToken and appToken");
+      break;
+  }
+
   // Read or create config
   let config: any = {};
   try {
@@ -523,6 +540,14 @@ export async function openclawSend(params: any): Promise<string> {
   const key = `${channel}:${to}`;
   const trust = trustSettings.get(channel);
   if (trust?.trustLevel === "approval-required" && !approvedIds.has(key)) {
+    // Emit approval-needed event so the SPA can show the approval dialog
+    emit("openclaw://approval-needed", {
+      id: `${key}:${Date.now()}`,
+      channel,
+      to,
+      message,
+      platform: channel.split(":")[0] || channel,
+    });
     throw new Error("Message requires approval");
   }
   approvedIds.delete(key);

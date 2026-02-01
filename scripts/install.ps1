@@ -154,6 +154,17 @@ function Install-Runtime {
         Write-Err "Installation failed: $_"
         exit 1
     }
+
+    # Install OpenClaw messaging gateway (optional, non-fatal)
+    Write-Info "Installing openclaw..."
+    try {
+        & $script:NPM_BIN install -g openclaw --prefix $SEREN_DIR
+        Write-Ok "openclaw installed successfully!"
+    }
+    catch {
+        Write-Warn "openclaw install failed (messaging features will be unavailable)."
+        Write-Warn "You can install it later: npm install -g openclaw"
+    }
 }
 
 # ── Set up PATH ───────────────────────────────────────────────────────

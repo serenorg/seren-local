@@ -162,6 +162,15 @@ install_runtime() {
 
   printf "\n"
   ok "${PACKAGE} installed successfully!"
+
+  # Install OpenClaw messaging gateway (optional, non-fatal)
+  info "Installing openclaw..."
+  if "$NPM_BIN" install -g openclaw --prefix "${SEREN_DIR}" 2>&1; then
+    ok "openclaw installed successfully!"
+  else
+    warn "openclaw install failed (messaging features will be unavailable)."
+    warn "You can install it later: npm install -g openclaw"
+  fi
 }
 
 # ── Set up PATH ───────────────────────────────────────────────────────
