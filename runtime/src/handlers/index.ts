@@ -7,6 +7,7 @@ import * as chat from "./chat.js";
 import * as dialogs from "./dialogs.js";
 import * as fs from "./fs.js";
 import * as openclaw from "./openclaw.js";
+import * as wallet from "./wallet.js";
 
 export function registerAllHandlers(): void {
   // File system handlers
@@ -55,6 +56,13 @@ export function registerAllHandlers(): void {
   // Settings handlers
   registerHandler("get_setting", openclaw.getSetting);
   registerHandler("set_setting", openclaw.setSetting);
+
+  // Crypto wallet handlers
+  registerHandler("store_crypto_private_key", wallet.storeCryptoPrivateKey);
+  registerHandler("get_crypto_wallet_address", wallet.getCryptoWalletAddress);
+  registerHandler("clear_crypto_wallet", wallet.clearCryptoWallet);
+  registerHandler("sign_x402_payment", wallet.signX402Payment);
+  registerHandler("get_crypto_usdc_balance", wallet.getCryptoUsdcBalance);
 
   // Chat/conversation handlers
   registerHandler("create_conversation", chat.createConversation);
