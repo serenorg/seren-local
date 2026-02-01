@@ -1,7 +1,7 @@
 // ABOUTME: Local runtime server for Seren Local.
 // ABOUTME: HTTP + WebSocket server on localhost serving embedded SPA with token-authenticated JSON-RPC.
 
-import { randomBytes } from "node:crypto";
+import { randomBytes, createHash } from "node:crypto";
 import { exec } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, statSync } from "node:fs";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
@@ -31,6 +31,18 @@ const __dirname = fileURLToPath(new URL(".", import.meta.url));
 // In dist: runtime/dist/ → runtime/public/
 const PUBLIC_DIR = join(__dirname, "..", "public");
 
+// Compute a build hash from index.html so the SPA can detect stale cache
+function computeBuildHash(): string {
+  try {
+    const indexPath = join(PUBLIC_DIR, "index.html");
+    const content = readFileSync(indexPath, "utf-8");
+    return createHash("sha256").update(content).digest("hex").slice(0, 12);
+  } catch {
+    return "unknown";
+  }
+}
+const BUILD_HASH = computeBuildHash();
+
 const MIME_TYPES: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
   ".js": "text/javascript; charset=utf-8",
@@ -48,10 +60,42 @@ const MIME_TYPES: Record<string, string> = {
   ".wasm": "application/wasm",
 };
 
+/**
+ * Serve the index.html with the build hash injected as a meta tag.
+ * This allows the SPA to detect stale cached versions and auto-reload.
+ */
+function serveHtml(res: import("node:http").ServerResponse): boolean {
+  const indexPath = join(PUBLIC_DIR, "index.html");
+  try {
+    let html = readFileSync(indexPath, "utf-8");
+    // Inject build hash so the SPA can detect stale cache
+    html = html.replace(
+      "<head>",
+      `<head><meta name="seren-build-hash" content="${BUILD_HASH}">`,
+    );
+    res.writeHead(200, {
+      "Content-Type": "text/html; charset=utf-8",
+      "Cache-Control": "no-cache, no-store, must-revalidate",
+      "Pragma": "no-cache",
+      "Expires": "0",
+    });
+    res.end(html);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function serveStatic(urlPath: string, res: import("node:http").ServerResponse): boolean {
   // Prevent path traversal
   const safePath = urlPath.split("?")[0].replace(/\.\./g, "");
-  const filePath = join(PUBLIC_DIR, safePath === "/" ? "index.html" : safePath);
+
+  // Serve index.html with build hash injection
+  if (safePath === "/" || safePath === "/index.html") {
+    return serveHtml(res);
+  }
+
+  const filePath = join(PUBLIC_DIR, safePath);
 
   // Must stay within PUBLIC_DIR
   if (!filePath.startsWith(PUBLIC_DIR)) {
@@ -64,11 +108,8 @@ function serveStatic(urlPath: string, res: import("node:http").ServerResponse): 
       const ext = extname(filePath).toLowerCase();
       const mime = MIME_TYPES[ext] || "application/octet-stream";
       const content = readFileSync(filePath);
-      // HTML files should not be cached (they reference hashed assets)
-      const cacheControl = ext === ".html"
-        ? "no-cache, no-store, must-revalidate"
-        : "public, max-age=31536000, immutable";
-      res.writeHead(200, { "Content-Type": mime, "Cache-Control": cacheControl });
+      // Hashed asset filenames handle cache-busting; use moderate cache time
+      res.writeHead(200, { "Content-Type": mime, "Cache-Control": "public, max-age=3600" });
       res.end(content);
       return true;
     }
@@ -80,15 +121,7 @@ function serveStatic(urlPath: string, res: import("node:http").ServerResponse): 
 }
 
 function serveSpaFallback(res: import("node:http").ServerResponse): boolean {
-  const indexPath = join(PUBLIC_DIR, "index.html");
-  try {
-    const content = readFileSync(indexPath);
-    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-cache" });
-    res.end(content);
-    return true;
-  } catch {
-    return false;
-  }
+  return serveHtml(res);
 }
 
 function openBrowser(url: string): void {
@@ -195,7 +228,7 @@ const httpServer = createServer((req, res) => {
 
   if (req.url === "/health") {
     res.writeHead(200, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ status: "ok", version: "0.1.0", token: AUTH_TOKEN }));
+    res.end(JSON.stringify({ status: "ok", version: "0.1.0", token: AUTH_TOKEN, buildHash: BUILD_HASH }));
     return;
   }
 

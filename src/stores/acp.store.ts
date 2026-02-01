@@ -260,6 +260,7 @@ export const acpStore = {
         state.selectedAgentType,
         cwd,
         settingsStore.settings.agentSandboxMode,
+        { enabled: settingsStore.get("chatShowThinking") ?? true },
       );
       console.log("[AcpStore] Spawn result:", info);
 

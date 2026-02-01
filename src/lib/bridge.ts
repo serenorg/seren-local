@@ -110,14 +110,40 @@ function scheduleReconnect(): void {
 }
 
 /**
+ * Read the build hash injected by the server into the HTML meta tag.
+ */
+function getEmbeddedBuildHash(): string | null {
+  const meta = document.querySelector('meta[name="seren-build-hash"]');
+  return meta?.getAttribute("content") ?? null;
+}
+
+/**
  * Fetch the auth token from the runtime's health endpoint.
- * Only accessible from localhost.
+ * Also checks the server's build hash against the SPA's embedded version.
+ * If they don't match, the SPA is stale and we force a hard reload.
  */
 async function fetchRuntimeToken(): Promise<string | null> {
   try {
     const res = await fetch(`${RUNTIME_HTTP_URL}/health`);
     if (!res.ok) return null;
     const data = await res.json();
+
+    // Detect stale SPA: compare server build hash with what's in our HTML
+    const embeddedHash = getEmbeddedBuildHash();
+    if (data.buildHash && embeddedHash && data.buildHash !== embeddedHash) {
+      console.log("[Bridge] Stale SPA detected — forcing reload", {
+        server: data.buildHash,
+        embedded: embeddedHash,
+      });
+      // Clear caches and force reload
+      if ("caches" in window) {
+        const keys = await caches.keys();
+        await Promise.all(keys.map((k) => caches.delete(k)));
+      }
+      window.location.reload();
+      return null;
+    }
+
     return data.token ?? null;
   } catch {
     return null;

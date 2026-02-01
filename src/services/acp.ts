@@ -148,12 +148,14 @@ export async function spawnAgent(
   agentType: AgentType,
   cwd: string,
   sandboxMode?: string,
+  thinking?: { enabled: boolean; maxTokens?: number },
 ): Promise<AcpSessionInfo> {
   requireRuntime();
   return runtimeInvoke<AcpSessionInfo>("acp_spawn", {
     agentType,
     cwd,
     sandboxMode: sandboxMode ?? null,
+    thinking: thinking?.enabled ? { maxTokens: thinking.maxTokens ?? 16000 } : null,
   }, { timeoutMs: 120_000 });
 }
 

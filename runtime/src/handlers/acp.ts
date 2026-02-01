@@ -122,7 +122,6 @@ function handleSessionUpdate(
   notification: acp.SessionNotification,
 ): void {
   const update = notification.update;
-
   switch (update.sessionUpdate) {
     case "agent_message_chunk":
       if (update.content.type === "text") {
@@ -243,7 +242,7 @@ async function isCommandAvailable(command: string): Promise<boolean> {
 // ── RPC Handlers ─────────────────────────────────────────────────────
 
 export async function acpSpawn(params: any): Promise<any> {
-  const { agentType, cwd, sandboxMode } = params;
+  const { agentType, cwd, sandboxMode, thinking } = params;
   const sessionId = randomUUID();
   const command = findAgentCommand(agentType);
   const resolvedCwd = resolve(cwd);
@@ -333,9 +332,14 @@ export async function acpSpawn(params: any): Promise<any> {
     });
 
     // Create a session within the connection
+    const meta: Record<string, unknown> | undefined = thinking
+      ? { claudeCode: { options: { maxThinkingTokens: thinking.maxTokens ?? 16000 } } }
+      : undefined;
+
     const sessionResult = await connection.newSession({
       cwd: resolvedCwd,
       mcpServers: [],
+      ...(meta ? { _meta: meta } : {}),
     });
 
     // Store the ACP session ID for prompt routing
