@@ -32,6 +32,32 @@ ok()    { printf "${GREEN}✓ %s${RESET}\n" "$*"; }
 warn()  { printf "${YELLOW}! %s${RESET}\n" "$*"; }
 error() { printf "${RED}✗ %s${RESET}\n" "$*" >&2; }
 
+SPINNER_PID=""
+spin() {
+  local msg="$1"
+  local frames='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'
+  local i=0
+  while true; do
+    printf "\r${BOLD}${frames:$i:1} %s${RESET}" "$msg"
+    i=$(( (i + 1) % ${#frames} ))
+    sleep 0.1
+  done
+}
+
+start_spinner() {
+  spin "$1" &
+  SPINNER_PID=$!
+}
+
+stop_spinner() {
+  if [ -n "$SPINNER_PID" ]; then
+    kill "$SPINNER_PID" 2>/dev/null || true
+    wait "$SPINNER_PID" 2>/dev/null || true
+    SPINNER_PID=""
+    printf "\r\033[K"
+  fi
+}
+
 # ── Icon + Shortcut Helpers ──────────────────────────────────────────
 
 download_seren_icon() {
@@ -229,11 +255,11 @@ check_system_node() {
 
 # ── Download Node.js ──────────────────────────────────────────────────
 install_node() {
-  info "Downloading Node.js v${NODE_VERSION} for ${OS}-${ARCH}..."
-
   local url="https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-${OS}-${ARCH}.tar.gz"
   local tmp_tar
   tmp_tar=$(mktemp "${TMPDIR:-/tmp}/seren-node-XXXXXX.tar.gz")
+
+  start_spinner "Downloading Node.js v${NODE_VERSION} for ${OS}-${ARCH}..."
 
   # Download
   if command -v curl &>/dev/null; then
@@ -241,14 +267,21 @@ install_node() {
   elif command -v wget &>/dev/null; then
     wget -qO "$tmp_tar" "$url"
   else
+    stop_spinner
     error "Neither curl nor wget found. Cannot download Node.js."
     exit 1
   fi
+
+  stop_spinner
+
+  start_spinner "Extracting Node.js..."
 
   # Extract to ~/.seren-local/node/
   mkdir -p "$SEREN_NODE_DIR"
   tar xzf "$tmp_tar" -C "$SEREN_NODE_DIR" --strip-components=1
   rm -f "$tmp_tar"
+
+  stop_spinner
 
   NODE_BIN="${SEREN_NODE_DIR}/bin/node"
   NPM_BIN="${SEREN_NODE_DIR}/bin/npm"
@@ -263,12 +296,12 @@ check_toolchain() {
   case "$OS" in
     darwin)
       if ! xcode-select -p &>/dev/null; then
-        info "Installing Xcode Command Line Tools (required for native modules)..."
         xcode-select --install 2>/dev/null || true
-        # Wait for the install to complete
+        start_spinner "Waiting for Xcode Command Line Tools installation..."
         until xcode-select -p &>/dev/null; do
           sleep 5
         done
+        stop_spinner
         ok "Xcode Command Line Tools installed"
       else
         ok "Xcode Command Line Tools found"
@@ -294,21 +327,21 @@ check_toolchain() {
 
 # ── Install runtime ────────────────────────────────────────────────────
 install_runtime() {
-  info "Installing ${PACKAGE}..."
-  printf "\n"
-
   # Install into Seren's private prefix so no sudo is needed
   mkdir -p "$SEREN_BIN"
-  "$NPM_BIN" install -g "${PACKAGE}" --prefix "${SEREN_DIR}" 2>&1
 
-  printf "\n"
+  start_spinner "Installing ${PACKAGE}..."
+  "$NPM_BIN" install -g "${PACKAGE}" --prefix "${SEREN_DIR}" >/dev/null 2>&1
+  stop_spinner
   ok "${PACKAGE} installed successfully!"
 
   # Install OpenClaw messaging gateway (optional, non-fatal)
-  info "Installing openclaw..."
-  if "$NPM_BIN" install -g openclaw --prefix "${SEREN_DIR}" 2>&1; then
+  start_spinner "Installing openclaw..."
+  if "$NPM_BIN" install -g openclaw --prefix "${SEREN_DIR}" >/dev/null 2>&1; then
+    stop_spinner
     ok "openclaw installed successfully!"
   else
+    stop_spinner
     warn "openclaw install failed (messaging features will be unavailable)."
     warn "You can install it later: npm install -g openclaw"
   fi
