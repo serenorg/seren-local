@@ -6,9 +6,14 @@
   "bin": {
     "seren": "./bin/seren.js"
   },
+  "files": [
+    "bin/",
+    "dist/"
+  ],
   "scripts": {
     "dev": "tsx src/server.ts",
     "build": "tsup src/server.ts --format esm --target node20",
+    "prepublishOnly": "npm run build",
     "start": "node dist/server.js",
     "test": "NODE_OPTIONS='--no-experimental-webstorage' vitest run"
   },

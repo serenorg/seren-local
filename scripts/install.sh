@@ -87,6 +87,40 @@ check_npm() {
   ok "npm $(npm --version) found"
 }
 
+# ── Check native build toolchain ──────────────────────────────────────
+check_toolchain() {
+  case "$(uname -s)" in
+    Darwin*)
+      if ! xcode-select -p &>/dev/null; then
+        warn "Xcode Command Line Tools not found."
+        warn "The runtime uses a native SQLite module that requires a compiler."
+        printf "\n"
+        info "Install with:"
+        echo "  xcode-select --install"
+        printf "\n"
+        info "Then re-run this installer."
+        exit 1
+      fi
+      ok "Xcode Command Line Tools found"
+      ;;
+    Linux*)
+      if ! command -v make &>/dev/null || ! command -v g++ &>/dev/null; then
+        warn "Build tools (make, g++) not found."
+        warn "The runtime uses a native SQLite module that requires a compiler."
+        printf "\n"
+        info "Install with:"
+        echo "  sudo apt-get install -y build-essential python3"
+        echo "  # or on Fedora/RHEL:"
+        echo "  sudo dnf groupinstall 'Development Tools'"
+        printf "\n"
+        info "Then re-run this installer."
+        exit 1
+      fi
+      ok "Build toolchain found"
+      ;;
+  esac
+}
+
 # ── Install runtime ────────────────────────────────────────────────────
 install_runtime() {
   info "Installing ${PACKAGE}..."
@@ -139,6 +173,7 @@ create_data_dir() {
 main() {
   check_node || install_node_instructions
   check_npm
+  check_toolchain
   install_runtime
   verify_install
   create_data_dir

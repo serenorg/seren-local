@@ -78,6 +78,41 @@ function Test-NpmInstalled {
     }
 }
 
+function Test-BuildTools {
+    # Check for Visual Studio Build Tools (needed by node-gyp for better-sqlite3)
+    $vsWhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+    $hasVS = $false
+
+    if (Test-Path $vsWhere) {
+        $installs = & $vsWhere -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -format json 2>$null | ConvertFrom-Json
+        if ($installs -and $installs.Count -gt 0) { $hasVS = $true }
+    }
+
+    if (-not $hasVS) {
+        # Also check for standalone Build Tools via cl.exe in PATH
+        try {
+            $null = Get-Command cl.exe -ErrorAction Stop
+            $hasVS = $true
+        } catch {}
+    }
+
+    if (-not $hasVS) {
+        Write-Warn "Visual Studio Build Tools not found."
+        Write-Warn "The runtime uses a native SQLite module that requires a C++ compiler."
+        Write-Host ""
+        Write-Info "Install Visual Studio Build Tools:"
+        Write-Host "  winget install Microsoft.VisualStudio.2022.BuildTools --override ""--add Microsoft.VisualStudio.Workload.VCTools --includeRecommended""" -ForegroundColor White
+        Write-Host ""
+        Write-Info "Or download from:"
+        Write-Host "  https://visualstudio.microsoft.com/visual-cpp-build-tools/" -ForegroundColor White
+        Write-Host ""
+        Write-Info "Then re-run this installer."
+        exit 1
+    }
+
+    Write-Ok "C++ build tools found"
+}
+
 function Install-Runtime {
     Write-Info "Installing ${PACKAGE}..."
     Write-Host ""
@@ -126,6 +161,7 @@ if (-not (Test-NodeInstalled)) {
 }
 
 Test-NpmInstalled | Out-Null
+Test-BuildTools
 Install-Runtime
 Test-SerenCommand
 New-DataDir
