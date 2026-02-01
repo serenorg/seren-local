@@ -21,6 +21,7 @@
     "node": ">=20.0.0"
   },
   "dependencies": {
+    "@agentclientprotocol/sdk": "^0.13.1",
     "better-sqlite3": "^12.6.2",
     "ws": "^8.19.0"
   },

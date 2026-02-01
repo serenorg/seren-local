@@ -1,0 +1,506 @@
+// ABOUTME: ACP (Agent Client Protocol) handlers for spawning and managing AI coding agents.
+// ABOUTME: Implements client-side ACP connection over stdio with event forwarding via WebSocket.
+
+import * as acp from "@agentclientprotocol/sdk";
+import { spawn, type ChildProcess, execFile } from "node:child_process";
+import { Readable, Writable } from "node:stream";
+import { readFile, writeFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import { resolve } from "node:path";
+import { platform } from "node:os";
+import { emit } from "../events.js";
+
+// ── Types ────────────────────────────────────────────────────────────
+
+interface AcpSession {
+  id: string;
+  agentType: string;
+  cwd: string;
+  status: string;
+  createdAt: string;
+  connection: acp.ClientSideConnection;
+  process: ChildProcess;
+  pendingPermissions: Map<string, (optionId: string) => void>;
+  pendingDiffProposals: Map<string, (accepted: boolean) => void>;
+}
+
+const sessions = new Map<string, AcpSession>();
+
+// ── Client Implementation ────────────────────────────────────────────
+
+function createClient(sessionId: string): acp.Client {
+  return {
+    async requestPermission(
+      params: acp.RequestPermissionRequest,
+    ): Promise<acp.RequestPermissionResponse> {
+      const requestId = randomUUID();
+      const session = sessions.get(sessionId);
+      if (!session) throw new Error("Session not found");
+
+      // Emit permission request to frontend
+      emit("acp://permission-request", {
+        sessionId,
+        requestId,
+        toolCall: params.toolCall,
+        options: params.options,
+      });
+
+      // Wait for user response (5 minute timeout)
+      const optionId = await new Promise<string>((resolve, reject) => {
+        session.pendingPermissions.set(requestId, resolve);
+        setTimeout(() => {
+          session.pendingPermissions.delete(requestId);
+          reject(new Error("Permission request timed out"));
+        }, 300_000);
+      });
+
+      return {
+        outcome: { outcome: "selected", optionId },
+      };
+    },
+
+    async sessionUpdate(params: acp.SessionNotification): Promise<void> {
+      handleSessionUpdate(sessionId, params);
+    },
+
+    async readTextFile(
+      params: acp.ReadTextFileRequest,
+    ): Promise<acp.ReadTextFileResponse> {
+      const content = await readFile(params.path, "utf-8");
+      return { content };
+    },
+
+    async writeTextFile(
+      params: acp.WriteTextFileRequest,
+    ): Promise<acp.WriteTextFileResponse> {
+      const session = sessions.get(sessionId);
+      if (!session) throw new Error("Session not found");
+
+      // Read old content for diff proposal
+      let oldText = "";
+      try {
+        oldText = await readFile(params.path, "utf-8");
+      } catch {
+        // File doesn't exist yet
+      }
+
+      const proposalId = randomUUID();
+
+      // Emit diff proposal to frontend
+      emit("acp://diff-proposal", {
+        sessionId,
+        proposalId,
+        path: params.path,
+        oldText,
+        newText: params.content,
+      });
+
+      // Wait for user accept/reject (5 minute timeout)
+      const accepted = await new Promise<boolean>((resolve, reject) => {
+        session.pendingDiffProposals.set(proposalId, resolve);
+        setTimeout(() => {
+          session.pendingDiffProposals.delete(proposalId);
+          reject(new Error("Diff proposal timed out"));
+        }, 300_000);
+      });
+
+      if (!accepted) {
+        throw new Error("File write rejected by user");
+      }
+
+      await writeFile(params.path, params.content, "utf-8");
+      return {};
+    },
+  };
+}
+
+// ── Event Forwarding ─────────────────────────────────────────────────
+
+function handleSessionUpdate(
+  sessionId: string,
+  notification: acp.SessionNotification,
+): void {
+  const update = notification.update;
+
+  switch (update.sessionUpdate) {
+    case "agent_message_chunk":
+      if (update.content.type === "text") {
+        emit("acp://message-chunk", {
+          sessionId,
+          text: update.content.text,
+        });
+      }
+      break;
+
+    case "agent_thought_chunk":
+      if (update.content.type === "text") {
+        emit("acp://message-chunk", {
+          sessionId,
+          text: update.content.text,
+          isThought: true,
+        });
+      }
+      break;
+
+    case "tool_call":
+      emit("acp://tool-call", {
+        sessionId,
+        toolCallId: update.toolCallId,
+        title: update.title,
+        kind: update.kind,
+        status: update.status,
+      });
+      break;
+
+    case "tool_call_update": {
+      // Check for diffs in content
+      if (update.content) {
+        for (const block of update.content) {
+          if ("diff" in block || (block as any).path) {
+            const diff = block as any;
+            emit("acp://diff", {
+              sessionId,
+              toolCallId: update.toolCallId,
+              path: diff.path,
+              oldText: diff.oldText ?? diff.old_text ?? "",
+              newText: diff.newText ?? diff.new_text ?? "",
+            });
+          }
+        }
+      }
+      emit("acp://tool-result", {
+        sessionId,
+        toolCallId: update.toolCallId,
+        status: update.status,
+      });
+      break;
+    }
+
+    case "plan":
+      emit("acp://plan-update", {
+        sessionId,
+        entries: (update as any).entries ?? [],
+      });
+      break;
+
+    default:
+      // Other notification types handled as needed
+      break;
+  }
+}
+
+// ── Agent Discovery ──────────────────────────────────────────────────
+
+function findAgentCommand(agentType: string): string {
+  switch (agentType) {
+    case "claude-code":
+      return "claude";
+    case "codex":
+      return "codex";
+    default:
+      throw new Error(`Unknown agent type: ${agentType}`);
+  }
+}
+
+async function isCommandAvailable(command: string): Promise<boolean> {
+  const which = platform() === "win32" ? "where" : "which";
+  return new Promise((resolve) => {
+    execFile(which, [command], (err) => resolve(!err));
+  });
+}
+
+// ── RPC Handlers ─────────────────────────────────────────────────────
+
+export async function acpSpawn(params: any): Promise<any> {
+  const { agentType, cwd, sandboxMode } = params;
+  const sessionId = randomUUID();
+  const command = findAgentCommand(agentType);
+  const resolvedCwd = resolve(cwd);
+
+  // Spawn agent process
+  const args = ["--acp"];
+  if (sandboxMode) {
+    args.push("--sandbox", sandboxMode);
+  }
+
+  const agentProcess = spawn(command, args, {
+    cwd: resolvedCwd,
+    stdio: ["pipe", "pipe", "pipe"],
+    env: { ...process.env },
+  });
+
+  if (!agentProcess.stdin || !agentProcess.stdout) {
+    throw new Error("Failed to create agent process stdio");
+  }
+
+  // Log stderr
+  if (agentProcess.stderr) {
+    const readline = await import("node:readline");
+    const rl = readline.createInterface({ input: agentProcess.stderr });
+    rl.on("line", (line: string) => {
+      console.log(`[ACP Agent stderr] ${line}`);
+    });
+  }
+
+  // Set up ACP connection over stdio
+  const input = Writable.toWeb(agentProcess.stdin!) as WritableStream;
+  const output = Readable.toWeb(
+    agentProcess.stdout!,
+  ) as ReadableStream<Uint8Array>;
+  const stream = acp.ndJsonStream(input, output);
+
+  const client = createClient(sessionId);
+  const connection = new acp.ClientSideConnection(
+    (_agent: any) => client,
+    stream,
+  );
+
+  const session: AcpSession = {
+    id: sessionId,
+    agentType,
+    cwd: resolvedCwd,
+    status: "initializing",
+    createdAt: new Date().toISOString(),
+    connection,
+    process: agentProcess,
+    pendingPermissions: new Map(),
+    pendingDiffProposals: new Map(),
+  };
+
+  sessions.set(sessionId, session);
+
+  // Handle process exit
+  agentProcess.on("exit", (code, signal) => {
+    session.status = "terminated";
+    emit("acp://session-status", {
+      sessionId,
+      status: "terminated",
+    });
+    console.log(
+      `[ACP] Agent ${sessionId} exited: code=${code}, signal=${signal}`,
+    );
+  });
+
+  // Initialize the ACP connection
+  try {
+    const initResult = await connection.initialize({
+      protocolVersion: acp.PROTOCOL_VERSION,
+      clientCapabilities: {
+        fs: {
+          readTextFile: true,
+          writeTextFile: true,
+        },
+        terminal: true,
+      },
+    });
+
+    session.status = "ready";
+    emit("acp://session-status", {
+      sessionId,
+      status: "ready",
+      agentInfo: (initResult as any).agentInfo,
+    });
+
+    // Create a session within the connection
+    const sessionResult = await connection.newSession({
+      cwd: resolvedCwd,
+      mcpServers: [],
+    });
+
+    // Store the ACP session ID for prompt routing
+    (session as any).acpSessionId =
+      sessionResult.sessionId ?? sessionId;
+  } catch (err) {
+    session.status = "error";
+    emit("acp://error", {
+      sessionId,
+      error: `Failed to initialize agent: ${err}`,
+    });
+    throw err;
+  }
+
+  return {
+    id: sessionId,
+    agentType,
+    cwd: resolvedCwd,
+    status: session.status,
+    createdAt: session.createdAt,
+  };
+}
+
+export async function acpPrompt(params: any): Promise<void> {
+  const { sessionId, prompt, context } = params;
+  const session = sessions.get(sessionId);
+  if (!session) throw new Error(`Session not found: ${sessionId}`);
+
+  session.status = "prompting";
+  emit("acp://session-status", { sessionId, status: "prompting" });
+
+  const acpSessionId = (session as any).acpSessionId ?? sessionId;
+
+  const promptContent: acp.ContentBlock[] = [
+    { type: "text", text: prompt },
+  ];
+
+  // Add context items if provided
+  if (context) {
+    for (const item of context) {
+      if (item.text) {
+        promptContent.push({ type: "text", text: item.text });
+      }
+    }
+  }
+
+  try {
+    const result = await session.connection.prompt({
+      sessionId: acpSessionId,
+      prompt: promptContent,
+    });
+
+    emit("acp://prompt-complete", {
+      sessionId,
+      stopReason: result.stopReason ?? "end_turn",
+    });
+  } catch (err) {
+    emit("acp://error", {
+      sessionId,
+      error: `Prompt failed: ${err}`,
+    });
+    throw err;
+  } finally {
+    if (session.status === "prompting") {
+      session.status = "ready";
+    }
+  }
+}
+
+export async function acpCancel(params: any): Promise<void> {
+  const { sessionId } = params;
+  const session = sessions.get(sessionId);
+  if (!session) throw new Error(`Session not found: ${sessionId}`);
+
+  const acpSessionId = (session as any).acpSessionId ?? sessionId;
+  await session.connection.cancel({ sessionId: acpSessionId });
+}
+
+export async function acpTerminate(params: any): Promise<void> {
+  const { sessionId } = params;
+  const session = sessions.get(sessionId);
+  if (!session) throw new Error(`Session not found: ${sessionId}`);
+
+  session.process.kill();
+  sessions.delete(sessionId);
+  session.status = "terminated";
+
+  emit("acp://session-status", { sessionId, status: "terminated" });
+}
+
+export async function acpListSessions(): Promise<any[]> {
+  return Array.from(sessions.values()).map((s) => ({
+    id: s.id,
+    agentType: s.agentType,
+    cwd: s.cwd,
+    status: s.status,
+    createdAt: s.createdAt,
+  }));
+}
+
+export async function acpSetPermissionMode(params: any): Promise<void> {
+  const { sessionId, mode } = params;
+  const session = sessions.get(sessionId);
+  if (!session) throw new Error(`Session not found: ${sessionId}`);
+
+  const acpSessionId = (session as any).acpSessionId ?? sessionId;
+  await session.connection.setSessionMode({
+    sessionId: acpSessionId,
+    modeId: mode as acp.SessionModeId,
+  });
+}
+
+export async function acpRespondToPermission(params: any): Promise<void> {
+  const { sessionId, requestId, optionId } = params;
+  const session = sessions.get(sessionId);
+  if (!session) throw new Error(`Session not found: ${sessionId}`);
+
+  const resolver = session.pendingPermissions.get(requestId);
+  if (!resolver) throw new Error(`No pending permission: ${requestId}`);
+
+  session.pendingPermissions.delete(requestId);
+  resolver(optionId);
+}
+
+export async function acpRespondToDiffProposal(params: any): Promise<void> {
+  const { sessionId, proposalId, accepted } = params;
+  const session = sessions.get(sessionId);
+  if (!session) throw new Error(`Session not found: ${sessionId}`);
+
+  const resolver = session.pendingDiffProposals.get(proposalId);
+  if (!resolver) throw new Error(`No pending diff proposal: ${proposalId}`);
+
+  session.pendingDiffProposals.delete(proposalId);
+  resolver(accepted);
+}
+
+export async function acpGetAvailableAgents(): Promise<any[]> {
+  const agents = [
+    {
+      type: "claude-code",
+      name: "Claude Code",
+      description: "AI coding assistant by Anthropic",
+      command: "claude",
+      available: false,
+      unavailableReason: undefined as string | undefined,
+    },
+    {
+      type: "codex",
+      name: "Codex CLI",
+      description: "AI coding assistant by OpenAI",
+      command: "codex",
+      available: false,
+      unavailableReason: undefined as string | undefined,
+    },
+  ];
+
+  for (const agent of agents) {
+    agent.available = await isCommandAvailable(agent.command);
+    if (!agent.available) {
+      agent.unavailableReason = `${agent.command} not found in PATH`;
+    }
+  }
+
+  return agents;
+}
+
+export async function acpCheckAgentAvailable(params: any): Promise<boolean> {
+  const { agentType } = params;
+  const command = findAgentCommand(agentType);
+  return isCommandAvailable(command);
+}
+
+export async function acpEnsureClaudeCli(): Promise<string> {
+  // Check if claude is already available
+  if (await isCommandAvailable("claude")) {
+    return "claude";
+  }
+
+  // Try to install via npm
+  const npmCmd = platform() === "win32" ? "npm.cmd" : "npm";
+  return new Promise((resolve, reject) => {
+    const proc = execFile(
+      npmCmd,
+      ["install", "-g", "@anthropic-ai/claude-code"],
+      (err, stdout, stderr) => {
+        if (err) {
+          reject(
+            new Error(
+              `Failed to install Claude Code CLI: ${stderr || err.message}`,
+            ),
+          );
+          return;
+        }
+        console.log(`[ACP] Claude Code CLI installed: ${stdout}`);
+        resolve("claude");
+      },
+    );
+  });
+}

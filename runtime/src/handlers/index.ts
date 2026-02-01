@@ -1,10 +1,11 @@
 // ABOUTME: Registers all RPC handlers with the JSON-RPC router.
 // ABOUTME: Called once at server startup.
 
-import { registerHandler } from "../rpc";
-import * as chat from "./chat";
-import * as dialogs from "./dialogs";
-import * as fs from "./fs";
+import { registerHandler } from "../rpc.js";
+import * as acp from "./acp.js";
+import * as chat from "./chat.js";
+import * as dialogs from "./dialogs.js";
+import * as fs from "./fs.js";
 
 export function registerAllHandlers(): void {
   // File system handlers
@@ -23,6 +24,19 @@ export function registerAllHandlers(): void {
   registerHandler("open_file_dialog", dialogs.openFileDialog);
   registerHandler("save_file_dialog", dialogs.saveFileDialog);
   registerHandler("reveal_in_file_manager", dialogs.revealInFileManager);
+
+  // ACP agent handlers
+  registerHandler("acp_spawn", acp.acpSpawn);
+  registerHandler("acp_prompt", acp.acpPrompt);
+  registerHandler("acp_cancel", acp.acpCancel);
+  registerHandler("acp_terminate", acp.acpTerminate);
+  registerHandler("acp_list_sessions", acp.acpListSessions);
+  registerHandler("acp_set_permission_mode", acp.acpSetPermissionMode);
+  registerHandler("acp_respond_to_permission", acp.acpRespondToPermission);
+  registerHandler("acp_respond_to_diff_proposal", acp.acpRespondToDiffProposal);
+  registerHandler("acp_get_available_agents", acp.acpGetAvailableAgents);
+  registerHandler("acp_check_agent_available", acp.acpCheckAgentAvailable);
+  registerHandler("acp_ensure_claude_cli", acp.acpEnsureClaudeCli);
 
   // Chat/conversation handlers
   registerHandler("create_conversation", chat.createConversation);
