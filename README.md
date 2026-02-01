@@ -8,7 +8,7 @@ Seren is an AI assistant that connects to multiple AI models (Claude, GPT, and m
 
 ## How It Works
 
-One install command downloads the Seren Local runtime. Run `seren-local` and the app opens in your default browser at `http://localhost:19420`. Everything runs on your machine — Seren hosts nothing except the Gateway API.
+One install command downloads the Seren Local runtime. Run `serendesktop` and the app opens in your default browser at `http://localhost:19420`. Everything runs on your machine — Seren hosts nothing except the Gateway API.
 
 ### What you get
 
@@ -26,7 +26,7 @@ One install command downloads the Seren Local runtime. Run `seren-local` and the
 ### macOS / Linux
 
 ```sh
-curl -fsSL https://serendb.com/install | sh
+curl -fsSL https://serendb.com/install.sh | sh
 ```
 
 ### Windows (PowerShell)
@@ -38,13 +38,13 @@ irm https://serendb.com/install.ps1 | iex
 ### What the installer does
 
 1. Downloads Node.js to `~/.seren-local/node/` (if you don't have Node 20+)
-2. Installs `@serendb/runtime` via npm into `~/.seren-local/`
+2. Installs `@serendb/serendesktop` via npm into `~/.seren-local/`
 3. Adds `~/.seren-local/bin` to your PATH
 
 ### Running Seren Local
 
 ```sh
-seren-local
+serendesktop
 ```
 
 The runtime starts on `localhost:19420` and opens your browser automatically.

@@ -295,7 +295,7 @@ Write-Host "  ║          Installation Complete!          ║" -ForegroundColor
 Write-Host "  ╚══════════════════════════════════════════╝" -ForegroundColor Green
 Write-Host ""
 Write-Host "  Start the runtime:" -ForegroundColor White
-Write-Host "    seren" -ForegroundColor Cyan
+Write-Host "    serendesktop" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "  Then open Seren in your browser:" -ForegroundColor White
 Write-Host "    https://app.seren-local.com" -ForegroundColor Cyan

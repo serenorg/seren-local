@@ -2,7 +2,7 @@
 # ABOUTME: Cross-platform install script for Seren local runtime (macOS/Linux).
 # ABOUTME: Auto-downloads Node.js if missing, installs @serendb/runtime into ~/.seren-local.
 #
-# Usage: curl -fsSL https://serendb.com/install | sh
+# Usage: curl -fsSL https://serendb.com/install.sh | sh
 
 set -euo pipefail
 
@@ -14,7 +14,7 @@ RESET='\033[0m'
 
 NODE_VERSION="22.13.1"
 MIN_NODE_MAJOR=20
-PACKAGE="@serendb/runtime"
+PACKAGE="@serendb/serendesktop"
 SEREN_DIR="${HOME}/.seren-local"
 SEREN_NODE_DIR="${SEREN_DIR}/node"
 SEREN_BIN="${SEREN_DIR}/bin"
@@ -67,7 +67,7 @@ create_linux_shortcut() {
   [ -d "$desktop_dir" ] || desktop_dir="${HOME}"
 
   mkdir -p "$applications_dir"
-  local desktop_file="${applications_dir}/seren-local.desktop"
+  local desktop_file="${applications_dir}/serendesktop.desktop"
 
   cat <<EOF >"$desktop_file"
 [Desktop Entry]
@@ -380,7 +380,7 @@ main() {
   info "╚══════════════════════════════════════════╝"
   printf "\n"
   echo "  Start the runtime:"
-  echo "    ${BOLD}seren${RESET}"
+  echo "    ${BOLD}serendesktop${RESET}"
   printf "\n"
   echo "  Then open Seren in your browser:"
   echo "    ${BOLD}https://app.seren-local.com${RESET}"

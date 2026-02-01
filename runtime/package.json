@@ -1,10 +1,29 @@
 {
-  "name": "@serendb/runtime",
+  "name": "@serendb/serendesktop",
   "version": "0.1.0",
   "description": "Seren Local runtime — enables ACP agents, local MCP, and file access",
   "type": "module",
+  "license": "MIT",
+  "author": "SerenAI <hello@serendb.com>",
+  "homepage": "https://serendb.com",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/serenorg/seren-local.git",
+    "directory": "runtime"
+  },
+  "bugs": "https://github.com/serenorg/seren-local/issues",
+  "keywords": [
+    "seren",
+    "serendb",
+    "serendesktop",
+    "acp",
+    "mcp",
+    "ai-agent",
+    "local-runtime",
+    "sqlite"
+  ],
   "bin": {
-    "seren-local": "./bin/seren.js"
+    "serendesktop": "./bin/serendesktop.js"
   },
   "files": [
     "bin/",
