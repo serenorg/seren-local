@@ -1,12 +1,16 @@
 # ABOUTME: Windows install script for Seren local runtime.
-# ABOUTME: Checks Node.js, installs @serendb/runtime globally via npm.
+# ABOUTME: Auto-downloads Node.js if missing, installs @serendb/runtime into ~/.seren.
 #
 # Usage: irm https://seren.com/install.ps1 | iex
 
 $ErrorActionPreference = "Stop"
 
+$NODE_VERSION = "22.13.1"
 $MIN_NODE_MAJOR = 20
 $PACKAGE = "@serendb/runtime"
+$SEREN_DIR = Join-Path $env:USERPROFILE ".seren"
+$SEREN_NODE_DIR = Join-Path $SEREN_DIR "node"
+$SEREN_BIN = Join-Path $SEREN_DIR "bin"
 
 function Write-Banner {
     Write-Host ""
@@ -22,64 +26,83 @@ function Write-Warn($msg) { Write-Host "  ! $msg" -ForegroundColor Yellow }
 function Write-Err($msg) { Write-Host "  ✗ $msg" -ForegroundColor Red }
 function Write-Info($msg) { Write-Host "  $msg" -ForegroundColor White }
 
-function Test-NodeInstalled {
+# ── Check for existing Node.js ────────────────────────────────────────
+
+function Find-Node {
+    # Check Seren's private Node first
+    $serenNode = Join-Path $SEREN_NODE_DIR "node.exe"
+    if (Test-Path $serenNode) {
+        $version = (& $serenNode --version 2>$null)
+        if ($version) {
+            $major = [int]($version -replace '^v','').Split('.')[0]
+            if ($major -ge $MIN_NODE_MAJOR) {
+                $script:NODE_BIN = $serenNode
+                $script:NPM_BIN = Join-Path $SEREN_NODE_DIR "npm.cmd"
+                Write-Ok "Seren Node.js $version found"
+                return $true
+            }
+        }
+    }
+
+    # Check system Node
     try {
         $version = (node --version 2>$null)
-        if (-not $version) { return $false }
-
-        $major = [int]($version -replace '^v','').Split('.')[0]
-        if ($major -lt $MIN_NODE_MAJOR) {
-            Write-Err "Node.js $version found, but v${MIN_NODE_MAJOR}+ required."
-            return $false
+        if ($version) {
+            $major = [int]($version -replace '^v','').Split('.')[0]
+            if ($major -ge $MIN_NODE_MAJOR) {
+                $script:NODE_BIN = "node"
+                $script:NPM_BIN = "npm"
+                Write-Ok "System Node.js $version found"
+                return $true
+            }
+            Write-Warn "System Node.js $version too old (need v${MIN_NODE_MAJOR}+)."
         }
+    } catch {}
 
-        Write-Ok "Node.js $version found"
-        return $true
-    }
-    catch {
-        return $false
-    }
+    return $false
 }
 
-function Show-NodeInstructions {
-    Write-Err "Node.js v${MIN_NODE_MAJOR}+ is required but not found."
-    Write-Host ""
-    Write-Info "Install Node.js:"
-    Write-Host ""
-    Write-Host "  # Option 1: Download from nodejs.org" -ForegroundColor Gray
-    Write-Host "  https://nodejs.org" -ForegroundColor White
-    Write-Host ""
-    Write-Host "  # Option 2: Use winget" -ForegroundColor Gray
-    Write-Host "  winget install OpenJS.NodeJS.LTS" -ForegroundColor White
-    Write-Host ""
-    Write-Host "  # Option 3: Use chocolatey" -ForegroundColor Gray
-    Write-Host "  choco install nodejs-lts" -ForegroundColor White
-    Write-Host ""
-    Write-Info "Then re-run this installer:"
-    Write-Host "  irm https://seren.com/install.ps1 | iex" -ForegroundColor White
-    Write-Host ""
-    exit 1
-}
+# ── Download Node.js ──────────────────────────────────────────────────
 
-function Test-NpmInstalled {
+function Install-Node {
+    Write-Info "Downloading Node.js v${NODE_VERSION} for Windows x64..."
+
+    $url = "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-win-x64.zip"
+    $tmpZip = Join-Path $env:TEMP "seren-node-$([System.IO.Path]::GetRandomFileName()).zip"
+    $tmpExtract = Join-Path $env:TEMP "seren-node-extract-$([System.IO.Path]::GetRandomFileName())"
+
     try {
-        $version = (npm --version 2>$null)
-        if (-not $version) {
-            Write-Err "npm not found. It should come with Node.js."
-            Write-Err "Please reinstall Node.js from https://nodejs.org"
-            exit 1
-        }
-        Write-Ok "npm $version found"
-        return $true
+        [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+        Invoke-WebRequest -Uri $url -OutFile $tmpZip -UseBasicParsing
+
+        # Extract
+        New-Item -ItemType Directory -Path $tmpExtract -Force | Out-Null
+        Expand-Archive -Path $tmpZip -DestinationPath $tmpExtract -Force
+
+        # Move to ~/.seren/node/
+        $extracted = Get-ChildItem -Path $tmpExtract -Directory | Select-Object -First 1
+        if (Test-Path $SEREN_NODE_DIR) { Remove-Item -Recurse -Force $SEREN_NODE_DIR }
+        Move-Item -Path $extracted.FullName -Destination $SEREN_NODE_DIR
+
+        $script:NODE_BIN = Join-Path $SEREN_NODE_DIR "node.exe"
+        $script:NPM_BIN = Join-Path $SEREN_NODE_DIR "npm.cmd"
+
+        $installedVersion = & $script:NODE_BIN --version
+        Write-Ok "Installed Node.js ${installedVersion} to ${SEREN_NODE_DIR}\"
     }
     catch {
-        Write-Err "npm not found."
+        Write-Err "Failed to download Node.js: $_"
         exit 1
     }
+    finally {
+        Remove-Item -Path $tmpZip -ErrorAction SilentlyContinue
+        Remove-Item -Recurse -Path $tmpExtract -ErrorAction SilentlyContinue
+    }
 }
 
+# ── Check build tools ─────────────────────────────────────────────────
+
 function Test-BuildTools {
-    # Check for Visual Studio Build Tools (needed by node-gyp for better-sqlite3)
     $vsWhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
     $hasVS = $false
 
@@ -89,7 +112,6 @@ function Test-BuildTools {
     }
 
     if (-not $hasVS) {
-        # Also check for standalone Build Tools via cl.exe in PATH
         try {
             $null = Get-Command cl.exe -ErrorAction Stop
             $hasVS = $true
@@ -113,39 +135,63 @@ function Test-BuildTools {
     Write-Ok "C++ build tools found"
 }
 
+# ── Install runtime ───────────────────────────────────────────────────
+
 function Install-Runtime {
     Write-Info "Installing ${PACKAGE}..."
     Write-Host ""
 
+    # Install into Seren's private prefix
+    New-Item -ItemType Directory -Path $SEREN_BIN -Force | Out-Null
+
     try {
-        npm install -g $PACKAGE
+        & $script:NPM_BIN install -g $PACKAGE --prefix $SEREN_DIR
         Write-Host ""
         Write-Ok "${PACKAGE} installed successfully!"
     }
     catch {
         Write-Host ""
-        Write-Warn "Global install failed."
-        Write-Host ""
-        Write-Info "Try running PowerShell as Administrator, then:"
-        Write-Host "  npm install -g ${PACKAGE}" -ForegroundColor White
-        Write-Host ""
+        Write-Err "Installation failed: $_"
         exit 1
     }
 }
 
-function Test-SerenCommand {
-    try {
-        $null = Get-Command seren -ErrorAction Stop
-        Write-Ok "seren command is available"
+# ── Set up PATH ───────────────────────────────────────────────────────
+
+function Setup-Path {
+    $currentPath = [Environment]::GetEnvironmentVariable("PATH", "User")
+    if ($currentPath -notlike "*$SEREN_BIN*") {
+        [Environment]::SetEnvironmentVariable("PATH", "$SEREN_BIN;$currentPath", "User")
+        Write-Ok "Added $SEREN_BIN to user PATH"
+    } else {
+        Write-Ok "PATH already configured"
     }
-    catch {
-        Write-Warn "seren command not found in PATH."
-        Write-Warn "You may need to restart your terminal."
+
+    # Make available in current session
+    $env:PATH = "$SEREN_BIN;$env:PATH"
+}
+
+# ── Verify ────────────────────────────────────────────────────────────
+
+function Test-SerenCommand {
+    $serenCmd = Join-Path $SEREN_BIN "seren"
+    if (Test-Path "$serenCmd.cmd") {
+        Write-Ok "seren command is available"
+    } elseif (Test-Path $serenCmd) {
+        Write-Ok "seren command is available"
+    } else {
+        # Check npm's bin location within the prefix
+        $npmBinDir = Join-Path $SEREN_DIR "bin"
+        if (Test-Path (Join-Path $npmBinDir "seren.cmd")) {
+            Write-Ok "seren command is available"
+        } else {
+            Write-Warn "seren command not found. You may need to restart your terminal."
+        }
     }
 }
 
 function New-DataDir {
-    $dataDir = Join-Path $env:USERPROFILE ".seren"
+    $dataDir = Join-Path $SEREN_DIR "data"
     if (-not (Test-Path $dataDir)) {
         New-Item -ItemType Directory -Path $dataDir -Force | Out-Null
         Write-Ok "Created $dataDir\"
@@ -156,13 +202,13 @@ function New-DataDir {
 
 Write-Banner
 
-if (-not (Test-NodeInstalled)) {
-    Show-NodeInstructions
+if (-not (Find-Node)) {
+    Install-Node
 }
 
-Test-NpmInstalled | Out-Null
 Test-BuildTools
 Install-Runtime
+Setup-Path
 Test-SerenCommand
 New-DataDir
 
@@ -178,4 +224,9 @@ Write-Host "  Then open Seren in your browser:" -ForegroundColor White
 Write-Host "    https://app.seren.com" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "  The browser will automatically connect to your local runtime." -ForegroundColor Gray
+if (Test-Path (Join-Path $SEREN_NODE_DIR "node.exe")) {
+    Write-Host ""
+    Write-Host "  Note: Node.js was installed to ${SEREN_NODE_DIR}\" -ForegroundColor Gray
+    Write-Host "  To remove everything, delete ${SEREN_DIR}\" -ForegroundColor Gray
+}
 Write-Host ""
