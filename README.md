@@ -41,7 +41,7 @@ irm https://seren.com/install.ps1 | iex
 2. Installs `@serendb/runtime` via npm into `~/.seren-local/`
 3. Adds `~/.seren-local/bin` to your PATH
 
-### Running Seren
+### Running Seren Local
 
 ```sh
 seren-local
