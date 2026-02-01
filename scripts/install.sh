@@ -18,11 +18,152 @@ PACKAGE="@serendb/runtime"
 SEREN_DIR="${HOME}/.seren-local"
 SEREN_NODE_DIR="${SEREN_DIR}/node"
 SEREN_BIN="${SEREN_DIR}/bin"
+SEREN_ICON_URL="https://raw.githubusercontent.com/serenorg/seren-local/main/scripts/assets/seren-icon.png"
+SEREN_ICON_PATH=""
+SCRIPT_SOURCE="${BASH_SOURCE[0]:-$0}"
+if command -v realpath >/dev/null 2>&1; then
+  SCRIPT_DIR=$(realpath "$(dirname "$SCRIPT_SOURCE")" 2>/dev/null)
+else
+  SCRIPT_DIR=$(cd "$(dirname "$SCRIPT_SOURCE")" >/dev/null 2>&1 && pwd || echo "")
+fi
 
 info()  { printf "${BOLD}%s${RESET}\n" "$*"; }
 ok()    { printf "${GREEN}✓ %s${RESET}\n" "$*"; }
 warn()  { printf "${YELLOW}! %s${RESET}\n" "$*"; }
 error() { printf "${RED}✗ %s${RESET}\n" "$*" >&2; }
+
+# ── Icon + Shortcut Helpers ──────────────────────────────────────────
+
+download_seren_icon() {
+  local icon_dir="${SEREN_DIR}/share/icons"
+  mkdir -p "$icon_dir"
+  SEREN_ICON_PATH="${icon_dir}/seren-icon.png"
+
+  if [ -n "$SCRIPT_DIR" ] && [ -f "$SCRIPT_DIR/assets/seren-icon.png" ]; then
+    cp "$SCRIPT_DIR/assets/seren-icon.png" "$SEREN_ICON_PATH"
+    ok "Copied Seren icon"
+    return
+  fi
+
+  if command -v curl >/dev/null 2>&1; then
+    if curl -fsSL "$SEREN_ICON_URL" -o "$SEREN_ICON_PATH"; then
+      ok "Downloaded Seren icon"
+      return
+    fi
+  elif command -v wget >/dev/null 2>&1; then
+    if wget -q "$SEREN_ICON_URL" -O "$SEREN_ICON_PATH"; then
+      ok "Downloaded Seren icon"
+      return
+    fi
+  fi
+
+  warn "Unable to download Seren icon (desktop shortcut will use default icon)."
+  SEREN_ICON_PATH=""
+}
+
+create_linux_shortcut() {
+  local desktop_dir="${HOME}/Desktop"
+  local applications_dir="${HOME}/.local/share/applications"
+  [ -d "$desktop_dir" ] || desktop_dir="${HOME}"
+
+  mkdir -p "$applications_dir"
+  local desktop_file="${applications_dir}/seren-local.desktop"
+
+  cat <<EOF >"$desktop_file"
+[Desktop Entry]
+Type=Application
+Name=Seren Local
+Exec=${SEREN_BIN}/seren
+Icon=${SEREN_ICON_PATH:-${SEREN_BIN}/seren}
+Terminal=true
+Categories=Utility;
+EOF
+  chmod +x "$desktop_file"
+
+  if [ -d "${HOME}/Desktop" ]; then
+    cp "$desktop_file" "${HOME}/Desktop/Seren Local.desktop"
+  fi
+  ok "Created desktop shortcut (Linux)"
+}
+
+create_macos_shortcut() {
+  local app_dir="${HOME}/Applications/Seren Local.app"
+  local desktop_alias="${HOME}/Desktop/Seren Local.app"
+  mkdir -p "$app_dir/Contents/MacOS" "$app_dir/Contents/Resources"
+
+  local icon_file="${app_dir}/Contents/Resources/seren.icns"
+  if [ -n "$SEREN_ICON_PATH" ] && command -v sips >/dev/null 2>&1 && command -v iconutil >/dev/null 2>&1; then
+    local temp_dir
+    temp_dir=$(mktemp -d)
+    local iconset="${temp_dir}/seren.iconset"
+    mkdir -p "$iconset"
+    for size in 16 32 64 128 256 512; do
+      sips -z "$size" "$size" "$SEREN_ICON_PATH" --out "$iconset/icon_${size}x${size}.png" >/dev/null
+      local doubled=$((size * 2))
+      sips -z "$doubled" "$doubled" "$SEREN_ICON_PATH" --out "$iconset/icon_${size}x${size}@2x.png" >/dev/null
+    done
+    if iconutil -c icns -o "$icon_file" "$iconset" >/dev/null 2>&1; then
+      rm -rf "$temp_dir"
+    else
+      warn "Failed to convert icon; application will use default icon"
+      rm -rf "$temp_dir"
+      rm -f "$icon_file"
+    fi
+  fi
+
+  cat <<EOF >"${app_dir}/Contents/Info.plist"
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleName</key>
+  <string>Seren Local</string>
+  <key>CFBundleIdentifier</key>
+  <string>com.seren.local</string>
+  <key>CFBundleVersion</key>
+  <string>1.0</string>
+  <key>CFBundleExecutable</key>
+  <string>SerenLocal</string>
+  <key>CFBundlePackageType</key>
+  <string>APPL</string>
+  <key>CFBundleIconFile</key>
+  <string>seren</string>
+</dict>
+</plist>
+EOF
+
+  cat <<'EOF' >"${app_dir}/Contents/MacOS/SerenLocal"
+#!/bin/bash
+CMD="${SEREN_BIN}/seren"
+if [ ! -x "$CMD" ]; then
+  CMD="seren"
+fi
+osascript <<OSA
+tell application "Terminal"
+  if not (exists window 1) then reopen
+  do script "$CMD" in front window
+  activate
+end tell
+OSA
+EOF
+  chmod +x "${app_dir}/Contents/MacOS/SerenLocal"
+
+  if [ -d "${HOME}/Desktop" ]; then
+    ln -sfn "$app_dir" "$desktop_alias"
+  fi
+  ok "Created Seren Local app bundle"
+}
+
+create_desktop_shortcut() {
+  case "$OS" in
+    linux)
+      create_linux_shortcut
+      ;;
+    darwin)
+      create_macos_shortcut
+      ;;
+  esac
+}
 
 # ── Banner ─────────────────────────────────────────────────────────────
 printf "\n"
@@ -230,6 +371,8 @@ main() {
   install_runtime
   setup_path
   verify_install
+  download_seren_icon
+  create_desktop_shortcut
 
   printf "\n"
   info "╔══════════════════════════════════════════╗"
