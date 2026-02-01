@@ -263,16 +263,16 @@ check_toolchain() {
   case "$OS" in
     darwin)
       if ! xcode-select -p &>/dev/null; then
-        warn "Xcode Command Line Tools not found."
-        warn "The runtime uses a native SQLite module that requires a compiler."
-        printf "\n"
-        info "Install with:"
-        echo "  xcode-select --install"
-        printf "\n"
-        info "Then re-run this installer."
-        exit 1
+        info "Installing Xcode Command Line Tools (required for native modules)..."
+        xcode-select --install 2>/dev/null || true
+        # Wait for the install to complete
+        until xcode-select -p &>/dev/null; do
+          sleep 5
+        done
+        ok "Xcode Command Line Tools installed"
+      else
+        ok "Xcode Command Line Tools found"
       fi
-      ok "Xcode Command Line Tools found"
       ;;
     linux)
       if ! command -v make &>/dev/null || ! command -v g++ &>/dev/null; then
