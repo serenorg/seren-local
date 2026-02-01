@@ -11,6 +11,8 @@ $PACKAGE = "@serendb/runtime"
 $SEREN_DIR = Join-Path $env:USERPROFILE ".seren-local"
 $SEREN_NODE_DIR = Join-Path $SEREN_DIR "node"
 $SEREN_BIN = Join-Path $SEREN_DIR "bin"
+$SEREN_ICON_URL = "https://raw.githubusercontent.com/serenorg/seren-local/main/scripts/assets/seren-icon.png"
+$script:SEREN_ICON_PATH = $null
 
 function Write-Banner {
     Write-Host ""
@@ -182,6 +184,68 @@ function Setup-Path {
     $env:PATH = "$SEREN_BIN;$env:PATH"
 }
 
+# ── Icon helpers ─────────────────────────────────────────────────────
+
+function Write-SerenIcon {
+    try {
+        $assets = Join-Path $SEREN_DIR "assets"
+        New-Item -ItemType Directory -Path $assets -Force | Out-Null
+        $script:SEREN_ICON_PATH = Join-Path $assets "seren-icon.png"
+        Invoke-WebRequest -Uri $SEREN_ICON_URL -OutFile $script:SEREN_ICON_PATH -UseBasicParsing
+        Write-Ok "Downloaded Seren icon"
+    }
+    catch {
+        Write-Warn "Unable to download Seren icon: $_"
+        $script:SEREN_ICON_PATH = $null
+    }
+}
+
+function Convert-ToIco {
+    param([string]$PngPath)
+    if (-not (Test-Path $PngPath)) { return $null }
+    try {
+        Add-Type -AssemblyName System.Drawing -ErrorAction Stop
+        $bitmap = [System.Drawing.Bitmap]::FromFile($PngPath)
+        $icon = [System.Drawing.Icon]::FromHandle($bitmap.GetHicon())
+        $icoPath = Join-Path (Split-Path $PngPath -Parent) "seren-icon.ico"
+        $stream = [System.IO.File]::Create($icoPath)
+        $icon.Save($stream)
+        $stream.Dispose()
+        $icon.Dispose()
+        $bitmap.Dispose()
+        return $icoPath
+    }
+    catch {
+        Write-Warn "Failed to convert icon: $_"
+        return $null
+    }
+}
+
+function New-DesktopShortcut {
+    try {
+        $desktop = [Environment]::GetFolderPath("Desktop")
+        if (-not (Test-Path $desktop)) { return }
+
+        $shell = New-Object -ComObject WScript.Shell
+        $shortcut = $shell.CreateShortcut((Join-Path $desktop "Seren Local.lnk"))
+        $serenCmd = Join-Path $SEREN_BIN "seren.cmd"
+        if (-not (Test-Path $serenCmd)) { $serenCmd = Join-Path $SEREN_BIN "seren" }
+        $shortcut.TargetPath = $serenCmd
+        $shortcut.WorkingDirectory = $SEREN_DIR
+
+        if ($SEREN_ICON_PATH) {
+            $ico = Convert-ToIco $SEREN_ICON_PATH
+            if ($ico) { $shortcut.IconLocation = $ico }
+        }
+
+        $shortcut.Save()
+        Write-Ok "Created desktop shortcut"
+    }
+    catch {
+        Write-Warn "Failed to create desktop shortcut: $_"
+    }
+}
+
 # ── Verify ────────────────────────────────────────────────────────────
 
 function Test-SerenCommand {
@@ -222,6 +286,8 @@ Install-Runtime
 Setup-Path
 Test-SerenCommand
 New-DataDir
+Write-SerenIcon
+New-DesktopShortcut
 
 Write-Host ""
 Write-Host "  ╔══════════════════════════════════════════╗" -ForegroundColor Green
