@@ -11,7 +11,11 @@ import {
   Switch,
   untrack,
 } from "solid-js";
-import { connectToRuntime } from "@/lib/bridge";
+import { connectToRuntime, storeOAuthCredentials } from "@/lib/bridge";
+import {
+  getPendingOAuthProvider,
+  handleOAuthCallback,
+} from "@/services/oauth";
 import { SignIn } from "@/components/auth/SignIn";
 import { CatalogPanel } from "@/components/catalog";
 import { ChatContent } from "@/components/chat/ChatContent";
@@ -71,6 +75,28 @@ function App() {
   const [showEditor, setShowEditor] = createSignal(false);
 
   onMount(async () => {
+    // Handle OAuth callback if returning from provider authorization
+    const params = new URLSearchParams(window.location.search);
+    const code = params.get("code");
+    const state = params.get("state");
+    if (code && state && window.location.pathname === "/oauth/callback") {
+      try {
+        const pendingProvider = getPendingOAuthProvider();
+        if (pendingProvider) {
+          const credentials = await handleOAuthCallback(code, state);
+          await storeOAuthCredentials(
+            pendingProvider,
+            JSON.stringify(credentials),
+          );
+          await providerStore.configureOAuthProvider(pendingProvider);
+        }
+      } catch (err) {
+        console.error("[App] OAuth callback failed:", err);
+      }
+      // Clear the callback URL params
+      window.history.replaceState({}, "", "/");
+    }
+
     // Try connecting to local runtime (non-blocking)
     connectToRuntime().then((connected) => {
       if (connected) {

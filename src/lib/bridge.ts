@@ -309,13 +309,6 @@ export async function getOAuthProviders(): Promise<string[]> {
   return providers;
 }
 
-export async function listenForOAuthCallback(
-  _callback: (url: string) => void,
-): Promise<() => void> {
-  // Browser environment: no deep link support. No-op.
-  return () => {};
-}
-
 // ============================================================================
 // File system operations (require local runtime)
 // ============================================================================

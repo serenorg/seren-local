@@ -111,7 +111,8 @@ export async function startOAuthFlow(providerId: ProviderId): Promise<void> {
 
   const authUrl = `${oauthConfig.authUrl}?${params.toString()}`;
 
-  window.open(authUrl, "_blank", "noopener,noreferrer");
+  // Same-tab redirect so sessionStorage PKCE state is accessible on return
+  window.location.assign(authUrl);
 }
 
 /**

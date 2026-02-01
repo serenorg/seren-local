@@ -615,7 +615,7 @@ export async function startOAuthBrowserFlow(): Promise<TokenResponse> {
     },
   );
 
-  console.log("[MCP OAuth] Callback received, state:", callbackResult.state);
+  console.log("[MCP OAuth] Callback received");
 
   // Verify state
   if (callbackResult.state !== state) {

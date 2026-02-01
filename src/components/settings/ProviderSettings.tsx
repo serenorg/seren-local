@@ -1,15 +1,7 @@
 // ABOUTME: Settings UI for configuring LLM provider credentials.
 // ABOUTME: Supports API keys and OAuth sign-in for Anthropic, OpenAI, and Gemini.
 
-import {
-  type Component,
-  createSignal,
-  For,
-  onCleanup,
-  onMount,
-  Show,
-} from "solid-js";
-import { listenForOAuthCallback, storeOAuthCredentials } from "@/lib/bridge";
+import { type Component, createSignal, For, onCleanup, Show } from "solid-js";
 import { validateProviderKey } from "@/lib/providers";
 import {
   CONFIGURABLE_PROVIDERS,
@@ -18,12 +10,7 @@ import {
   supportsApiKey,
   supportsOAuth,
 } from "@/lib/providers/types";
-import {
-  cancelOAuthFlow,
-  getPendingOAuthProvider,
-  handleOAuthCallback,
-  startOAuthFlow,
-} from "@/services/oauth";
+import { cancelOAuthFlow, startOAuthFlow } from "@/services/oauth";
 import { providerStore } from "@/stores/provider.store";
 
 export const ProviderSettings: Component = () => {
@@ -36,67 +23,9 @@ export const ProviderSettings: Component = () => {
   );
   const [oauthError, setOauthError] = createSignal<string | null>(null);
 
-  // Listen for OAuth callbacks
-  onMount(async () => {
-    console.log("[ProviderSettings] Setting up OAuth callback listener");
-    const unlisten = await listenForOAuthCallback(async (url) => {
-      console.log("[ProviderSettings] Received OAuth callback URL:", url);
-      try {
-        const urlObj = new URL(url);
-        const code = urlObj.searchParams.get("code");
-        const state = urlObj.searchParams.get("state");
-        const error = urlObj.searchParams.get("error");
-        console.log(
-          "[ProviderSettings] Callback params - code:",
-          !!code,
-          "state:",
-          !!state,
-          "error:",
-          error,
-        );
-
-        if (error) {
-          console.log("[ProviderSettings] OAuth error received:", error);
-          setOauthError(`OAuth error: ${error}`);
-          setOauthInProgress(null);
-          return;
-        }
-
-        if (!code || !state) {
-          setOauthError("Invalid OAuth callback - missing code or state");
-          setOauthInProgress(null);
-          return;
-        }
-
-        const pendingProvider = getPendingOAuthProvider();
-        if (!pendingProvider) {
-          setOauthError("No pending OAuth flow");
-          return;
-        }
-
-        const credentials = await handleOAuthCallback(code, state);
-
-        // Store credentials
-        await storeOAuthCredentials(
-          pendingProvider,
-          JSON.stringify(credentials),
-        );
-
-        // Update provider store
-        await providerStore.configureOAuthProvider(pendingProvider);
-
-        setOauthInProgress(null);
-        setOauthError(null);
-      } catch (err) {
-        setOauthError(err instanceof Error ? err.message : "OAuth failed");
-        setOauthInProgress(null);
-      }
-    });
-
-    onCleanup(() => {
-      unlisten();
-      cancelOAuthFlow();
-    });
+  // Clean up pending OAuth flows on unmount
+  onCleanup(() => {
+    cancelOAuthFlow();
   });
 
   const handleOAuthSignIn = async (providerId: ProviderId) => {

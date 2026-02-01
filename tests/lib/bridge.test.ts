@@ -40,7 +40,6 @@ import {
   getOAuthCredentials,
   clearOAuthCredentials,
   getOAuthProviders,
-  listenForOAuthCallback,
   // Runtime detection
   isRuntimeConnected,
   // File operations
@@ -229,11 +228,6 @@ describe("bridge: OAuth credentials", () => {
     expect(await getOAuthCredentials("github")).toBeNull();
   });
 
-  it("listenForOAuthCallback returns a cleanup function", async () => {
-    const cleanup = await listenForOAuthCallback(() => {});
-    expect(typeof cleanup).toBe("function");
-    cleanup(); // should not throw
-  });
 });
 
 // ---------------------------------------------------------------------------
