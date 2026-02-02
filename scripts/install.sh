@@ -383,7 +383,7 @@ install_runtime() {
   # Install OpenClaw messaging gateway (optional, non-fatal)
   npm_log=$(mktemp "${TMPDIR:-/tmp}/seren-npm-XXXXXX.log")
   start_spinner "Installing openclaw..." true
-  if "$NPM_BIN" install -g openclaw --prefix "${SEREN_DIR}" >"$npm_log" 2>&1; then
+  if "$NPM_BIN" install -g openclaw --ignore-scripts --prefix "${SEREN_DIR}" >"$npm_log" 2>&1; then
     stop_spinner
     ok "openclaw installed successfully!"
   else
