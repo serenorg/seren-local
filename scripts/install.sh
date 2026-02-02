@@ -249,6 +249,7 @@ check_system_node() {
     if [ "$major" -ge "$MIN_NODE_MAJOR" ]; then
       NODE_BIN="${SEREN_NODE_DIR}/bin/node"
       NPM_BIN="${SEREN_NODE_DIR}/bin/npm"
+      export PATH="${SEREN_NODE_DIR}/bin:${PATH}"
       ok "Seren Node.js v${version} found"
       return 0
     fi
@@ -303,6 +304,7 @@ install_node() {
 
   NODE_BIN="${SEREN_NODE_DIR}/bin/node"
   NPM_BIN="${SEREN_NODE_DIR}/bin/npm"
+  export PATH="${SEREN_NODE_DIR}/bin:${PATH}"
 
   local installed_version
   installed_version=$("$NODE_BIN" --version 2>/dev/null)
