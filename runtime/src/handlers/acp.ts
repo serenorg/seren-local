@@ -11,6 +11,28 @@ import { resolve } from "node:path";
 import { platform } from "node:os";
 import { emit } from "../events.js";
 
+// ── Auth helpers ─────────────────────────────────────────────────────
+
+/** Check if an error message indicates the user needs to authenticate. */
+function isAuthError(message: string): boolean {
+  const lower = message.toLowerCase();
+  return (
+    lower.includes("invalid api key") ||
+    lower.includes("authentication required") ||
+    lower.includes("auth required") ||
+    lower.includes("please run /login") ||
+    lower.includes("authrequired")
+  );
+}
+
+/** Wrap an auth-related error with actionable instructions. */
+function authErrorMessage(agentType: string): string {
+  if (agentType === "claude-code") {
+    return "Claude Code is not logged in. Please open a terminal and run:\n\n  claude login\n\nThen try starting the agent again.";
+  }
+  return "Agent authentication required. Please log in via the agent CLI first.";
+}
+
 // ── Types ────────────────────────────────────────────────────────────
 
 interface AcpSession {
@@ -363,11 +385,15 @@ export async function acpSpawn(params: any): Promise<any> {
       sessionResult.sessionId ?? sessionId;
   } catch (err) {
     session.status = "error";
+    const rawMessage = err instanceof Error ? err.message : JSON.stringify(err);
+    const errorMsg = isAuthError(rawMessage)
+      ? authErrorMessage(agentType)
+      : `Failed to initialize agent: ${rawMessage}`;
     emit("acp://error", {
       sessionId,
-      error: `Failed to initialize agent: ${err instanceof Error ? err.message : JSON.stringify(err)}`,
+      error: errorMsg,
     });
-    throw err;
+    throw new Error(errorMsg);
   }
 
   return {
@@ -413,11 +439,15 @@ export async function acpPrompt(params: any): Promise<void> {
       stopReason: result.stopReason ?? "end_turn",
     });
   } catch (err) {
+    const rawMessage = err instanceof Error ? err.message : JSON.stringify(err);
+    const errorMsg = isAuthError(rawMessage)
+      ? authErrorMessage(session.agentType)
+      : `Prompt failed: ${rawMessage}`;
     emit("acp://error", {
       sessionId,
-      error: `Prompt failed: ${err instanceof Error ? err.message : JSON.stringify(err)}`,
+      error: errorMsg,
     });
-    throw err;
+    throw new Error(errorMsg);
   } finally {
     session.cancelling = false;
     if (session.status === "prompting") {

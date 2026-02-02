@@ -302,14 +302,18 @@ export const AgentChat: Component<AgentChatProps> = (props) => {
           </div>
         ) : null;
 
-      case "error":
+      case "error": {
+        const isAuth = message.content.includes("not logged in") || message.content.includes("claude login");
         return (
           <article class="px-5 py-3 border-b border-[#21262d]">
-            <div class="px-3 py-2 bg-[rgba(248,81,73,0.1)] border border-[rgba(248,81,73,0.4)] rounded-md text-sm text-[#f85149]">
-              {message.content}
+            <div class={`px-3 py-2 rounded-md text-sm ${isAuth ? "bg-[rgba(210,153,34,0.1)] border border-[rgba(210,153,34,0.4)] text-[#d2992a]" : "bg-[rgba(248,81,73,0.1)] border border-[rgba(248,81,73,0.4)] text-[#f85149]"}`}>
+              <div class="whitespace-pre-wrap [&_code]:bg-[#21262d] [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:rounded [&_code]:font-mono [&_code]:text-[13px]">
+                {message.content}
+              </div>
             </div>
           </article>
         );
+      }
 
       default:
         return null;
@@ -402,7 +406,9 @@ export const AgentChat: Component<AgentChatProps> = (props) => {
                         </svg>
                         <span>
                           <strong>Claude Code Required:</strong> Make sure
-                          Claude Code CLI is installed on your computer.
+                          Claude Code CLI is installed and you have run{" "}
+                          <code class="bg-[#21262d] px-1.5 py-0.5 rounded font-mono text-[12px]">claude login</code>{" "}
+                          to authenticate.
                         </span>
                       </div>
                     </div>
