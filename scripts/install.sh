@@ -6,6 +6,15 @@
 
 set -euo pipefail
 
+cleanup() {
+  if [ -n "${SPINNER_PID:-}" ]; then
+    kill "$SPINNER_PID" 2>/dev/null || true
+    wait "$SPINNER_PID" 2>/dev/null || true
+    printf "\r\033[K"
+  fi
+}
+trap cleanup EXIT INT TERM
+
 BOLD='\033[1m'
 GREEN='\033[0;32m'
 YELLOW='\033[0;33m'
@@ -35,17 +44,26 @@ error() { printf "${RED}✗ %s${RESET}\n" "$*" >&2; }
 SPINNER_PID=""
 spin() {
   local msg="$1"
+  local show_elapsed="${2:-false}"
   local frames='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'
   local i=0
+  local start_time=$SECONDS
   while true; do
-    printf "\r${BOLD}${frames:$i:1} %s${RESET}" "$msg"
+    if [ "$show_elapsed" = "true" ]; then
+      local elapsed=$(( SECONDS - start_time ))
+      local mins=$(( elapsed / 60 ))
+      local secs=$(( elapsed % 60 ))
+      printf "\r\033[K${BOLD}${frames:$i:1} %s (%dm %02ds)${RESET}" "$msg" "$mins" "$secs"
+    else
+      printf "\r\033[K${BOLD}${frames:$i:1} %s${RESET}" "$msg"
+    fi
     i=$(( (i + 1) % ${#frames} ))
     sleep 0.1
   done
 }
 
 start_spinner() {
-  spin "$1" &
+  spin "$1" "${2:-false}" &
   SPINNER_PID=$!
 }
 
@@ -297,9 +315,21 @@ check_toolchain() {
     darwin)
       if ! xcode-select -p &>/dev/null; then
         xcode-select --install 2>/dev/null || true
+        info "A dialog should appear to install Xcode Command Line Tools."
+        info "Please follow the prompts. This installer will wait up to 30 minutes."
         start_spinner "Waiting for Xcode Command Line Tools installation..."
-        until xcode-select -p &>/dev/null; do
+        local xcode_waited=0
+        local xcode_timeout=1800
+        while ! xcode-select -p &>/dev/null; do
           sleep 5
+          xcode_waited=$((xcode_waited + 5))
+          if [ "$xcode_waited" -ge "$xcode_timeout" ]; then
+            stop_spinner
+            error "Timed out waiting for Xcode Command Line Tools."
+            error "Please install manually: xcode-select --install"
+            error "Then re-run this installer."
+            exit 1
+          fi
         done
         stop_spinner
         ok "Xcode Command Line Tools installed"
@@ -330,21 +360,37 @@ install_runtime() {
   # Install into Seren's private prefix so no sudo is needed
   mkdir -p "$SEREN_BIN"
 
-  start_spinner "Installing ${PACKAGE}..."
-  "$NPM_BIN" install -g "${PACKAGE}" --prefix "${SEREN_DIR}" >/dev/null 2>&1
+  local npm_log
+  npm_log=$(mktemp "${TMPDIR:-/tmp}/seren-npm-XXXXXX.log")
+
+  info "Installing ${PACKAGE} (this may take several minutes while compiling native modules)..."
+  start_spinner "Installing ${PACKAGE}..." true
+  if ! "$NPM_BIN" install -g "${PACKAGE}" --prefix "${SEREN_DIR}" >"$npm_log" 2>&1; then
+    stop_spinner
+    error "${PACKAGE} installation failed!"
+    error "npm output:"
+    cat "$npm_log" >&2
+    rm -f "$npm_log"
+    exit 1
+  fi
   stop_spinner
+  rm -f "$npm_log"
   ok "${PACKAGE} installed successfully!"
 
   # Install OpenClaw messaging gateway (optional, non-fatal)
-  start_spinner "Installing openclaw..."
-  if "$NPM_BIN" install -g openclaw --prefix "${SEREN_DIR}" >/dev/null 2>&1; then
+  npm_log=$(mktemp "${TMPDIR:-/tmp}/seren-npm-XXXXXX.log")
+  start_spinner "Installing openclaw..." true
+  if "$NPM_BIN" install -g openclaw --prefix "${SEREN_DIR}" >"$npm_log" 2>&1; then
     stop_spinner
     ok "openclaw installed successfully!"
   else
     stop_spinner
     warn "openclaw install failed (messaging features will be unavailable)."
+    warn "npm output:"
+    cat "$npm_log" >&2
     warn "You can install it later: npm install -g openclaw"
   fi
+  rm -f "$npm_log"
 }
 
 # ── Set up PATH ───────────────────────────────────────────────────────
