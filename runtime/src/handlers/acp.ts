@@ -28,9 +28,37 @@ function isAuthError(message: string): boolean {
 /** Wrap an auth-related error with actionable instructions. */
 function authErrorMessage(agentType: string): string {
   if (agentType === "claude-code") {
-    return "Claude Code is not logged in. Please open a terminal and run:\n\n  claude login\n\nThen try starting the agent again.";
+    return "Claude Code login required. A terminal window has been opened — please complete the login there, then try starting the agent again.";
   }
   return "Agent authentication required. Please log in via the agent CLI first.";
+}
+
+/** Open a new terminal window running `claude login`. */
+function launchClaudeLogin(): void {
+  const os = platform();
+  try {
+    if (os === "darwin") {
+      spawn("osascript", [
+        "-e",
+        'tell application "Terminal" to do script "claude login"',
+        "-e",
+        'tell application "Terminal" to activate',
+      ], { detached: true, stdio: "ignore" }).unref();
+    } else if (os === "win32") {
+      spawn("cmd", ["/c", "start", "cmd", "/c", "claude login"], {
+        detached: true,
+        stdio: "ignore",
+      }).unref();
+    } else {
+      // Linux — try common terminal emulators
+      spawn("x-terminal-emulator", ["-e", "claude", "login"], {
+        detached: true,
+        stdio: "ignore",
+      }).unref();
+    }
+  } catch {
+    // Silently ignore — the error message in the UI still tells the user what to do
+  }
 }
 
 // ── Types ────────────────────────────────────────────────────────────
@@ -386,7 +414,9 @@ export async function acpSpawn(params: any): Promise<any> {
   } catch (err) {
     session.status = "error";
     const rawMessage = err instanceof Error ? err.message : JSON.stringify(err);
-    const errorMsg = isAuthError(rawMessage)
+    const authDetected = isAuthError(rawMessage);
+    if (authDetected) launchClaudeLogin();
+    const errorMsg = authDetected
       ? authErrorMessage(agentType)
       : `Failed to initialize agent: ${rawMessage}`;
     emit("acp://error", {

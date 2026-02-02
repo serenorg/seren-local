@@ -303,7 +303,7 @@ export const AgentChat: Component<AgentChatProps> = (props) => {
         ) : null;
 
       case "error": {
-        const isAuth = message.content.includes("not logged in") || message.content.includes("claude login");
+        const isAuth = message.content.includes("not logged in") || message.content.includes("claude login") || message.content.includes("login required");
         return (
           <article class="px-5 py-3 border-b border-[#21262d]">
             <div class={`px-3 py-2 rounded-md text-sm ${isAuth ? "bg-[rgba(210,153,34,0.1)] border border-[rgba(210,153,34,0.4)] text-[#d2992a]" : "bg-[rgba(248,81,73,0.1)] border border-[rgba(248,81,73,0.4)] text-[#f85149]"}`}>
