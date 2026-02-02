@@ -178,6 +178,7 @@ EOF
 
   cat >"${app_dir}/Contents/MacOS/SerenLocal" <<LAUNCHER
 #!/bin/bash
+export PATH="${SEREN_BIN}:${SEREN_NODE_DIR}/bin:\$PATH"
 CMD="${SEREN_BIN}/serendesktop"
 if [ ! -x "\$CMD" ]; then
   CMD="serendesktop"
@@ -185,7 +186,7 @@ fi
 osascript <<OSA
 tell application "Terminal"
   if not (exists window 1) then reopen
-  do script "\$CMD" in front window
+  do script "export PATH=${SEREN_BIN}:${SEREN_NODE_DIR}/bin:\\\$PATH && \$CMD" in front window
   activate
 end tell
 OSA
@@ -397,7 +398,8 @@ install_runtime() {
 
 # ── Set up PATH ───────────────────────────────────────────────────────
 setup_path() {
-  local path_line="export PATH=\"${SEREN_BIN}:\$PATH\""
+  # Include Seren's private Node in PATH so #!/usr/bin/env node works
+  local path_line="export PATH=\"${SEREN_BIN}:${SEREN_NODE_DIR}/bin:\$PATH\""
   local shell_name
   shell_name=$(basename "${SHELL:-/bin/bash}")
 
@@ -411,19 +413,24 @@ setup_path() {
 
   # Fish uses different syntax
   if [ "$shell_name" = "fish" ]; then
-    path_line="set -gx PATH ${SEREN_BIN} \$PATH"
+    path_line="set -gx PATH ${SEREN_BIN} ${SEREN_NODE_DIR}/bin \$PATH"
   fi
 
-  # Add to rc file if not already present
-  if [ -f "$rc_file" ] && grep -qF "${SEREN_BIN}" "$rc_file" 2>/dev/null; then
+  # Add or update PATH in rc file
+  if [ -f "$rc_file" ] && grep -qF "${SEREN_NODE_DIR}/bin" "$rc_file" 2>/dev/null; then
     ok "PATH already configured in ${rc_file}"
   else
+    # Remove old Seren PATH line that may lack the node dir
+    if [ -f "$rc_file" ]; then
+      sed -i.bak "/${SEREN_BIN//\//\\/}/d" "$rc_file" 2>/dev/null
+      rm -f "${rc_file}.bak"
+    fi
     printf "\n# Seren Local Desktop\n%s\n" "$path_line" >> "$rc_file"
-    ok "Added ${SEREN_BIN} to PATH in ${rc_file}"
+    ok "Added ${SEREN_BIN} and ${SEREN_NODE_DIR}/bin to PATH in ${rc_file}"
   fi
 
   # Also make it available in this session
-  export PATH="${SEREN_BIN}:${PATH}"
+  export PATH="${SEREN_BIN}:${SEREN_NODE_DIR}/bin:${PATH}"
 }
 
 # ── Verify installation ───────────────────────────────────────────────
