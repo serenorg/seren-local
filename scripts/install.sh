@@ -474,7 +474,7 @@ main() {
   info "║          Installation Complete!          ║"
   info "╚══════════════════════════════════════════╝"
   printf "\n"
-  warn "Open a new terminal window, then start the runtime:"
+  warn "Open a new terminal window, then start Seren Desktop:"
   echo "    ${BOLD}serendesktop${RESET}"
   printf "\n"
   echo "  Then open Seren in your browser:"
