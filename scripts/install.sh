@@ -416,6 +416,13 @@ setup_path() {
     path_line="set -gx PATH ${SEREN_BIN} ${SEREN_NODE_DIR}/bin \$PATH"
   fi
 
+  # Clean up stale openclaw completion line from previous installs
+  if [ -f "$rc_file" ] && grep -q "openclaw completion" "$rc_file" 2>/dev/null; then
+    sed -i.bak "/openclaw completion/d" "$rc_file" 2>/dev/null
+    rm -f "${rc_file}.bak"
+    ok "Removed stale openclaw completion line from ${rc_file}"
+  fi
+
   # Add or update PATH in rc file
   if [ -f "$rc_file" ] && grep -qF "${SEREN_NODE_DIR}/bin" "$rc_file" 2>/dev/null; then
     ok "PATH already configured in ${rc_file}"
