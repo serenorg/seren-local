@@ -10,6 +10,7 @@ import * as indexing from "./indexing.js";
 import * as mcp from "./mcp.js";
 import * as openclaw from "./openclaw.js";
 import * as sync from "./sync.js";
+import * as updater from "./updater.js";
 import * as wallet from "./wallet.js";
 
 export function registerAllHandlers(): void {
@@ -89,6 +90,10 @@ export function registerAllHandlers(): void {
   // MCP handlers
   registerHandler("mcp_disconnect", mcp.mcpDisconnect);
   registerHandler("mcp_read_resource", mcp.mcpReadResource);
+
+  // Updater handlers
+  registerHandler("check_for_update", updater.checkForUpdate);
+  registerHandler("install_update", updater.installUpdate);
 
   // Chat/conversation handlers
   registerHandler("create_conversation", chat.createConversation);

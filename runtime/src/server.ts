@@ -9,10 +9,14 @@ import { request as httpsRequest } from "node:https";
 import { homedir, platform } from "node:os";
 import { join, extname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { createRequire } from "node:module";
 import { WebSocketServer, type WebSocket } from "ws";
 import { addClient } from "./events";
 import { initChatDb } from "./handlers/chat";
 import { registerAllHandlers } from "./handlers/index";
+
+const require = createRequire(import.meta.url);
+const APP_VERSION: string = (require("../package.json") as { version: string }).version;
 import { handleMessage } from "./rpc";
 import { checkForUpdates } from "./update-check";
 
@@ -228,7 +232,7 @@ const httpServer = createServer((req, res) => {
 
   if (req.url === "/health") {
     res.writeHead(200, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ status: "ok", version: "0.1.0", token: AUTH_TOKEN, buildHash: BUILD_HASH }));
+    res.end(JSON.stringify({ status: "ok", version: APP_VERSION, token: AUTH_TOKEN, buildHash: BUILD_HASH }));
     return;
   }
 

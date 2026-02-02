@@ -16,6 +16,7 @@ import { CatalogPanel } from "@/components/catalog";
 import { ChatContent } from "@/components/chat/ChatContent";
 // MCP OAuth dialog removed - now using API key auth flow
 import { AboutDialog } from "@/components/common/AboutDialog";
+import { UpdateIndicator } from "@/components/common/UpdateIndicator";
 import { Header, type Panel } from "@/components/common/Header";
 import { LowBalanceModal } from "@/components/common/LowBalanceWarning";
 import { ResizableLayout } from "@/components/common/ResizableLayout";
@@ -252,6 +253,7 @@ function App() {
           onLogout={handleLogout}
           isAuthenticated={authStore.isAuthenticated}
         />
+        <UpdateIndicator />
         <main class="flex-1 overflow-hidden bg-transparent relative">
           {/* Three-column resizable layout (always visible) */}
           <ResizableLayout
