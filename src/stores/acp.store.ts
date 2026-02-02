@@ -199,12 +199,16 @@ export const acpStore = {
   /**
    * Spawn a new agent session.
    */
-  async spawnSession(cwd: string): Promise<string | null> {
+  async spawnSession(
+    cwd: string,
+    agentType?: AgentType,
+  ): Promise<string | null> {
+    const resolvedAgentType = agentType ?? state.selectedAgentType;
     setState("isLoading", true);
     setState("error", null);
 
     console.log("[AcpStore] Spawning session:", {
-      agentType: state.selectedAgentType,
+      agentType: resolvedAgentType,
       cwd,
     });
 
@@ -228,7 +232,7 @@ export const acpStore = {
 
     try {
       // Ensure Claude CLI is installed before spawning
-      if (state.selectedAgentType === "claude-code") {
+      if (resolvedAgentType === "claude-code") {
         const progressUnsub = onRuntimeEvent(
           "acp://cli-install-progress",
           (payload) => {
@@ -257,7 +261,7 @@ export const acpStore = {
       }
 
       const info = await acpService.spawnAgent(
-        state.selectedAgentType,
+        resolvedAgentType,
         cwd,
         settingsStore.settings.agentSandboxMode,
         { enabled: settingsStore.get("chatShowThinking") ?? true },
@@ -327,7 +331,7 @@ export const acpStore = {
       console.error("[AcpStore] Spawn error:", error);
       tempUnsubscribe();
       const message =
-        error instanceof Error ? error.message : "Failed to spawn agent";
+        error instanceof Error ? error.message : String(error);
       setState("error", message);
       setState("isLoading", false);
       return null;
@@ -394,6 +398,12 @@ export const acpStore = {
       return;
     }
 
+    const session = state.sessions[sessionId];
+    if (!session || session.info.status === "error") {
+      setState("error", "Session has ended. Please start a new session.");
+      return;
+    }
+
     // Optimistically mark as prompting so the UI can show a loading state
     // immediately, even before backend events arrive.
     setState(
@@ -426,7 +436,7 @@ export const acpStore = {
     } catch (error) {
       console.error("[AcpStore] sendPrompt error:", error);
       const message =
-        error instanceof Error ? error.message : "Failed to send prompt";
+        error instanceof Error ? error.message : String(error);
       this.addErrorMessage(sessionId, message);
     }
   },

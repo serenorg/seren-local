@@ -20,7 +20,7 @@ import { openExternalLink } from "@/lib/external-link";
 import { pickAndReadImages, toDataUrl } from "@/lib/images/attachments";
 import type { ImageAttachment } from "@/lib/providers/types";
 import { escapeHtmlWithLinks, renderMarkdown } from "@/lib/render-markdown";
-import type { DiffEvent } from "@/services/acp";
+import type { AgentType, DiffEvent } from "@/services/acp";
 import { type AgentMessage, acpStore } from "@/stores/acp.store";
 import { fileTreeState } from "@/stores/fileTree";
 import { settingsStore } from "@/stores/settings.store";
@@ -100,7 +100,7 @@ export const AgentChat: Component<AgentChatProps> = (props) => {
     ),
   );
 
-  const startSession = async () => {
+  const startSession = async (agentType?: AgentType) => {
     const cwd = getCwd();
     if (!cwd) {
       console.warn("[AgentChat] No folder open, cannot start session");
@@ -108,7 +108,7 @@ export const AgentChat: Component<AgentChatProps> = (props) => {
     }
     console.log("[AgentChat] Starting session with cwd:", cwd);
     try {
-      const sessionId = await acpStore.spawnSession(cwd);
+      const sessionId = await acpStore.spawnSession(cwd, agentType);
       console.log("[AgentChat] Session started:", sessionId);
     } catch (error) {
       console.error("[AgentChat] Failed to start session:", error);
@@ -415,7 +415,7 @@ export const AgentChat: Component<AgentChatProps> = (props) => {
                   <button
                     type="button"
                     class="px-4 py-2 bg-[#238636] text-white rounded-md text-sm font-medium hover:bg-[#2ea043] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                    onClick={startSession}
+                    onClick={() => startSession()}
                     disabled={acpStore.isLoading || !hasFolderOpen()}
                   >
                     {acpStore.isLoading
@@ -502,13 +502,31 @@ export const AgentChat: Component<AgentChatProps> = (props) => {
       <Show when={sessionError()}>
         <div class="mx-4 mb-2 px-3 py-2 bg-[rgba(248,81,73,0.1)] border border-[rgba(248,81,73,0.4)] rounded-md text-sm text-[#f85149] flex items-center justify-between">
           <span>{sessionError()}</span>
-          <button
-            type="button"
-            class="text-xs underline hover:no-underline"
-            onClick={() => acpStore.clearError()}
-          >
-            Dismiss
-          </button>
+          <div class="flex items-center gap-2">
+            <Show when={acpStore.activeSession?.info.status === "error"}>
+              <button
+                type="button"
+                class="text-xs underline hover:no-underline"
+                onClick={async () => {
+                  const sid = acpStore.activeSessionId;
+                  if (sid) {
+                    await acpStore.terminateSession(sid);
+                  }
+                  acpStore.clearError();
+                  startSession();
+                }}
+              >
+                Restart Session
+              </button>
+            </Show>
+            <button
+              type="button"
+              class="text-xs underline hover:no-underline"
+              onClick={() => acpStore.clearError()}
+            >
+              Dismiss
+            </button>
+          </div>
         </div>
       </Show>
 
