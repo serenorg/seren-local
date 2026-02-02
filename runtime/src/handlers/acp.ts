@@ -217,8 +217,8 @@ function findAgentBinary(binBase: string): string {
   const home = process.env.HOME ?? "~";
 
   const candidates = [
-    // 1. runtime/bin/ (bundled with seren-local)
-    resolve(import.meta.dirname, "../../bin", binName),
+    // 1. runtime/bin/ (bundled with seren-local — dist/ is one level below bin/)
+    resolve(import.meta.dirname, "../bin", binName),
     // 2. ~/.seren-local/bin/ (user install location)
     resolve(home, ".seren-local/bin", binName),
     // 3. Seren Desktop embedded-runtime (development)
@@ -229,7 +229,7 @@ function findAgentBinary(binBase: string): string {
   if (binBase === "seren-acp-claude") {
     const legacyName = `acp_agent${ext}`;
     candidates.push(
-      resolve(import.meta.dirname, "../../bin", legacyName),
+      resolve(import.meta.dirname, "../bin", legacyName),
       resolve(home, ".seren-local/bin", legacyName),
       resolve(home, "Projects/Seren_Projects/seren-desktop/src-tauri/embedded-runtime/bin", legacyName),
     );
