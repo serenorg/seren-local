@@ -7,7 +7,7 @@ import { resolve } from "node:path";
 import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
-const pkg = require("../../package.json");
+const pkg = require("../package.json");
 const CURRENT_VERSION: string = pkg.version;
 const PACKAGE_NAME = "@serendb/serendesktop";
 const REGISTRY_URL = `https://registry.npmjs.org/${PACKAGE_NAME}/latest`;
