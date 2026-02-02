@@ -176,20 +176,20 @@ create_macos_shortcut() {
 </plist>
 EOF
 
-  cat <<'EOF' >"${app_dir}/Contents/MacOS/SerenLocal"
+  cat >"${app_dir}/Contents/MacOS/SerenLocal" <<LAUNCHER
 #!/bin/bash
-CMD="${SEREN_BIN}/seren"
-if [ ! -x "$CMD" ]; then
-  CMD="seren"
+CMD="${SEREN_BIN}/serendesktop"
+if [ ! -x "\$CMD" ]; then
+  CMD="serendesktop"
 fi
 osascript <<OSA
 tell application "Terminal"
   if not (exists window 1) then reopen
-  do script "$CMD" in front window
+  do script "\$CMD" in front window
   activate
 end tell
 OSA
-EOF
+LAUNCHER
   chmod +x "${app_dir}/Contents/MacOS/SerenLocal"
 
   if [ -d "${HOME}/Desktop" ]; then
@@ -428,18 +428,18 @@ setup_path() {
 
 # ── Verify installation ───────────────────────────────────────────────
 verify_install() {
-  if [ -x "${SEREN_BIN}/seren" ] || command -v seren &>/dev/null; then
-    ok "seren command is available"
+  if [ -x "${SEREN_BIN}/serendesktop" ] || command -v serendesktop &>/dev/null; then
+    ok "serendesktop command is available"
   else
     # npm might place the bin in a different spot within the prefix
     local npm_bin_dir
     npm_bin_dir=$("$NPM_BIN" prefix -g 2>/dev/null)/bin
-    if [ -x "${npm_bin_dir}/seren" ]; then
+    if [ -x "${npm_bin_dir}/serendesktop" ]; then
       # Symlink into our bin dir
-      ln -sf "${npm_bin_dir}/seren" "${SEREN_BIN}/seren"
-      ok "seren command is available"
+      ln -sf "${npm_bin_dir}/serendesktop" "${SEREN_BIN}/serendesktop"
+      ok "serendesktop command is available"
     else
-      warn "seren command not found. You may need to restart your terminal."
+      warn "serendesktop command not found. You may need to restart your terminal."
     fi
   fi
 }
