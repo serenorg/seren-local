@@ -446,12 +446,18 @@ export const acpStore = {
    */
   async cancelPrompt() {
     const sessionId = state.activeSessionId;
-    if (!sessionId) return;
+    if (!sessionId) {
+      console.warn("[AcpStore] cancelPrompt: no active session");
+      return;
+    }
 
+    const session = state.sessions[sessionId];
+    console.info("[AcpStore] Cancelling prompt:", { sessionId, status: session?.info.status });
     try {
       await acpService.cancelPrompt(sessionId);
+      console.info("[AcpStore] Cancel acknowledged by backend:", sessionId);
     } catch (error) {
-      console.error("Failed to cancel prompt:", error);
+      console.error("[AcpStore] Failed to cancel prompt:", error);
     }
   },
 
@@ -473,16 +479,21 @@ export const acpStore = {
     const permission = state.pendingPermissions.find(
       (p) => p.requestId === requestId,
     );
-    if (!permission) return;
+    if (!permission) {
+      console.warn("[AcpStore] Permission request not found:", requestId);
+      return;
+    }
 
+    console.info("[AcpStore] Responding to permission:", { requestId, optionId, sessionId: permission.sessionId });
     try {
       await acpService.respondToPermission(
         permission.sessionId,
         requestId,
         optionId,
       );
+      console.info("[AcpStore] Permission response delivered:", requestId);
     } catch (error) {
-      console.error("Failed to respond to permission:", error);
+      console.error("[AcpStore] Failed to respond to permission:", error);
     }
 
     setState(
@@ -496,15 +507,19 @@ export const acpStore = {
       (p) => p.requestId === requestId,
     );
     if (permission) {
+      console.info("[AcpStore] Dismissing permission (deny):", requestId);
       try {
         await acpService.respondToPermission(
           permission.sessionId,
           requestId,
           "deny",
         );
+        console.info("[AcpStore] Permission deny delivered:", requestId);
       } catch (error) {
-        console.error("Failed to send deny response:", error);
+        console.error("[AcpStore] Failed to send deny response:", error);
       }
+    } else {
+      console.warn("[AcpStore] Dismiss: permission not found:", requestId);
     }
     setState(
       "pendingPermissions",
@@ -631,6 +646,11 @@ export const acpStore = {
       case "permissionRequest": {
         const permEvent =
           event.data as import("@/services/acp").PermissionRequestEvent;
+        console.info("[AcpStore] Permission request received:", {
+          requestId: permEvent.requestId,
+          sessionId: permEvent.sessionId,
+          options: permEvent.options?.length,
+        });
         setState("pendingPermissions", [
           ...state.pendingPermissions,
           permEvent,

@@ -34,8 +34,12 @@ export function ThinkingStatus() {
   onCleanup(() => clearInterval(timer));
 
   return (
-    <span class="inline-flex items-center gap-2 text-sm text-[#8b949e]">
-      <span class="inline-block w-2 h-2 rounded-full bg-[#58a6ff] animate-pulse" />
+    <span class="inline-flex items-center gap-2 text-sm text-[#e6edf3]">
+      <span class="inline-flex items-center gap-[3px]">
+        <span class="inline-block w-1.5 h-1.5 rounded-full bg-[#58a6ff]" style="animation: bounce-dot 1.4s ease-in-out infinite" />
+        <span class="inline-block w-1.5 h-1.5 rounded-full bg-[#58a6ff]" style="animation: bounce-dot 1.4s ease-in-out 0.2s infinite" />
+        <span class="inline-block w-1.5 h-1.5 rounded-full bg-[#58a6ff]" style="animation: bounce-dot 1.4s ease-in-out 0.4s infinite" />
+      </span>
       <span>{THINKING_WORDS[index()]}…</span>
     </span>
   );
