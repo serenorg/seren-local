@@ -23,7 +23,7 @@ import type { Message } from "@/services/chat";
 import { sendMessage } from "@/services/chat";
 
 const DEFAULT_MODEL = "anthropic/claude-opus-4.5";
-const MAX_MESSAGES_PER_CONVERSATION = 100;
+const MAX_MESSAGES_PER_CONVERSATION = 1000;
 
 /**
  * A compacted summary of older messages.

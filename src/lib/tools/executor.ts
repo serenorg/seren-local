@@ -72,6 +72,45 @@ async function waitForOpenClawApproval(approvalId: string): Promise<boolean> {
   });
 }
 
+/** Maximum tool result size in bytes before truncation. */
+const MAX_TOOL_RESULT_BYTES = 50_000; // 50 KB
+
+/**
+ * Truncate a tool result string to stay within the context budget.
+ * For JSON arrays (e.g. email listings), extracts summary fields from
+ * the first 25 items. For plain text, slices at MAX_TOOL_RESULT_BYTES.
+ */
+function truncateToolResult(content: string): string {
+  if (content.length <= MAX_TOOL_RESULT_BYTES) return content;
+
+  // Try smart JSON array summarization
+  try {
+    const parsed = JSON.parse(content);
+    if (Array.isArray(parsed)) {
+      const SUMMARY_FIELDS = ["subject", "sender", "from", "date", "title", "name", "id", "status"];
+      const MAX_ITEMS = 25;
+      const summarized = parsed.slice(0, MAX_ITEMS).map((item) => {
+        if (typeof item !== "object" || item === null) return item;
+        const summary: Record<string, unknown> = {};
+        for (const key of SUMMARY_FIELDS) {
+          if (key in item) summary[key] = item[key];
+        }
+        return Object.keys(summary).length > 0 ? summary : item;
+      });
+      const result = JSON.stringify(summarized, null, 2);
+      const notice = `\n\n[Truncated: showing ${Math.min(MAX_ITEMS, parsed.length)} of ${parsed.length} items with summary fields only]`;
+      return result + notice;
+    }
+  } catch {
+    // Not JSON, fall through to plain truncation
+  }
+
+  return (
+    content.slice(0, MAX_TOOL_RESULT_BYTES) +
+    `\n\n[Truncated: result exceeded ${(MAX_TOOL_RESULT_BYTES / 1000).toFixed(0)}KB limit]`
+  );
+}
+
 /**
  * Execute a single tool call and return the result.
  * Routes to MCP servers or file tools based on prefix.
@@ -191,10 +230,10 @@ export async function executeTool(toolCall: ToolCall): Promise<ToolResult> {
         throw new Error(`Unknown tool: ${name}`);
     }
 
+    const raw = typeof result === "string" ? result : JSON.stringify(result, null, 2);
     return {
       tool_call_id: toolCall.id,
-      content:
-        typeof result === "string" ? result : JSON.stringify(result, null, 2),
+      content: truncateToolResult(raw),
       is_error: false,
     };
   } catch (error) {
@@ -354,7 +393,7 @@ async function executeMcpTool(
 
     return {
       tool_call_id: toolCallId,
-      content: content || "Tool executed successfully",
+      content: truncateToolResult(content || "Tool executed successfully"),
       is_error: result.isError ?? false,
     };
   } catch (error) {
@@ -505,7 +544,7 @@ async function executeGatewayTool(
 
     return {
       tool_call_id: toolCallId,
-      content: content || "Tool executed successfully",
+      content: truncateToolResult(content || "Tool executed successfully"),
       is_error: response.is_error,
     };
   } catch (error) {

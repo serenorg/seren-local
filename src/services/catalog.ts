@@ -196,6 +196,21 @@ export function formatNumber(num: number): string {
  * Publisher catalog service for Seren API operations.
  * Uses generated SDK with full type safety.
  */
+/**
+ * Extract a human-readable message from an SDK error object.
+ */
+function formatApiError(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  if (typeof error === "object" && error !== null) {
+    const obj = error as Record<string, unknown>;
+    if (typeof obj.message === "string") return obj.message;
+    if (typeof obj.detail === "string") return obj.detail;
+    if (typeof obj.error === "string") return obj.error;
+    if (typeof obj.status === "number") return `HTTP ${obj.status}`;
+  }
+  return String(error);
+}
+
 export const catalog = {
   /**
    * List all active publishers.
@@ -208,7 +223,7 @@ export const catalog = {
     });
     if (error) {
       console.error("[Catalog] Error fetching publishers:", error);
-      throw new Error("Failed to list publishers");
+      throw new Error(`Failed to list publishers: ${formatApiError(error)}`);
     }
     const rawPublishers = data?.data || [];
     console.log("[Catalog] Found", rawPublishers.length, "publishers");
@@ -224,7 +239,7 @@ export const catalog = {
       throwOnError: false,
     });
     if (error || !data?.data) {
-      throw new Error("Failed to get publisher");
+      throw new Error(`Failed to get publisher: ${formatApiError(error)}`);
     }
     return transformPublisher(data.data);
   },
@@ -242,7 +257,7 @@ export const catalog = {
       throwOnError: false,
     });
     if (error) {
-      throw new Error("Failed to search publishers");
+      throw new Error(`Failed to search publishers: ${formatApiError(error)}`);
     }
     const rawPublishers = data?.data || [];
     return rawPublishers.map(transformPublisher);
@@ -300,7 +315,7 @@ export const catalog = {
       throwOnError: false,
     });
     if (error) {
-      throw new Error("Failed to list publishers by category");
+      throw new Error(`Failed to list publishers by category: ${formatApiError(error)}`);
     }
     const rawPublishers = data?.data || [];
     return rawPublishers.map(transformPublisher);
