@@ -1,8 +1,8 @@
 {
   "openapi": "3.0.3",
   "info": {
-    "title": "SerenDB API",
-    "description": "SerenDB Control Plane API - Manage PostgreSQL databases, users, and compute instances",
+    "title": "SerenAI API",
+    "description": "SerenAI API - Database management, agent commerce, and AI-powered data access",
     "contact": {
       "name": "SerenAI Team",
       "email": "team@serendb.com"
@@ -19,494 +19,19 @@
     }
   ],
   "paths": {
-    "/agent/api": {
+    "/auth/agent": {
       "post": {
         "tags": [
           "agent"
         ],
-        "summary": "Execute a paid HTTP API request",
-        "description": "This unified endpoint supports two payment methods:\n\n1. **Prepaid Balance** (Authorization header): Authenticated users can pay with their\nprepaid balance. Include `Authorization: Bearer <token>` header.\n\n2. **On-Chain Payment** (payment protocol headers): Agents can pay with cryptocurrency.\nIf no payment is provided, returns HTTP 402 Payment Required with payment options.\n\nThe endpoint auto-detects which payment method to use based on headers present.",
-        "operationId": "execute_api",
+        "summary": "POST /auth/agent",
+        "description": "Register a new AI agent account.\n\nThis endpoint allows AI agents to self-register and receive an API key immediately.\nUnlike the standard signup flow, agent registration:\n- Does NOT require email verification\n- Automatically creates a personal organization\n- Returns an API key named \"agent\" for immediate use\n\n**Important:** Save the `api_key` immediately - it is only shown once!",
+        "operationId": "agent_register",
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/ApiRequestBody"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "API request executed successfully",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ApiResultResponse"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Invalid request"
-          },
-          "402": {
-            "description": "Payment required",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PaymentRequiredResponseWithInfo"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Publisher not found"
-          },
-          "500": {
-            "description": "Internal server error"
-          }
-        }
-      }
-    },
-    "/agent/database": {
-      "post": {
-        "tags": [
-          "agent"
-        ],
-        "summary": "Execute a paid database query",
-        "description": "This unified endpoint supports two payment methods:\n\n1. **Prepaid Balance** (Authorization header): Authenticated users can pay with their\nprepaid balance. Include `Authorization: Bearer <token>` header.\n\n2. **On-Chain Payment** (payment protocol headers): Agents can pay with cryptocurrency.\nIf no payment is provided, returns HTTP 402 Payment Required with payment options.\n\nThe endpoint auto-detects which payment method to use based on headers present.",
-        "operationId": "execute_query",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/QueryRequestBody"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Query executed successfully",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/QueryResultResponse"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Invalid request"
-          },
-          "402": {
-            "description": "Payment required",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PaymentRequiredResponseWithInfo"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Publisher not found"
-          },
-          "500": {
-            "description": "Internal server error"
-          }
-        }
-      }
-    },
-    "/agent/deposit": {
-      "post": {
-        "tags": [
-          "agent"
-        ],
-        "summary": "Deposit configured asset via on-chain payment flow",
-        "description": "Allows agents to deposit the configured asset directly on-chain to their prepaid balance.\nFollows the 402 payment protocol:\n1. First request (no payment header) returns 402 with payment requirements\n2. Second request (with payment header) settles on-chain and credits balance",
-        "operationId": "onchain_deposit",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/OnchainDepositRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Deposit successful",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/OnchainDepositResponse"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Invalid request"
-          },
-          "402": {
-            "description": "Payment required",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PaymentRequiredResponseWithInfo"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Publisher not found"
-          },
-          "500": {
-            "description": "Internal server error"
-          }
-        }
-      }
-    },
-    "/agent/estimate": {
-      "post": {
-        "tags": [
-          "agent"
-        ],
-        "summary": "Estimate query cost without payment",
-        "operationId": "estimate_query",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/EstimateRequestBody"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Cost estimate",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/EstimateResponse"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Publisher not found"
-          },
-          "500": {
-            "description": "Internal server error"
-          }
-        }
-      }
-    },
-    "/agent/mcp/call": {
-      "post": {
-        "tags": [
-          "MCP"
-        ],
-        "summary": "Call a tool on an MCP publisher",
-        "description": "Executes a tool on the MCP server and returns the result.\nThis operation is metered and may require payment.\nFor BYOC publishers, requires authentication via Bearer token.",
-        "operationId": "call_mcp_tool",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CallMcpToolRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Tool called successfully",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/McpToolCallResponse"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Invalid request"
-          },
-          "403": {
-            "description": "OAuth connection required for BYOC publisher"
-          },
-          "404": {
-            "description": "Publisher or tool not found"
-          },
-          "500": {
-            "description": "Internal server error"
-          }
-        }
-      }
-    },
-    "/agent/mcp/capabilities": {
-      "post": {
-        "tags": [
-          "MCP"
-        ],
-        "summary": "Discover all capabilities of an MCP publisher",
-        "description": "Returns the full set of capabilities (tools, resources, prompts) exposed by the MCP server.\nFor BYOC publishers, requires authentication via Bearer token.",
-        "operationId": "discover_mcp_capabilities",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/DiscoverMcpCapabilitiesRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Capabilities discovered successfully",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/McpCapabilitiesResponse"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Invalid request"
-          },
-          "403": {
-            "description": "OAuth connection required for BYOC publisher"
-          },
-          "404": {
-            "description": "Publisher not found"
-          },
-          "500": {
-            "description": "Internal server error"
-          }
-        }
-      }
-    },
-    "/agent/mcp/resource": {
-      "post": {
-        "tags": [
-          "MCP"
-        ],
-        "summary": "Read a resource from an MCP publisher",
-        "description": "Fetches the content of a resource from the MCP server.\nThis operation is metered and may require payment.\nFor BYOC publishers, requires authentication via Bearer token.",
-        "operationId": "read_mcp_resource",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ReadMcpResourceRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Resource read successfully",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/McpResourceReadResponse"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Invalid request"
-          },
-          "403": {
-            "description": "OAuth connection required for BYOC publisher"
-          },
-          "404": {
-            "description": "Publisher or resource not found"
-          },
-          "500": {
-            "description": "Internal server error"
-          }
-        }
-      }
-    },
-    "/agent/mcp/resources": {
-      "post": {
-        "tags": [
-          "MCP"
-        ],
-        "summary": "List resources available on an MCP publisher",
-        "description": "Returns the list of resources exposed by the MCP server.\nFor BYOC publishers, requires authentication via Bearer token.",
-        "operationId": "list_mcp_resources",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ListMcpResourcesRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Resources listed successfully",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/McpResourcesResponse"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Invalid request"
-          },
-          "403": {
-            "description": "OAuth connection required for BYOC publisher"
-          },
-          "404": {
-            "description": "Publisher not found"
-          },
-          "500": {
-            "description": "Internal server error"
-          }
-        }
-      }
-    },
-    "/agent/mcp/tools": {
-      "post": {
-        "tags": [
-          "MCP"
-        ],
-        "summary": "List tools available on an MCP publisher",
-        "description": "Returns the list of tools exposed by the MCP server.\nFor BYOC publishers, requires authentication via Bearer token.",
-        "operationId": "list_mcp_tools",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ListMcpToolsRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Tools listed successfully",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/McpToolsResponse"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Invalid request"
-          },
-          "403": {
-            "description": "OAuth connection required for BYOC publisher"
-          },
-          "404": {
-            "description": "Publisher not found"
-          },
-          "500": {
-            "description": "Internal server error"
-          }
-        }
-      }
-    },
-    "/agent/publishers": {
-      "get": {
-        "tags": [
-          "agent"
-        ],
-        "summary": "GET /agent/publishers",
-        "description": "List active publishers in the store",
-        "operationId": "list_store_publishers",
-        "parameters": [
-          {
-            "name": "is_verified",
-            "in": "query",
-            "description": "Filter by verification status",
-            "required": false,
-            "schema": {
-              "type": "boolean",
-              "nullable": true
-            }
-          },
-          {
-            "name": "search",
-            "in": "query",
-            "description": "Search by name or slug",
-            "required": false,
-            "schema": {
-              "type": "string",
-              "nullable": true
-            }
-          },
-          {
-            "name": "limit",
-            "in": "query",
-            "description": "Maximum number of results (default: 50, max: 100)",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "format": "int64"
-            }
-          },
-          {
-            "name": "offset",
-            "in": "query",
-            "description": "Offset for pagination",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "format": "int64"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Publishers retrieved successfully",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PaginatedPublishersResponse"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Internal server error"
-          }
-        }
-      },
-      "post": {
-        "tags": [
-          "agent"
-        ],
-        "summary": "POST /agent/publishers",
-        "description": "Create a publisher via organization API key (machine-to-machine).",
-        "operationId": "create_publisher_api_key",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CreatePublisherRequest"
+                "$ref": "#/components/schemas/AgentRegisterRequest"
               }
             }
           },
@@ -514,893 +39,22 @@
         },
         "responses": {
           "201": {
-            "description": "Publisher created successfully",
+            "description": "Agent registered successfully",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/PublisherDataResponse"
+                  "$ref": "#/components/schemas/AgentRegisterDataResponse"
                 }
               }
             }
           },
           "400": {
-            "description": "Invalid request"
-          },
-          "401": {
-            "description": "API key required"
-          },
-          "409": {
-            "description": "Publisher slug already exists"
+            "description": "Invalid request (validation error)"
           },
           "500": {
             "description": "Internal server error"
           }
         }
-      }
-    },
-    "/agent/publishers/suggest": {
-      "get": {
-        "tags": [
-          "agent"
-        ],
-        "summary": "GET /agent/publishers/suggest",
-        "description": "Suggest publishers based on a task or query",
-        "operationId": "suggest_publishers",
-        "parameters": [
-          {
-            "name": "query",
-            "in": "query",
-            "description": "The task or query to match against publisher capabilities.\nExamples: \"scrape website\", \"AI research\", \"PDF extraction\"",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "type",
-            "in": "query",
-            "description": "Type of suggestions: \"publisher\", \"agent\", or \"both\" (default: \"both\")\nNote: Agent suggestions are planned but not yet implemented.",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "limit",
-            "in": "query",
-            "description": "Maximum number of results (default: 5, max: 20)",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "format": "int64"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Publisher suggestions retrieved successfully",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SuggestDataResponse"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Invalid query parameters"
-          },
-          "500": {
-            "description": "Internal server error"
-          }
-        }
-      }
-    },
-    "/agent/publishers/{slug}": {
-      "get": {
-        "tags": [
-          "agent"
-        ],
-        "summary": "GET /agent/publishers/:slug",
-        "description": "Get publisher by slug (public store view)",
-        "operationId": "get_store_publisher",
-        "parameters": [
-          {
-            "name": "slug",
-            "in": "path",
-            "description": "Publisher slug",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Publisher retrieved successfully",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PublisherDataResponse"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Publisher not found"
-          },
-          "500": {
-            "description": "Internal server error"
-          }
-        }
-      },
-      "put": {
-        "tags": [
-          "agent"
-        ],
-        "summary": "PUT /agent/publishers/{slug}",
-        "description": "Update a publisher.\nSupports both organization API keys (machine-to-machine) and user JWT tokens.\nUses slug instead of publisher_id for easier identification.",
-        "operationId": "update_publisher_api_key",
-        "parameters": [
-          {
-            "name": "slug",
-            "in": "path",
-            "description": "Publisher slug",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/UpdatePublisherRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Publisher updated successfully",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PublisherDataResponse"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Invalid request"
-          },
-          "401": {
-            "description": "Authentication required"
-          },
-          "403": {
-            "description": "Not authorized to update this publisher"
-          },
-          "404": {
-            "description": "Publisher not found"
-          },
-          "500": {
-            "description": "Internal server error"
-          }
-        }
-      }
-    },
-    "/agent/publishers/{slug}/logo": {
-      "post": {
-        "tags": [
-          "agent"
-        ],
-        "summary": "POST /agent/publishers/{slug}/logo",
-        "description": "Upload a logo for a publisher.\nSupports both organization API keys (machine-to-machine) and user JWT tokens.\nUses slug instead of publisher_id for easier identification.",
-        "operationId": "upload_publisher_logo_api_key",
-        "parameters": [
-          {
-            "name": "slug",
-            "in": "path",
-            "description": "Publisher slug",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/LogoUploadRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Logo uploaded successfully",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/LogoUploadDataResponse"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Invalid image format or size"
-          },
-          "401": {
-            "description": "Authentication required"
-          },
-          "403": {
-            "description": "Not authorized to update this publisher"
-          },
-          "404": {
-            "description": "Publisher not found"
-          },
-          "500": {
-            "description": "Internal server error"
-          }
-        }
-      }
-    },
-    "/agent/stream": {
-      "post": {
-        "tags": [
-          "agent"
-        ],
-        "summary": "Execute a paid HTTP API request and stream the publisher response back to the client.",
-        "description": "This endpoint is intended for large responses where buffering the entire payload in memory\nis undesirable. Cost/settlement metadata is returned via headers.\n\nSupports x402 v1/v2 headers.",
-        "operationId": "execute_api_stream",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ApiRequestBody"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "API response streamed successfully",
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Invalid request"
-          },
-          "402": {
-            "description": "Payment required",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PaymentRequiredResponseWithInfo"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Publisher not found"
-          },
-          "500": {
-            "description": "Internal server error"
-          }
-        }
-      }
-    },
-    "/agent/supported": {
-      "get": {
-        "tags": [
-          "agent"
-        ],
-        "summary": "GET /agent/supported",
-        "description": "Returns supported x402 payment kinds for facilitator discovery.",
-        "operationId": "get_supported",
-        "responses": {
-          "200": {
-            "description": "Supported payment kinds",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SupportedResponse"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Internal server error"
-          }
-        }
-      }
-    },
-    "/agent/templates": {
-      "get": {
-        "tags": [
-          "templates"
-        ],
-        "summary": "GET /agent/templates",
-        "description": "List available templates in the catalog",
-        "operationId": "list_templates",
-        "parameters": [
-          {
-            "name": "verified_only",
-            "in": "query",
-            "description": "Filter to verified templates only",
-            "required": false,
-            "schema": {
-              "type": "boolean",
-              "nullable": true
-            }
-          },
-          {
-            "name": "language",
-            "in": "query",
-            "description": "Filter by language (python, typescript, rust)",
-            "required": false,
-            "schema": {
-              "type": "string",
-              "nullable": true
-            }
-          },
-          {
-            "name": "min_price",
-            "in": "query",
-            "description": "Minimum price in atomic units",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "format": "int64",
-              "nullable": true
-            }
-          },
-          {
-            "name": "max_price",
-            "in": "query",
-            "description": "Maximum price in atomic units",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "format": "int64",
-              "nullable": true
-            }
-          },
-          {
-            "name": "search",
-            "in": "query",
-            "description": "Search in name and description",
-            "required": false,
-            "schema": {
-              "type": "string",
-              "nullable": true
-            }
-          },
-          {
-            "name": "sort_by",
-            "in": "query",
-            "description": "Sort order (popularity, price_asc, price_desc, newest, oldest)",
-            "required": false,
-            "schema": {
-              "allOf": [
-                {
-                  "$ref": "#/components/schemas/TemplateSortBy"
-                }
-              ],
-              "nullable": true
-            }
-          },
-          {
-            "name": "limit",
-            "in": "query",
-            "description": "Maximum number of templates to return (default: 50)",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "format": "int64",
-              "nullable": true
-            }
-          },
-          {
-            "name": "offset",
-            "in": "query",
-            "description": "Offset for pagination (default: 0)",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "format": "int64",
-              "nullable": true
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Templates retrieved successfully",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/TemplateListResponse"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Internal server error"
-          }
-        }
-      }
-    },
-    "/agent/templates/publish": {
-      "post": {
-        "tags": [
-          "templates"
-        ],
-        "summary": "POST /agent/templates/publish",
-        "description": "Publish a new agent template",
-        "operationId": "publish_template",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CreateTemplateRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "201": {
-            "description": "Template published successfully",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/TemplateDataResponse"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Invalid request"
-          },
-          "401": {
-            "description": "Authentication required"
-          },
-          "409": {
-            "description": "Template slug already exists"
-          },
-          "500": {
-            "description": "Internal server error"
-          }
-        },
-        "security": [
-          {
-            "bearer_auth": []
-          }
-        ]
-      }
-    },
-    "/agent/templates/{slug}": {
-      "get": {
-        "tags": [
-          "templates"
-        ],
-        "summary": "GET /agent/templates/{slug}",
-        "description": "Get template details by slug",
-        "operationId": "get_template",
-        "parameters": [
-          {
-            "name": "slug",
-            "in": "path",
-            "description": "Template slug",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Template retrieved successfully",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/TemplateDataResponse"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Template not found"
-          },
-          "500": {
-            "description": "Internal server error"
-          }
-        }
-      }
-    },
-    "/agent/templates/{slug}/invoke": {
-      "post": {
-        "tags": [
-          "templates"
-        ],
-        "summary": "POST /agent/templates/{slug}/invoke",
-        "description": "Invoke an agent template.\n\nSupports two modes:\n- **Bearer auth present**: uses the authenticated user's SerenBucks balance.\n- **No bearer auth**: uses x402 (requires `X-AGENT-WALLET` + payment headers).",
-        "operationId": "invoke_template",
-        "parameters": [
-          {
-            "name": "slug",
-            "in": "path",
-            "description": "Template slug",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/InvokeTemplateRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Template invoked successfully",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/InvokeDataResponse"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Invalid request"
-          },
-          "401": {
-            "description": "Authentication failed"
-          },
-          "402": {
-            "description": "Payment required"
-          },
-          "404": {
-            "description": "Template not found"
-          },
-          "500": {
-            "description": "Internal server error"
-          },
-          "503": {
-            "description": "Sandbox execution failed"
-          }
-        }
-      }
-    },
-    "/agent/wallet/balance": {
-      "get": {
-        "tags": [
-          "agent-wallet"
-        ],
-        "summary": "Get wallet balance (funded + promotional)",
-        "operationId": "get_wallet_balance",
-        "responses": {
-          "200": {
-            "description": "Wallet balance retrieved",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/WalletBalanceDataResponse"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Unauthorized"
-          }
-        },
-        "security": [
-          {
-            "bearer_auth": []
-          }
-        ]
-      }
-    },
-    "/agent/wallet/bonus/payment-method": {
-      "post": {
-        "tags": [
-          "agent-wallet"
-        ],
-        "summary": "Claim payment method bonus (if not already claimed)",
-        "operationId": "claim_payment_method_bonus",
-        "responses": {
-          "200": {
-            "description": "Payment method bonus claimed",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/BonusClaimDataResponse"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Unauthorized"
-          },
-          "409": {
-            "description": "Bonus already claimed"
-          }
-        },
-        "security": [
-          {
-            "bearer_auth": []
-          }
-        ]
-      }
-    },
-    "/agent/wallet/bonus/signup": {
-      "post": {
-        "tags": [
-          "agent-wallet"
-        ],
-        "summary": "Claim signup bonus (if not already claimed)",
-        "operationId": "claim_signup_bonus",
-        "responses": {
-          "200": {
-            "description": "Signup bonus claimed",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/BonusClaimDataResponse"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Unauthorized"
-          },
-          "409": {
-            "description": "Bonus already claimed"
-          }
-        },
-        "security": [
-          {
-            "bearer_auth": []
-          }
-        ]
-      }
-    },
-    "/agent/wallet/daily/claim": {
-      "post": {
-        "tags": [
-          "agent-wallet"
-        ],
-        "summary": "Claim daily free credits",
-        "operationId": "claim_daily",
-        "responses": {
-          "200": {
-            "description": "Daily credits claimed",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/DailyClaimDataResponse"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Not eligible for daily claim"
-          },
-          "401": {
-            "description": "Unauthorized"
-          }
-        },
-        "security": [
-          {
-            "bearer_auth": []
-          }
-        ]
-      }
-    },
-    "/agent/wallet/daily/eligibility": {
-      "get": {
-        "tags": [
-          "agent-wallet"
-        ],
-        "summary": "Check if user can claim daily credits",
-        "operationId": "check_daily_eligibility",
-        "responses": {
-          "200": {
-            "description": "Eligibility checked",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/DailyClaimEligibilityDataResponse"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Unauthorized"
-          }
-        },
-        "security": [
-          {
-            "bearer_auth": []
-          }
-        ]
-      }
-    },
-    "/agent/wallet/deposit": {
-      "post": {
-        "tags": [
-          "agent-wallet"
-        ],
-        "summary": "Deposit funds via Stripe",
-        "operationId": "create_deposit",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/DepositRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Deposit initiated",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/DepositDataResponse"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Invalid request"
-          },
-          "401": {
-            "description": "Unauthorized"
-          }
-        },
-        "security": [
-          {
-            "bearer_auth": []
-          }
-        ]
-      }
-    },
-    "/agent/wallet/referral": {
-      "get": {
-        "tags": [
-          "agent-wallet"
-        ],
-        "summary": "Get user's referral info and code",
-        "operationId": "get_referral_info",
-        "responses": {
-          "200": {
-            "description": "Referral info retrieved",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ReferralInfoDataResponse"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Unauthorized"
-          }
-        },
-        "security": [
-          {
-            "bearer_auth": []
-          }
-        ]
-      }
-    },
-    "/agent/wallet/referral/apply": {
-      "post": {
-        "tags": [
-          "agent-wallet"
-        ],
-        "summary": "Apply a referral code to the current user",
-        "operationId": "apply_referral_code",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ApplyReferralRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Referral code applied"
-          },
-          "400": {
-            "description": "Invalid referral code"
-          },
-          "401": {
-            "description": "Unauthorized"
-          },
-          "409": {
-            "description": "Already has a referrer"
-          }
-        },
-        "security": [
-          {
-            "bearer_auth": []
-          }
-        ]
-      }
-    },
-    "/agent/wallet/transactions": {
-      "get": {
-        "tags": [
-          "agent-wallet"
-        ],
-        "summary": "Get transaction history for funded operations",
-        "operationId": "get_transactions",
-        "parameters": [
-          {
-            "name": "limit",
-            "in": "query",
-            "description": "Maximum number of transactions to return (default 50, max 100)",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "format": "int64"
-            }
-          },
-          {
-            "name": "offset",
-            "in": "query",
-            "description": "Offset for pagination",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "format": "int64"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Transaction history retrieved",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/WalletTransactionHistoryDataResponse"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Unauthorized"
-          }
-        },
-        "security": [
-          {
-            "bearer_auth": []
-          }
-        ]
       }
     },
     "/auth/forgot-password": {
@@ -1444,15 +98,15 @@
           "Auth"
         ],
         "summary": "GET /auth/me",
-        "description": "Get current authenticated user information",
+        "description": "Get current authenticated user information with default organization",
         "operationId": "get_current_user",
         "responses": {
           "200": {
-            "description": "Current user information",
+            "description": "Current user information with default organization",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/UserInfoResponse"
+                  "$ref": "#/components/schemas/UserMeResponse"
                 }
               }
             }
@@ -1914,6 +568,361 @@
         ]
       }
     },
+    "/billing/publishers/{slug}/charges": {
+      "post": {
+        "tags": [
+          "publisher-payments"
+        ],
+        "summary": "POST /billing/publishers/{slug}/charges",
+        "operationId": "create_charge",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "description": "Publisher slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateChargeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Charge created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChargeResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "402": {
+            "description": "Insufficient balance"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Publisher not found"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
+    "/billing/publishers/{slug}/charges/{charge_id}": {
+      "get": {
+        "tags": [
+          "publisher-payments"
+        ],
+        "summary": "GET /billing/publishers/{slug}/charges/{charge_id}",
+        "operationId": "get_charge_status",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "description": "Publisher slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "charge_id",
+            "in": "path",
+            "description": "Charge ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Charge retrieved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChargeResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Charge not found"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
+    "/billing/publishers/{slug}/charges/{charge_id}/refund": {
+      "post": {
+        "tags": [
+          "publisher-payments"
+        ],
+        "summary": "POST /billing/publishers/{slug}/charges/{charge_id}/refund",
+        "operationId": "refund_charge",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "description": "Publisher slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "charge_id",
+            "in": "path",
+            "description": "Charge ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RefundChargeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Charge refunded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChargeResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Charge not found"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
+    "/billing/publishers/{slug}/charges/{charge_id}/slash": {
+      "post": {
+        "tags": [
+          "publisher-payments"
+        ],
+        "summary": "POST /billing/publishers/{slug}/charges/{charge_id}/slash",
+        "operationId": "slash_charge",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "description": "Publisher slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "charge_id",
+            "in": "path",
+            "description": "Original charge ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SlashChargeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Slash applied"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "402": {
+            "description": "Insufficient balance"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Charge not found"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
+    "/billing/publishers/{slug}/payouts": {
+      "post": {
+        "tags": [
+          "publisher-payments"
+        ],
+        "summary": "POST /billing/publishers/{slug}/payouts",
+        "operationId": "create_payout",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "description": "Publisher slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreatePayoutRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Payout created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PayoutResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Publisher not found"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
+    "/billing/publishers/{slug}/payouts/{payout_id}": {
+      "get": {
+        "tags": [
+          "publisher-payments"
+        ],
+        "summary": "GET /billing/publishers/{slug}/payouts/{payout_id}",
+        "operationId": "get_payout_status",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "description": "Publisher slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "payout_id",
+            "in": "path",
+            "description": "Payout ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Payout retrieved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PayoutResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Payout not found"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
     "/billing/usage/{organization_id}": {
       "get": {
         "tags": [
@@ -2117,7 +1126,7 @@
           "OAuth"
         ],
         "summary": "List available OAuth providers",
-        "description": "Returns all active OAuth providers that users can connect to.",
+        "description": "Returns all active OAuth providers that users can connect to,\nincluding global providers and providers from organizations the user belongs to.",
         "operationId": "list_providers",
         "responses": {
           "200": {
@@ -2457,67 +1466,6 @@
           },
           "404": {
             "description": "API key not found"
-          }
-        },
-        "security": [
-          {
-            "bearer_auth": []
-          }
-        ]
-      }
-    },
-    "/organizations/{organization_id}/agent/templates/analytics/{publisher_id}": {
-      "get": {
-        "tags": [
-          "templates"
-        ],
-        "summary": "GET /organizations/{organization_id}/agent/templates/analytics/{publisher_id}",
-        "description": "Get template analytics for a specific publisher",
-        "operationId": "get_publisher_template_analytics",
-        "parameters": [
-          {
-            "name": "organization_id",
-            "in": "path",
-            "description": "Organization ID",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          },
-          {
-            "name": "publisher_id",
-            "in": "path",
-            "description": "Publisher ID",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Analytics retrieved successfully",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PublisherAnalyticsResponse"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Unauthorized"
-          },
-          "403": {
-            "description": "Not authorized"
-          },
-          "404": {
-            "description": "Publisher not found"
-          },
-          "500": {
-            "description": "Internal server error"
           }
         },
         "security": [
@@ -3695,7 +2643,7 @@
     "/organizations/{organization_id}/publishers": {
       "get": {
         "tags": [
-          "agent"
+          "Organizations"
         ],
         "summary": "GET /organizations/:org_id/publishers",
         "description": "List publishers owned by an organization",
@@ -3733,7 +2681,7 @@
       },
       "post": {
         "tags": [
-          "agent"
+          "Organizations"
         ],
         "summary": "POST /organizations/:org_id/publishers",
         "description": "Create a new publisher",
@@ -3789,7 +2737,7 @@
     "/organizations/{organization_id}/publishers/{publisher_id}": {
       "get": {
         "tags": [
-          "agent"
+          "Organizations"
         ],
         "summary": "GET /organizations/:org_id/publishers/:publisher_id",
         "description": "Get publisher details",
@@ -3840,7 +2788,7 @@
       },
       "put": {
         "tags": [
-          "agent"
+          "Organizations"
         ],
         "summary": "PUT /organizations/:org_id/publishers/:publisher_id",
         "description": "Update a publisher",
@@ -3904,7 +2852,7 @@
       },
       "delete": {
         "tags": [
-          "agent"
+          "Organizations"
         ],
         "summary": "DELETE /organizations/:org_id/publishers/:publisher_id",
         "description": "Soft delete a publisher",
@@ -4151,7 +3099,7 @@
     "/organizations/{organization_id}/publishers/{publisher_id}/earnings": {
       "get": {
         "tags": [
-          "agent"
+          "Organizations"
         ],
         "summary": "GET /organizations/:org_id/publishers/:publisher_id/earnings",
         "description": "List earnings for a publisher (per asset).",
@@ -4201,10 +3149,76 @@
         }
       }
     },
+    "/organizations/{organization_id}/publishers/{publisher_id}/logo": {
+      "post": {
+        "tags": [
+          "Organizations"
+        ],
+        "summary": "POST /organizations/{organization_id}/publishers/{publisher_id}/logo",
+        "description": "Upload a logo for a publisher",
+        "operationId": "upload_publisher_logo",
+        "parameters": [
+          {
+            "name": "organization_id",
+            "in": "path",
+            "description": "Organization ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "publisher_id",
+            "in": "path",
+            "description": "Publisher ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LogoUploadRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Logo uploaded successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LogoUploadDataResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid image format or size"
+          },
+          "403": {
+            "description": "Not authorized"
+          },
+          "404": {
+            "description": "Publisher not found"
+          },
+          "500": {
+            "description": "Internal server error"
+          }
+        }
+      }
+    },
     "/organizations/{organization_id}/publishers/{publisher_id}/payouts": {
       "get": {
         "tags": [
-          "agent"
+          "Organizations"
         ],
         "summary": "GET /organizations/:org_id/publishers/:publisher_id/payouts",
         "description": "List payout requests for a publisher.",
@@ -4277,7 +3291,7 @@
       },
       "post": {
         "tags": [
-          "agent"
+          "Organizations"
         ],
         "summary": "POST /organizations/:org_id/publishers/:publisher_id/payouts",
         "description": "Request a payout for a publisher's earnings.",
@@ -4343,7 +3357,7 @@
     "/organizations/{organization_id}/publishers/{publisher_id}/pricing": {
       "put": {
         "tags": [
-          "agent"
+          "Organizations"
         ],
         "summary": "PUT /organizations/:org_id/publishers/:publisher_id/pricing",
         "description": "Update publisher pricing config for a specific asset",
@@ -4712,6 +3726,67 @@
           },
           "404": {
             "description": "Role not found"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
+    "/organizations/{organization_id}/templates/analytics/{publisher_id}": {
+      "get": {
+        "tags": [
+          "templates"
+        ],
+        "summary": "GET /organizations/{organization_id}/templates/analytics/{publisher_id}",
+        "description": "Get template analytics for a specific publisher",
+        "operationId": "get_publisher_template_analytics",
+        "parameters": [
+          {
+            "name": "organization_id",
+            "in": "path",
+            "description": "Organization ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "publisher_id",
+            "in": "path",
+            "description": "Publisher ID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Analytics retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublisherAnalyticsResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Not authorized"
+          },
+          "404": {
+            "description": "Publisher not found"
+          },
+          "500": {
+            "description": "Internal server error"
           }
         },
         "security": [
@@ -5531,6 +4606,31 @@
         ]
       }
     },
+    "/payments/supported": {
+      "get": {
+        "tags": [
+          "payments"
+        ],
+        "summary": "GET /payments/supported",
+        "description": "Returns supported x402 payment kinds for facilitator discovery.",
+        "operationId": "get_supported",
+        "responses": {
+          "200": {
+            "description": "Supported payment kinds",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SupportedResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error"
+          }
+        }
+      }
+    },
     "/permissions": {
       "get": {
         "tags": [
@@ -5656,6 +4756,15 @@
               "type": "integer",
               "format": "int64",
               "nullable": true
+            }
+          },
+          {
+            "name": "show_service",
+            "in": "query",
+            "description": "Show the organization service project (`seren-services`) in the results.",
+            "required": false,
+            "schema": {
+              "type": "boolean"
             }
           }
         ],
@@ -10155,6 +9264,431 @@
         ]
       }
     },
+    "/publishers": {
+      "get": {
+        "tags": [
+          "publishers"
+        ],
+        "summary": "GET /publishers",
+        "description": "List publishers with full details and pricing (store view)",
+        "operationId": "list_store_publishers",
+        "parameters": [
+          {
+            "name": "is_verified",
+            "in": "query",
+            "description": "Filter by verification status",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "nullable": true
+            }
+          },
+          {
+            "name": "category",
+            "in": "query",
+            "description": "Filter by publisher category",
+            "required": false,
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/PublisherCategory"
+                }
+              ],
+              "nullable": true
+            }
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "description": "Search by name or slug",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Maximum number of results (default: 50, max: 100)",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "description": "Offset for pagination",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Publishers retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaginatedPublishersResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid query parameters"
+          },
+          "500": {
+            "description": "Internal server error"
+          }
+        }
+      }
+    },
+    "/publishers/suggest": {
+      "get": {
+        "tags": [
+          "publishers"
+        ],
+        "summary": "GET /publishers/suggest",
+        "description": "Suggest publishers based on a task or query",
+        "operationId": "suggest_publishers",
+        "parameters": [
+          {
+            "name": "query",
+            "in": "query",
+            "description": "The task or query to match against publisher capabilities.\nExamples: \"scrape website\", \"AI research\", \"PDF extraction\"",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "type",
+            "in": "query",
+            "description": "Type of suggestions: \"publisher\", \"agent\", or \"both\" (default: \"both\")\nNote: Agent suggestions are planned but not yet implemented.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Maximum number of results (default: 5, max: 20)",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Publisher suggestions retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuggestDataResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid query parameters"
+          },
+          "500": {
+            "description": "Internal server error"
+          }
+        }
+      }
+    },
+    "/publishers/{slug}": {
+      "get": {
+        "tags": [
+          "publishers"
+        ],
+        "summary": "GET /publishers/{slug}",
+        "description": "Get publisher by slug (store view with full details)",
+        "operationId": "get_store_publisher",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "description": "Publisher slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Publisher retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublisherDataResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Publisher not found"
+          },
+          "500": {
+            "description": "Internal server error"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "publishers"
+        ],
+        "summary": "Handle requests to the publisher root.",
+        "description": "For database publishers, this executes a query from the request body.\nFor API publishers, this proxies to the root endpoint.\nFor MCP publishers, this returns an error (use specific tool/resource endpoints).",
+        "operationId": "publisher_root_handler",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "description": "Publisher slug identifier",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PublisherRootRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Request processed successfully",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "402": {
+            "description": "Payment required"
+          },
+          "404": {
+            "description": "Publisher not found"
+          },
+          "500": {
+            "description": "Internal server error"
+          }
+        }
+      }
+    },
+    "/publishers/{slug}/estimate": {
+      "post": {
+        "tags": [
+          "publishers"
+        ],
+        "summary": "Estimate query cost without payment",
+        "operationId": "estimate_query",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "description": "Publisher slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EstimateRequestBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Cost estimate",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EstimateResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Publisher not found"
+          },
+          "500": {
+            "description": "Internal server error"
+          }
+        }
+      }
+    },
+    "/publishers/{slug}/logo": {
+      "get": {
+        "tags": [
+          "publishers"
+        ],
+        "summary": "GET /publishers/{slug}/logo",
+        "description": "Fetch publisher logo (inline data or redirect to URL)\nAccepts either publisher slug or UUID for backwards compatibility",
+        "operationId": "get_store_publisher_logo",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "description": "Publisher slug or UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Publisher logo bytes"
+          },
+          "302": {
+            "description": "Redirect to external logo URL"
+          },
+          "404": {
+            "description": "Logo not found"
+          }
+        }
+      }
+    },
+    "/publishers/{slug}/{path}": {
+      "get": {
+        "tags": [
+          "publishers"
+        ],
+        "operationId": "proxy_to_publisher_get",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "description": "Publisher slug identifier",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "path",
+            "in": "path",
+            "description": "Path to proxy to the publisher",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "",
+          "content": {
+            "application/octet-stream": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Request proxied successfully",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "402": {
+            "description": "Payment required"
+          },
+          "404": {
+            "description": "Publisher or endpoint not found"
+          },
+          "500": {
+            "description": "Internal server error"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "publishers"
+        ],
+        "operationId": "proxy_to_publisher_post",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "description": "Publisher slug identifier",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "path",
+            "in": "path",
+            "description": "Path to proxy to the publisher",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "",
+          "content": {
+            "application/octet-stream": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Request proxied successfully",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "402": {
+            "description": "Payment required"
+          },
+          "404": {
+            "description": "Publisher or endpoint not found"
+          },
+          "500": {
+            "description": "Internal server error"
+          }
+        }
+      }
+    },
     "/sessions": {
       "get": {
         "tags": [
@@ -10295,6 +9829,763 @@
           },
           "404": {
             "description": "Session not found or doesn't belong to user"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
+    "/templates": {
+      "get": {
+        "tags": [
+          "templates"
+        ],
+        "summary": "GET /templates",
+        "description": "List available templates in the catalog",
+        "operationId": "list_templates",
+        "parameters": [
+          {
+            "name": "verified_only",
+            "in": "query",
+            "description": "Filter to verified templates only",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "nullable": true
+            }
+          },
+          {
+            "name": "language",
+            "in": "query",
+            "description": "Filter by language (python, typescript, rust)",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          {
+            "name": "min_price",
+            "in": "query",
+            "description": "Minimum price in atomic units",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "nullable": true
+            }
+          },
+          {
+            "name": "max_price",
+            "in": "query",
+            "description": "Maximum price in atomic units",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "nullable": true
+            }
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "description": "Search in name and description",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          },
+          {
+            "name": "sort_by",
+            "in": "query",
+            "description": "Sort order (popularity, price_asc, price_desc, newest, oldest)",
+            "required": false,
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/TemplateSortBy"
+                }
+              ],
+              "nullable": true
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Maximum number of templates to return (default: 50)",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "nullable": true
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "description": "Offset for pagination (default: 0)",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "nullable": true
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Templates retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TemplateListResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error"
+          }
+        }
+      }
+    },
+    "/templates/publish": {
+      "post": {
+        "tags": [
+          "templates"
+        ],
+        "summary": "POST /templates/publish",
+        "description": "Publish a new agent template",
+        "operationId": "publish_template",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateTemplateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Template published successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TemplateDataResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "409": {
+            "description": "Template slug already exists"
+          },
+          "500": {
+            "description": "Internal server error"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
+    "/templates/{slug}": {
+      "get": {
+        "tags": [
+          "templates"
+        ],
+        "summary": "GET /templates/{slug}",
+        "description": "Get template details by slug",
+        "operationId": "get_template",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "description": "Template slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Template retrieved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TemplateDataResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Template not found"
+          },
+          "500": {
+            "description": "Internal server error"
+          }
+        }
+      }
+    },
+    "/templates/{slug}/invoke": {
+      "post": {
+        "tags": [
+          "templates"
+        ],
+        "summary": "POST /templates/{slug}/invoke",
+        "description": "Invoke an agent template.\n\nSupports two modes:\n- **Bearer auth present**: uses the authenticated user's SerenBucks balance.\n- **No bearer auth**: uses x402 (requires `X-AGENT-WALLET` + payment headers).",
+        "operationId": "invoke_template",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "description": "Template slug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InvokeTemplateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Template invoked successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvokeDataResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "401": {
+            "description": "Authentication failed"
+          },
+          "402": {
+            "description": "Payment required"
+          },
+          "404": {
+            "description": "Template not found"
+          },
+          "500": {
+            "description": "Internal server error"
+          },
+          "503": {
+            "description": "Sandbox execution failed"
+          }
+        }
+      }
+    },
+    "/wallet/balance": {
+      "get": {
+        "tags": [
+          "agent-wallet"
+        ],
+        "summary": "Get wallet balance (funded + promotional)",
+        "operationId": "get_wallet_balance",
+        "responses": {
+          "200": {
+            "description": "Wallet balance retrieved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WalletBalanceDataResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
+    "/wallet/bonus/payment-method": {
+      "post": {
+        "tags": [
+          "agent-wallet"
+        ],
+        "summary": "Claim payment method bonus (if not already claimed)",
+        "operationId": "claim_payment_method_bonus",
+        "responses": {
+          "200": {
+            "description": "Payment method bonus claimed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BonusClaimDataResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "409": {
+            "description": "Bonus already claimed"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
+    "/wallet/bonus/signup": {
+      "post": {
+        "tags": [
+          "agent-wallet"
+        ],
+        "summary": "Claim signup bonus (if not already claimed)",
+        "operationId": "claim_signup_bonus",
+        "responses": {
+          "200": {
+            "description": "Signup bonus claimed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BonusClaimDataResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "409": {
+            "description": "Bonus already claimed"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
+    "/wallet/daily/claim": {
+      "post": {
+        "tags": [
+          "agent-wallet"
+        ],
+        "summary": "Claim daily free credits",
+        "operationId": "claim_daily",
+        "responses": {
+          "200": {
+            "description": "Daily credits claimed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DailyClaimDataResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Not eligible for daily claim"
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
+    "/wallet/daily/eligibility": {
+      "get": {
+        "tags": [
+          "agent-wallet"
+        ],
+        "summary": "Check if user can claim daily credits",
+        "operationId": "check_daily_eligibility",
+        "responses": {
+          "200": {
+            "description": "Eligibility checked",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DailyClaimEligibilityDataResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
+    "/wallet/deposit": {
+      "post": {
+        "tags": [
+          "agent-wallet"
+        ],
+        "summary": "Deposit funds via Stripe",
+        "operationId": "create_deposit",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DepositRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Deposit initiated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DepositDataResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
+    "/wallet/deposit/crypto": {
+      "post": {
+        "tags": [
+          "agent-wallet"
+        ],
+        "summary": "Deposit configured asset via on-chain payment flow",
+        "description": "Allows agents to deposit the configured asset directly on-chain to their prepaid balance.\nFollows the 402 payment protocol:\n1. First request (no payment header) returns 402 with payment requirements\n2. Second request (with payment header) settles on-chain and credits balance",
+        "operationId": "onchain_deposit",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OnchainDepositRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Deposit successful",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OnchainDepositResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "402": {
+            "description": "Payment required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaymentRequiredResponseWithInfo"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Publisher not found"
+          },
+          "500": {
+            "description": "Internal server error"
+          }
+        }
+      }
+    },
+    "/wallet/lookup/{agent_wallet}": {
+      "get": {
+        "tags": [
+          "publisher-payments"
+        ],
+        "summary": "GET /wallet/lookup/{agent_wallet}",
+        "description": "Look up an agent's available balance (for publisher pre-checks)",
+        "operationId": "get_agent_balance",
+        "parameters": [
+          {
+            "name": "agent_wallet",
+            "in": "path",
+            "description": "Agent wallet address",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Balance retrieved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublisherAgentBalanceResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Forbidden"
+          },
+          "404": {
+            "description": "Publisher not found"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
+    "/wallet/recover": {
+      "post": {
+        "tags": [
+          "agent-wallet"
+        ],
+        "summary": "POST /wallet/recover",
+        "description": "Recover an agent account using a recovery code.\n\nThis endpoint allows agents who have lost their API key to recover their account\nusing the recovery code they saved when setting up wallet recovery or on first deposit.\n\n**What this does:**\n- Verifies the recovery code\n- Revokes all existing API keys (for security)\n- Issues a new API key\n- Rotates the recovery code (old code is invalidated)\n\n**Important:** Save both the new API key AND the new recovery code - they're only shown once!",
+        "operationId": "wallet_recover",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WalletRecoverRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Account recovered successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WalletRecoverDataResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "401": {
+            "description": "Invalid recovery code"
+          },
+          "500": {
+            "description": "Internal server error"
+          }
+        }
+      }
+    },
+    "/wallet/recovery": {
+      "post": {
+        "tags": [
+          "agent-wallet"
+        ],
+        "summary": "Set up account recovery (recovery code and/or email).",
+        "description": "- If you don't have a `recovery_code` yet, this endpoint generates one and returns it **once**.\n- If you already have a `recovery_code`, it will not be shown again.\n- You can optionally set/update a recovery `email` for human account recovery.\n\nUse the recovery code with `POST /wallet/recover` to rotate access after losing your API key.",
+        "operationId": "set_recovery",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetRecoveryRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Recovery set up",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecoveryDataResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
+    "/wallet/referral": {
+      "get": {
+        "tags": [
+          "agent-wallet"
+        ],
+        "summary": "Get user's referral info and code",
+        "operationId": "get_referral_info",
+        "responses": {
+          "200": {
+            "description": "Referral info retrieved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReferralInfoDataResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
+    "/wallet/referral/apply": {
+      "post": {
+        "tags": [
+          "agent-wallet"
+        ],
+        "summary": "Apply a referral code to the current user",
+        "operationId": "apply_referral_code",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApplyReferralRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Referral code applied"
+          },
+          "400": {
+            "description": "Invalid referral code"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "409": {
+            "description": "Already has a referrer"
+          }
+        },
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ]
+      }
+    },
+    "/wallet/transactions": {
+      "get": {
+        "tags": [
+          "agent-wallet"
+        ],
+        "summary": "Get transaction history for funded operations",
+        "operationId": "get_transactions",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Maximum number of transactions to return (default 50, max 100)",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "description": "Offset for pagination",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Transaction history retrieved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WalletTransactionHistoryDataResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
           }
         },
         "security": [
@@ -10541,8 +10832,108 @@
           "admin_grant",
           "promo_code",
           "tier_bonus",
-          "refund"
+          "refund",
+          "publisher_payout"
         ]
+      },
+      "AgentInfo": {
+        "type": "object",
+        "description": "Agent information returned on successful registration",
+        "required": [
+          "id",
+          "name",
+          "api_key",
+          "organization_id",
+          "status",
+          "user_type",
+          "created_at"
+        ],
+        "properties": {
+          "api_key": {
+            "type": "string",
+            "description": "The full API key (seren_<key_id>_<secret>) - shown ONCE, save it immediately!"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the account was created"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The agent's unique ID"
+          },
+          "name": {
+            "type": "string",
+            "description": "The agent's display name (auto-generated celestial name like \"radiant-sirius-a1b2\")"
+          },
+          "organization_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The organization ID for API calls"
+          },
+          "status": {
+            "type": "string",
+            "description": "Account status (always \"active\" for new agents)"
+          },
+          "user_type": {
+            "type": "string",
+            "description": "Agent type (always \"agent\")"
+          }
+        }
+      },
+      "AgentRegisterDataResponse": {
+        "type": "object",
+        "description": "DataResponse wrapper for agent registration (for OpenAPI schema)",
+        "required": [
+          "data"
+        ],
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/AgentRegisterResponse"
+          }
+        }
+      },
+      "AgentRegisterRequest": {
+        "type": "object",
+        "description": "Request to register a new AI agent account.\nAll fields are optional - an empty body is valid.",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Optional custom display name for the agent.\nIf not provided, a unique celestial-themed name will be generated (e.g., \"radiant-sirius\").",
+            "nullable": true
+          }
+        }
+      },
+      "AgentRegisterResponse": {
+        "type": "object",
+        "description": "Response from agent registration endpoint",
+        "required": [
+          "success",
+          "message",
+          "agent",
+          "setup",
+          "skill_files"
+        ],
+        "properties": {
+          "agent": {
+            "$ref": "#/components/schemas/AgentInfo"
+          },
+          "message": {
+            "type": "string",
+            "description": "Welcome message"
+          },
+          "setup": {
+            "$ref": "#/components/schemas/SetupInstructions"
+          },
+          "skill_files": {
+            "$ref": "#/components/schemas/SkillFiles"
+          },
+          "success": {
+            "type": "boolean",
+            "description": "Whether registration was successful"
+          }
+        }
       },
       "AgentTemplate": {
         "type": "object",
@@ -10849,126 +11240,6 @@
               }
             ],
             "nullable": true
-          }
-        }
-      },
-      "ApiRequestBody": {
-        "type": "object",
-        "description": "API request body for paid HTTP calls",
-        "properties": {
-          "asset_id": {
-            "type": "string",
-            "format": "uuid",
-            "description": "Optional asset id to pay with (defaults to publisher primary asset)",
-            "nullable": true
-          },
-          "body": {
-            "description": "Optional JSON body to send",
-            "nullable": true
-          },
-          "estimated_rows": {
-            "type": "integer",
-            "format": "int64",
-            "description": "Optional estimated rows for pricing (default: 1000)",
-            "nullable": true
-          },
-          "headers": {
-            "type": "object",
-            "description": "Optional request headers (will not override publisher headers)",
-            "additionalProperties": {
-              "type": "string"
-            },
-            "nullable": true
-          },
-          "method": {
-            "type": "string",
-            "description": "HTTP method (default: POST)",
-            "nullable": true
-          },
-          "path": {
-            "type": "string",
-            "description": "Optional relative path to append to the publisher base URL",
-            "nullable": true
-          },
-          "pre_authorization": {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/PreAuthorization"
-              }
-            ],
-            "nullable": true
-          },
-          "publisher": {
-            "type": "string",
-            "description": "Publisher slug (alternative to `publisher_id`)",
-            "nullable": true
-          },
-          "publisher_id": {
-            "type": "string",
-            "format": "uuid",
-            "description": "Publisher UUID (required if `publisher` slug not provided)",
-            "nullable": true
-          },
-          "request_id": {
-            "type": "string",
-            "format": "uuid",
-            "description": "Optional idempotency key (UUID) for deduplication",
-            "nullable": true
-          }
-        }
-      },
-      "ApiResultResponse": {
-        "type": "object",
-        "description": "API result response",
-        "required": [
-          "status",
-          "body",
-          "response_bytes",
-          "execution_time_ms",
-          "cost",
-          "asset_symbol",
-          "payment_source"
-        ],
-        "properties": {
-          "asset_symbol": {
-            "type": "string",
-            "description": "Asset symbol (e.g., USDC, USDT)"
-          },
-          "body": {
-            "description": "Response body (JSON if available, otherwise raw text)"
-          },
-          "cost": {
-            "type": "string",
-            "description": "Actual cost charged in configured asset"
-          },
-          "cost_breakdown": {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/CostBreakdown"
-              }
-            ],
-            "nullable": true
-          },
-          "execution_time_ms": {
-            "type": "integer",
-            "format": "int32",
-            "description": "Execution time in milliseconds"
-          },
-          "payment_source": {
-            "type": "string",
-            "description": "Payment source used"
-          },
-          "response_bytes": {
-            "type": "integer",
-            "format": "int64",
-            "description": "Size of the publisher response body in bytes (raw, before JSON parsing).",
-            "minimum": 0
-          },
-          "status": {
-            "type": "integer",
-            "format": "int32",
-            "description": "HTTP status from publisher",
-            "minimum": 0
           }
         }
       },
@@ -11870,36 +12141,6 @@
           }
         }
       },
-      "CallMcpToolRequest": {
-        "type": "object",
-        "description": "Request to call a tool on an MCP publisher",
-        "required": [
-          "tool_name"
-        ],
-        "properties": {
-          "arguments": {
-            "type": "object",
-            "description": "Arguments to pass to the tool (optional)",
-            "additionalProperties": {},
-            "nullable": true
-          },
-          "publisher": {
-            "type": "string",
-            "description": "Publisher slug or ID",
-            "nullable": true
-          },
-          "publisher_id": {
-            "type": "string",
-            "format": "uuid",
-            "description": "Publisher UUID (alternative to slug)",
-            "nullable": true
-          },
-          "tool_name": {
-            "type": "string",
-            "description": "Name of the tool to call"
-          }
-        }
-      },
       "ChangePlanRequest": {
         "type": "object",
         "description": "Request to upgrade/downgrade an organization's plan",
@@ -11918,6 +12159,31 @@
               }
             ],
             "nullable": true
+          }
+        }
+      },
+      "ChargeResponse": {
+        "type": "object",
+        "required": [
+          "id",
+          "status",
+          "amount_atomic",
+          "agent_wallet"
+        ],
+        "properties": {
+          "agent_wallet": {
+            "type": "string"
+          },
+          "amount_atomic": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "type": "string"
           }
         }
       },
@@ -12314,6 +12580,31 @@
           }
         }
       },
+      "CreateChargeRequest": {
+        "type": "object",
+        "required": [
+          "agent_wallet",
+          "amount_atomic",
+          "description"
+        ],
+        "properties": {
+          "agent_wallet": {
+            "type": "string"
+          },
+          "amount_atomic": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "description": {
+            "type": "string"
+          },
+          "idempotency_key": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          }
+        }
+      },
       "CreateDatabaseRequest": {
         "type": "object",
         "description": "Request to create a new database",
@@ -12559,6 +12850,31 @@
           }
         }
       },
+      "CreatePayoutRequest": {
+        "type": "object",
+        "required": [
+          "destination_wallet",
+          "amount_atomic",
+          "description"
+        ],
+        "properties": {
+          "amount_atomic": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "description": {
+            "type": "string"
+          },
+          "destination_wallet": {
+            "type": "string"
+          },
+          "idempotency_key": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          }
+        }
+      },
       "CreateProjectRequest": {
         "type": "object",
         "description": "Request to create a new project",
@@ -12770,7 +13086,7 @@
           },
           "billing_model": {
             "type": "string",
-            "description": "Billing model (\"x402_per_request\", \"prepaid_credits\", \"x402_passthrough\")",
+            "description": "Billing model (\"x402_per_request\", \"prepaid_credits\", \"x402_passthrough\", \"pay_per_use\")",
             "nullable": true
           },
           "branch_id": {
@@ -13055,7 +13371,7 @@
           },
           "upstream_cost_response_path": {
             "type": "string",
-            "description": "Dot-separated path to upstream cost in response body (for prepaid passthrough billing).\nExample: \"usage.cost\"",
+            "description": "Dot-separated path to upstream cost in response body (for pay_per_use and prepaid passthrough billing).\nExample: \"usage.cost\"",
             "nullable": true
           },
           "upstream_headers": {
@@ -13857,6 +14173,29 @@
           "mongodb"
         ]
       },
+      "DatabaseQueryRequest": {
+        "type": "object",
+        "description": "Request body for database queries",
+        "required": [
+          "query"
+        ],
+        "properties": {
+          "database": {
+            "type": "string",
+            "description": "Optional database name (primarily for SerenDB publishers)",
+            "nullable": true
+          },
+          "params": {
+            "type": "array",
+            "items": {},
+            "description": "Query parameters"
+          },
+          "query": {
+            "type": "string",
+            "description": "SQL query to execute"
+          }
+        }
+      },
       "DatabaseResponse": {
         "type": "object",
         "description": "Generic API response wrapper with optional pagination\n\nThis wrapper provides a consistent structure for all API responses,\nmaking it easier for clients to handle responses uniformly. It supports\nboth single resources and collections, with optional pagination metadata.\n\n# Response Structure\n\n```json\n{\n\"data\": T,\n\"pagination\": { ... } // optional\n}\n```\n\n# Examples\n\n## Single Resource\n\n```rust\nuse seren_core::http::DataResponse;\nuse serde::Serialize;\n\n#[derive(Serialize)]\nstruct Project {\nid: String,\nname: String,\n}\n\nlet project = Project {\nid: \"123\".to_string(),\nname: \"My Project\".to_string(),\n};\n\nlet response = DataResponse::new(project);\n// Serializes to: {\"data\": {\"id\": \"123\", \"name\": \"My Project\"}}\n```\n\n## Collection with Pagination\n\n```rust\nuse seren_core::http::DataResponse;\nuse seren_core::pagination::PaginationMeta;\nuse serde::Serialize;\n\n#[derive(Serialize)]\nstruct Project {\nid: String,\nname: String,\n}\n\nlet projects: Vec<Project> = Vec::new();\nlet pagination = PaginationMeta {\ntotal: 0,\ncount: 0,\nlimit: 20,\noffset: 0,\nhas_more: false,\n};\n\nlet response = DataResponse::with_pagination(projects, pagination);\n// Serializes to: {\"data\": [...], \"pagination\": {\"total\": 0, \"count\": 0, \"limit\": 20, \"offset\": 0, \"has_more\": false}}\n```",
@@ -14140,6 +14479,11 @@
             "type": "integer",
             "format": "int64",
             "description": "Amount in USD cents (minimum 500 = $5.00)"
+          },
+          "referral_code": {
+            "type": "string",
+            "description": "Optional affiliate referral code for tracking",
+            "nullable": true
           }
         }
       },
@@ -14181,6 +14525,16 @@
             "type": "string",
             "format": "uuid"
           },
+          "recovery_code": {
+            "type": "string",
+            "description": "Recovery code (only shown on first deposit, save it securely!)",
+            "nullable": true
+          },
+          "recovery_warning": {
+            "type": "string",
+            "description": "Warning about recovery setup",
+            "nullable": true
+          },
           "total_atomic": {
             "type": "integer",
             "format": "int64",
@@ -14188,23 +14542,6 @@
           },
           "total_usd": {
             "type": "string"
-          }
-        }
-      },
-      "DiscoverMcpCapabilitiesRequest": {
-        "type": "object",
-        "description": "Request to discover capabilities of an MCP publisher",
-        "properties": {
-          "publisher": {
-            "type": "string",
-            "description": "Publisher slug or ID",
-            "nullable": true
-          },
-          "publisher_id": {
-            "type": "string",
-            "format": "uuid",
-            "description": "Publisher UUID (alternative to slug)",
-            "nullable": true
           }
         }
       },
@@ -14689,6 +15026,35 @@
           }
         }
       },
+      "EndpointInfo": {
+        "type": "object",
+        "description": "Information about an API endpoint",
+        "required": [
+          "method",
+          "path"
+        ],
+        "properties": {
+          "description": {
+            "type": "string",
+            "description": "Endpoint description",
+            "nullable": true
+          },
+          "method": {
+            "type": "string",
+            "description": "HTTP method (GET, POST, PUT, DELETE, etc.)"
+          },
+          "path": {
+            "type": "string",
+            "description": "Endpoint path relative to publisher base URL"
+          },
+          "price": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Price for this specific endpoint (in atomic units)",
+            "nullable": true
+          }
+        }
+      },
       "EndpointResponse": {
         "type": "object",
         "description": "Generic API response wrapper with optional pagination\n\nThis wrapper provides a consistent structure for all API responses,\nmaking it easier for clients to handle responses uniformly. It supports\nboth single resources and collections, with optional pagination metadata.\n\n# Response Structure\n\n```json\n{\n\"data\": T,\n\"pagination\": { ... } // optional\n}\n```\n\n# Examples\n\n## Single Resource\n\n```rust\nuse seren_core::http::DataResponse;\nuse serde::Serialize;\n\n#[derive(Serialize)]\nstruct Project {\nid: String,\nname: String,\n}\n\nlet project = Project {\nid: \"123\".to_string(),\nname: \"My Project\".to_string(),\n};\n\nlet response = DataResponse::new(project);\n// Serializes to: {\"data\": {\"id\": \"123\", \"name\": \"My Project\"}}\n```\n\n## Collection with Pagination\n\n```rust\nuse seren_core::http::DataResponse;\nuse seren_core::pagination::PaginationMeta;\nuse serde::Serialize;\n\n#[derive(Serialize)]\nstruct Project {\nid: String,\nname: String,\n}\n\nlet projects: Vec<Project> = Vec::new();\nlet pagination = PaginationMeta {\ntotal: 0,\ncount: 0,\nlimit: 20,\noffset: 0,\nhas_more: false,\n};\n\nlet response = DataResponse::with_pagination(projects, pagination);\n// Serializes to: {\"data\": [...], \"pagination\": {\"total\": 0, \"count\": 0, \"limit\": 20, \"offset\": 0, \"has_more\": false}}\n```",
@@ -15097,7 +15463,7 @@
         "properties": {
           "agent_wallet": {
             "type": "string",
-            "description": "Agent wallet address.\n\n- For on-chain credentials: this must be the agent's real wallet address.\n- For account-based credentials (JWT/API key): this can be any placeholder;\nSerenCore derives the canonical wallet from the validated identity.",
+            "description": "Agent wallet address.\n\n- For on-chain credentials: this must be the agent's real wallet address.\n- For account-based credentials (JWT/API key): this can be any placeholder;\nSeren derives the canonical wallet from the validated identity.",
             "nullable": true
           },
           "publisher_slug": {
@@ -15106,7 +15472,7 @@
           },
           "signature": {
             "type": "string",
-            "description": "Authorization proof.\n\n- For account-based (fiat/prepaid): SerenCore user JWT or API key (`seren_...`)\n- For real on-chain wallets: EIP-191 personal_sign of\n`agent:<publisher_slug>:<agent_wallet>`\n- For streaming payments (EIP-3009): JSON payload string",
+            "description": "Authorization proof.\n\n- For account-based (fiat/prepaid): Seren user JWT or API key (`seren_...`)\n- For real on-chain wallets: EIP-191 personal_sign of\n`agent:<publisher_slug>:<agent_wallet>`\n- For streaming payments (EIP-3009): JSON payload string",
             "nullable": true
           }
         }
@@ -15120,7 +15486,7 @@
         "properties": {
           "agent_wallet": {
             "type": "string",
-            "description": "Canonical agent wallet address for the authorized session.\n\n- For virtual wallets: derived from the provided SerenCore credential (JWT/API key).\n- For on-chain wallets: the wallet address provided by the agent.",
+            "description": "Canonical agent wallet address for the authorized session.\n\n- For virtual wallets: derived from the provided Seren credential (JWT/API key).\n- For on-chain wallets: the wallet address provided by the agent.",
             "nullable": true
           },
           "asset": {
@@ -15809,37 +16175,35 @@
           }
         }
       },
-      "ListMcpResourcesRequest": {
+      "ListMcpResourcesResponse": {
         "type": "object",
-        "description": "Request to list resources on an MCP publisher",
+        "description": "Response for listing MCP resources from a publisher",
+        "required": [
+          "resources"
+        ],
         "properties": {
-          "publisher": {
-            "type": "string",
-            "description": "Publisher slug or ID",
-            "nullable": true
-          },
-          "publisher_id": {
-            "type": "string",
-            "format": "uuid",
-            "description": "Publisher UUID (alternative to slug)",
-            "nullable": true
+          "resources": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/McpResourceInfo"
+            },
+            "description": "List of available MCP resources"
           }
         }
       },
-      "ListMcpToolsRequest": {
+      "ListMcpToolsResponse": {
         "type": "object",
-        "description": "Request to list tools on an MCP publisher",
+        "description": "Response for listing MCP tools from a publisher",
+        "required": [
+          "tools"
+        ],
         "properties": {
-          "publisher": {
-            "type": "string",
-            "description": "Publisher slug or ID",
-            "nullable": true
-          },
-          "publisher_id": {
-            "type": "string",
-            "format": "uuid",
-            "description": "Publisher UUID (alternative to slug)",
-            "nullable": true
+          "tools": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/McpToolInfo"
+            },
+            "description": "List of available MCP tools"
           }
         }
       },
@@ -15863,8 +16227,16 @@
       },
       "ListPublishersParams": {
         "type": "object",
-        "description": "Query parameters for listing publishers",
+        "description": "Query parameters for listing publishers (store view with full details)",
         "properties": {
+          "category": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PublisherCategory"
+              }
+            ],
+            "nullable": true
+          },
           "is_verified": {
             "type": "boolean",
             "description": "Filter by verification status",
@@ -16143,24 +16515,6 @@
           }
         }
       },
-      "McpCapabilitiesResponse": {
-        "type": "object",
-        "description": "Response containing MCP capabilities",
-        "required": [
-          "capabilities",
-          "execution_time_ms"
-        ],
-        "properties": {
-          "capabilities": {
-            "$ref": "#/components/schemas/McpCapabilities"
-          },
-          "execution_time_ms": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 0
-          }
-        }
-      },
       "McpPromptArgument": {
         "type": "object",
         "description": "Argument for an MCP prompt",
@@ -16238,90 +16592,22 @@
         "properties": {
           "description": {
             "type": "string",
+            "description": "Resource description",
             "nullable": true
           },
           "mime_type": {
             "type": "string",
+            "description": "MIME type of the resource",
             "nullable": true
           },
           "name": {
-            "type": "string"
+            "type": "string",
+            "description": "Resource name"
           },
           "uri": {
-            "type": "string"
+            "type": "string",
+            "description": "Resource URI"
           }
-        }
-      },
-      "McpResourceReadResponse": {
-        "type": "object",
-        "description": "Response from reading an MCP resource",
-        "required": [
-          "contents",
-          "execution_time_ms",
-          "response_bytes"
-        ],
-        "properties": {
-          "contents": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/McpResourceContent"
-            }
-          },
-          "execution_time_ms": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 0
-          },
-          "response_bytes": {
-            "type": "integer",
-            "minimum": 0
-          }
-        }
-      },
-      "McpResourcesResponse": {
-        "type": "object",
-        "description": "Response containing MCP resources",
-        "required": [
-          "resources",
-          "execution_time_ms"
-        ],
-        "properties": {
-          "execution_time_ms": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 0
-          },
-          "resources": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/McpResourceInfo"
-            }
-          }
-        }
-      },
-      "McpToolCallResponse": {
-        "type": "object",
-        "description": "Response from an MCP tool call",
-        "required": [
-          "result",
-          "is_error",
-          "execution_time_ms",
-          "response_bytes"
-        ],
-        "properties": {
-          "execution_time_ms": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 0
-          },
-          "is_error": {
-            "type": "boolean"
-          },
-          "response_bytes": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "result": {}
         }
       },
       "McpToolInfo": {
@@ -16333,34 +16619,16 @@
         "properties": {
           "description": {
             "type": "string",
+            "description": "Tool description",
             "nullable": true
           },
           "input_schema": {
+            "description": "JSON Schema for tool input parameters",
             "nullable": true
           },
           "name": {
-            "type": "string"
-          }
-        }
-      },
-      "McpToolsResponse": {
-        "type": "object",
-        "description": "Response containing MCP tools",
-        "required": [
-          "tools",
-          "execution_time_ms"
-        ],
-        "properties": {
-          "execution_time_ms": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 0
-          },
-          "tools": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/McpToolInfo"
-            }
+            "type": "string",
+            "description": "Tool name"
           }
         }
       },
@@ -17893,6 +18161,39 @@
           "credits"
         ]
       },
+      "PayoutResponse": {
+        "type": "object",
+        "required": [
+          "id",
+          "status",
+          "amount_atomic",
+          "destination_wallet"
+        ],
+        "properties": {
+          "amount_atomic": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "destination_wallet": {
+            "type": "string"
+          },
+          "error_message": {
+            "type": "string",
+            "nullable": true
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "type": "string"
+          },
+          "tx_hash": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
       "PayoutStatus": {
         "type": "string",
         "description": "Status of a publisher payout request.",
@@ -18231,7 +18532,7 @@
           "publisher_id": {
             "type": "string",
             "format": "uuid",
-            "description": "Target publisher this pre-authorization applies to.\n\nMust match the `publisher_id` in the surrounding `/agent/api` request."
+            "description": "Target publisher this pre-authorization applies to.\n\nMust match the publisher in the `/publishers/{slug}/{*path}` request."
           },
           "service_fee_per_execution_atomic": {
             "type": "integer",
@@ -18407,6 +18708,39 @@
           }
         }
       },
+      "PricingInfo": {
+        "type": "object",
+        "description": "Pricing information for a publisher (simple view)",
+        "required": [
+          "model"
+        ],
+        "properties": {
+          "base_price_per_1000_rows": {
+            "type": "string",
+            "description": "Base price per 1000 rows for database publishers",
+            "nullable": true
+          },
+          "model": {
+            "type": "string",
+            "description": "Pricing model (per_row, per_byte, per_call, per_request)"
+          },
+          "price_per_call": {
+            "type": "string",
+            "description": "Price per API call",
+            "nullable": true
+          },
+          "price_per_get": {
+            "type": "string",
+            "description": "Price per GET request",
+            "nullable": true
+          },
+          "price_per_post": {
+            "type": "string",
+            "description": "Price per POST request",
+            "nullable": true
+          }
+        }
+      },
       "PricingModel": {
         "type": "string",
         "description": "Pricing model used to interpret pricing units.",
@@ -18519,6 +18853,10 @@
           "id": {
             "type": "string",
             "format": "uuid"
+          },
+          "is_service_project": {
+            "type": "boolean",
+            "description": "Whether this is a service project (hidden from normal listings, contains seren_* databases)"
           },
           "name": {
             "type": "string"
@@ -18703,6 +19041,10 @@
           "id": {
             "type": "string",
             "format": "uuid"
+          },
+          "is_service_project": {
+            "type": "boolean",
+            "description": "Whether this is a service project (hidden from normal listings, contains seren_* databases)"
           },
           "name": {
             "type": "string"
@@ -19337,6 +19679,28 @@
           }
         }
       },
+      "PublisherAgentBalanceResponse": {
+        "type": "object",
+        "required": [
+          "serenbucks_atomic",
+          "total_available_atomic"
+        ],
+        "properties": {
+          "onchain_atomic": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "serenbucks_atomic": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "total_available_atomic": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
       "PublisherAnalyticsResponse": {
         "type": "object",
         "description": "Response for publisher analytics",
@@ -19533,6 +19897,88 @@
           },
           "wallet_address": {
             "$ref": "#/components/schemas/WalletAddress"
+          }
+        }
+      },
+      "PublisherInfoResponse": {
+        "type": "object",
+        "description": "Detailed information about a publisher including capabilities and pricing",
+        "required": [
+          "slug",
+          "name",
+          "category",
+          "pricing"
+        ],
+        "properties": {
+          "category": {
+            "type": "string",
+            "description": "Publisher category (database, integration, compute)"
+          },
+          "database_type": {
+            "type": "string",
+            "description": "Database type for database publishers (serendb, neon, supabase, mongodb)",
+            "nullable": true
+          },
+          "description": {
+            "type": "string",
+            "description": "Full description of the publisher",
+            "nullable": true
+          },
+          "endpoints": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EndpointInfo"
+            },
+            "description": "Available API endpoints (for API publishers)",
+            "nullable": true
+          },
+          "integration_type": {
+            "type": "string",
+            "description": "Integration type for integration publishers (api, mcp)",
+            "nullable": true
+          },
+          "name": {
+            "type": "string",
+            "description": "Display name of the publisher"
+          },
+          "pricing": {
+            "$ref": "#/components/schemas/PricingInfo"
+          },
+          "resources": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/McpResourceInfo"
+            },
+            "description": "Available MCP resources (for MCP publishers)",
+            "nullable": true
+          },
+          "slug": {
+            "type": "string",
+            "description": "Unique slug identifier for the publisher"
+          },
+          "tools": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/McpToolInfo"
+            },
+            "description": "Available MCP tools (for MCP publishers)",
+            "nullable": true
+          }
+        }
+      },
+      "PublisherListResponse": {
+        "type": "object",
+        "description": "Response containing a list of publishers (simple summary view)",
+        "required": [
+          "publishers"
+        ],
+        "properties": {
+          "publishers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PublisherSummary"
+            },
+            "description": "List of publisher summaries"
           }
         }
       },
@@ -19949,7 +20395,7 @@
           },
           "upstream_cost_response_path": {
             "type": "string",
-            "description": "Dot-separated path to upstream cost in response body (for prepaid passthrough billing).\nExample: \"usage.cost\"",
+            "description": "Dot-separated path to upstream cost in response body (for pay_per_use and prepaid passthrough billing).\nExample: \"usage.cost\"",
             "nullable": true
           },
           "upstream_headers": {
@@ -19984,6 +20430,15 @@
             "description": "Network for the wallet address"
           }
         }
+      },
+      "PublisherRootRequest": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/DatabaseQueryRequest"
+          },
+          {}
+        ],
+        "description": "Request body for publisher root `POST /publishers/{slug}`.\n\n- For database publishers: use `DatabaseQueryRequest`\n- For API publishers: any JSON body will be proxied to the upstream API root (`/`)"
       },
       "PublisherSuggestion": {
         "type": "object",
@@ -20032,6 +20487,34 @@
           }
         }
       },
+      "PublisherSummary": {
+        "type": "object",
+        "description": "Summary information about a publisher",
+        "required": [
+          "slug",
+          "name",
+          "category"
+        ],
+        "properties": {
+          "category": {
+            "type": "string",
+            "description": "Publisher category (database, integration, compute)"
+          },
+          "description": {
+            "type": "string",
+            "description": "Short description of what the publisher offers",
+            "nullable": true
+          },
+          "name": {
+            "type": "string",
+            "description": "Display name of the publisher"
+          },
+          "slug": {
+            "type": "string",
+            "description": "Unique slug identifier for the publisher"
+          }
+        }
+      },
       "PublisherType": {
         "type": "string",
         "description": "Type of publisher in the store",
@@ -20040,6 +20523,29 @@
           "organization",
           "verified_partner"
         ]
+      },
+      "PublisherTypeInstructions": {
+        "type": "object",
+        "description": "Instructions for using different publisher types",
+        "required": [
+          "api",
+          "mcp",
+          "database"
+        ],
+        "properties": {
+          "api": {
+            "type": "string",
+            "description": "For API publishers"
+          },
+          "database": {
+            "type": "string",
+            "description": "For database publishers"
+          },
+          "mcp": {
+            "type": "string",
+            "description": "For MCP publishers"
+          }
+        }
       },
       "PublishersDataResponse": {
         "type": "object",
@@ -20092,88 +20598,6 @@
           "required": {
             "type": "boolean",
             "description": "Whether this parameter is required"
-          }
-        }
-      },
-      "QueryRequestBody": {
-        "type": "object",
-        "description": "Query request body",
-        "required": [
-          "query"
-        ],
-        "properties": {
-          "asset_id": {
-            "type": "string",
-            "format": "uuid",
-            "description": "Optional asset id to pay with (defaults to publisher primary asset)",
-            "nullable": true
-          },
-          "database": {
-            "type": "string",
-            "description": "Optional database name",
-            "nullable": true
-          },
-          "publisher": {
-            "type": "string",
-            "description": "Publisher slug (alternative to `publisher_id`)",
-            "nullable": true
-          },
-          "publisher_id": {
-            "type": "string",
-            "format": "uuid",
-            "description": "Publisher UUID (required if `publisher` slug not provided)",
-            "nullable": true
-          },
-          "query": {
-            "type": "string",
-            "description": "SQL query to execute"
-          },
-          "request_id": {
-            "type": "string",
-            "format": "uuid",
-            "description": "Optional idempotency key (UUID) for deduplication",
-            "nullable": true
-          }
-        }
-      },
-      "QueryResultResponse": {
-        "type": "object",
-        "description": "Query result response",
-        "required": [
-          "rows",
-          "row_count",
-          "execution_time_ms",
-          "cost",
-          "asset_symbol",
-          "payment_source"
-        ],
-        "properties": {
-          "asset_symbol": {
-            "type": "string",
-            "description": "Asset symbol (e.g., USDC, USDT)"
-          },
-          "cost": {
-            "type": "string",
-            "description": "Actual cost charged in configured asset"
-          },
-          "execution_time_ms": {
-            "type": "integer",
-            "format": "int32",
-            "description": "Execution time in milliseconds"
-          },
-          "payment_source": {
-            "type": "string",
-            "description": "Payment source used"
-          },
-          "row_count": {
-            "type": "integer",
-            "format": "int64",
-            "description": "Number of rows returned"
-          },
-          "rows": {
-            "type": "array",
-            "items": {},
-            "description": "Query result rows as JSON"
           }
         }
       },
@@ -20395,27 +20819,43 @@
           }
         }
       },
-      "ReadMcpResourceRequest": {
+      "RecoveryDataResponse": {
         "type": "object",
-        "description": "Request to read a resource from an MCP publisher",
+        "description": "Wrapped recovery response for OpenAPI",
         "required": [
-          "uri"
+          "data"
         ],
         "properties": {
-          "publisher": {
-            "type": "string",
-            "description": "Publisher slug or ID",
-            "nullable": true
+          "data": {
+            "$ref": "#/components/schemas/RecoveryResponse"
+          }
+        }
+      },
+      "RecoveryResponse": {
+        "type": "object",
+        "description": "Response for recovery setup",
+        "required": [
+          "has_recovery",
+          "has_recovery_email",
+          "message"
+        ],
+        "properties": {
+          "has_recovery": {
+            "type": "boolean",
+            "description": "Whether recovery is now set up"
           },
-          "publisher_id": {
-            "type": "string",
-            "format": "uuid",
-            "description": "Publisher UUID (alternative to slug)",
-            "nullable": true
+          "has_recovery_email": {
+            "type": "boolean",
+            "description": "Whether a recovery email is set"
           },
-          "uri": {
+          "message": {
             "type": "string",
-            "description": "URI of the resource to read"
+            "description": "Message about recovery status"
+          },
+          "recovery_code": {
+            "type": "string",
+            "description": "Recovery code (only shown once, save it securely!)\nThis is a 24-character code that can be used to recover your account.",
+            "nullable": true
           }
         }
       },
@@ -20479,6 +20919,17 @@
           "total_referrals": {
             "type": "integer",
             "format": "int64"
+          }
+        }
+      },
+      "RefundChargeRequest": {
+        "type": "object",
+        "required": [
+          "reason"
+        ],
+        "properties": {
+          "reason": {
+            "type": "string"
           }
         }
       },
@@ -21342,6 +21793,17 @@
           }
         }
       },
+      "SetRecoveryRequest": {
+        "type": "object",
+        "description": "Request to set up account recovery",
+        "properties": {
+          "email": {
+            "type": "string",
+            "description": "Email address for account recovery (optional, for human contact)",
+            "nullable": true
+          }
+        }
+      },
       "SettlementResponse": {
         "type": "object",
         "description": "Settlement response - returned in PAYMENT-RESPONSE (v2) / X-PAYMENT-RESPONSE (v1) headers (base64 encoded)",
@@ -21375,172 +21837,71 @@
           }
         }
       },
+      "SetupInstructions": {
+        "type": "object",
+        "description": "Setup instructions for new agents",
+        "required": [
+          "step_1",
+          "step_2",
+          "step_3",
+          "step_4"
+        ],
+        "properties": {
+          "step_1": {
+            "type": "string",
+            "description": "Step 1: Save your API key"
+          },
+          "step_2": {
+            "type": "string",
+            "description": "Step 2: Set up authentication header"
+          },
+          "step_3": {
+            "type": "string",
+            "description": "Step 3: Browse publishers"
+          },
+          "step_4": {
+            "$ref": "#/components/schemas/PublisherTypeInstructions"
+          }
+        }
+      },
+      "SkillFiles": {
+        "type": "object",
+        "description": "Skill files and documentation links",
+        "required": [
+          "skill_md",
+          "docs"
+        ],
+        "properties": {
+          "docs": {
+            "type": "string",
+            "description": "Link to the documentation"
+          },
+          "skill_md": {
+            "type": "string",
+            "description": "Link to the main skill.md file"
+          }
+        }
+      },
+      "SlashChargeRequest": {
+        "type": "object",
+        "required": [
+          "slash_amount_atomic",
+          "reason"
+        ],
+        "properties": {
+          "reason": {
+            "type": "string"
+          },
+          "slash_amount_atomic": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
       "Slug": {
         "type": "string",
         "description": "A validated URL-safe slug.\n\nSlugs must be:\n- 2-64 characters long\n- Lowercase alphanumeric with hyphens\n- Cannot start or end with a hyphen\n- Cannot have consecutive hyphens\n\n# Examples\n\n```\nuse seren_core::models::Slug;\n\nlet slug = Slug::new(\"my-project\").unwrap();\nassert!(Slug::new(\"My Project\").is_err()); // spaces not allowed\nassert!(Slug::new(\"-invalid\").is_err()); // can't start with hyphen\n```",
         "example": "my-project"
-      },
-      "StreamingAsset": {
-        "type": "object",
-        "description": "Supported asset for streaming authorization",
-        "required": [
-          "address",
-          "symbol",
-          "decimals",
-          "network"
-        ],
-        "properties": {
-          "address": {
-            "type": "string",
-            "description": "Asset contract address"
-          },
-          "asset_id": {
-            "type": "string",
-            "format": "uuid",
-            "description": "Internal asset ID (for clients that want to request a specific asset)",
-            "nullable": true
-          },
-          "decimals": {
-            "type": "integer",
-            "format": "int32",
-            "description": "Asset decimals",
-            "minimum": 0
-          },
-          "eip712": {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/Eip712Domain"
-              }
-            ],
-            "nullable": true
-          },
-          "is_primary": {
-            "type": "boolean",
-            "description": "Whether this is the publisher's primary streaming asset.",
-            "nullable": true
-          },
-          "network": {
-            "type": "string",
-            "description": "Network identifier (CAIP-2, e.g., \"eip155:8453\")"
-          },
-          "symbol": {
-            "type": "string",
-            "description": "Asset symbol (e.g., \"USDC\")"
-          }
-        }
-      },
-      "StreamingAuthExtra": {
-        "type": "object",
-        "description": "Extra metadata for streaming authorization (x402-aligned)",
-        "required": [
-          "request_id",
-          "token_name",
-          "token_version",
-          "eip712"
-        ],
-        "properties": {
-          "eip712": {
-            "$ref": "#/components/schemas/Eip712Domain"
-          },
-          "request_id": {
-            "type": "string",
-            "description": "Unique request ID for tracking this authorization request"
-          },
-          "token_name": {
-            "type": "string",
-            "description": "Token name for EIP-712 domain"
-          },
-          "token_version": {
-            "type": "string",
-            "description": "Token version for EIP-712 domain"
-          }
-        }
-      },
-      "StreamingAuthRequirementsDataResponse": {
-        "type": "object",
-        "description": "DataResponse wrapper for streaming auth requirements (for OpenAPI schema)",
-        "required": [
-          "data"
-        ],
-        "properties": {
-          "data": {
-            "$ref": "#/components/schemas/StreamingAuthRequirementsResponse"
-          }
-        }
-      },
-      "StreamingAuthRequirementsResponse": {
-        "type": "object",
-        "description": "Response for streaming authorization requirements\n\nThis endpoint returns the information agents need to create their\nEIP-3009 `TransferWithAuthorization` signature for streaming payments.",
-        "required": [
-          "publisher_slug",
-          "pay_to",
-          "supported_assets",
-          "pricing",
-          "min_authorization",
-          "suggested_authorization",
-          "chain_id",
-          "extra"
-        ],
-        "properties": {
-          "chain_id": {
-            "type": "integer",
-            "format": "int64",
-            "description": "Chain ID for EIP-712 signing",
-            "minimum": 0
-          },
-          "extra": {
-            "$ref": "#/components/schemas/StreamingAuthExtra"
-          },
-          "min_authorization": {
-            "type": "string",
-            "description": "Minimum authorization amount in atomic units"
-          },
-          "pay_to": {
-            "type": "string",
-            "description": "Address to authorize payment TO (Seren's settlement wallet)\nThis is the `to` address in EIP-3009 TransferWithAuthorization"
-          },
-          "pricing": {
-            "$ref": "#/components/schemas/StreamingPricing"
-          },
-          "publisher_slug": {
-            "type": "string",
-            "description": "Publisher slug"
-          },
-          "suggested_authorization": {
-            "type": "string",
-            "description": "Suggested authorization amount in atomic units"
-          },
-          "supported_assets": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/StreamingAsset"
-            },
-            "description": "Supported payment assets"
-          }
-        }
-      },
-      "StreamingPricing": {
-        "type": "object",
-        "description": "Pricing information for streaming authorization",
-        "required": [
-          "base_cost_per_query",
-          "cost_per_row",
-          "cost_per_byte"
-        ],
-        "properties": {
-          "base_cost_per_query": {
-            "type": "string",
-            "description": "Base cost per query in atomic units"
-          },
-          "cost_per_byte": {
-            "type": "string",
-            "description": "Cost per byte in atomic units"
-          },
-          "cost_per_row": {
-            "type": "string",
-            "description": "Cost per row in atomic units"
-          }
-        }
       },
       "StripeChargeId": {
         "type": "string",
@@ -21928,28 +22289,6 @@
           }
         }
       },
-      "TransactionHistoryParams": {
-        "type": "object",
-        "description": "Query parameters for transaction history",
-        "properties": {
-          "limit": {
-            "type": "integer",
-            "format": "int64",
-            "description": "Maximum number of results (default: 50, max: 100)"
-          },
-          "offset": {
-            "type": "integer",
-            "format": "int64",
-            "description": "Offset for pagination"
-          },
-          "publisher_id": {
-            "type": "string",
-            "format": "uuid",
-            "description": "Filter by publisher",
-            "nullable": true
-          }
-        }
-      },
       "TransactionHistoryQuery": {
         "type": "object",
         "description": "Query params for transaction history",
@@ -22245,6 +22584,12 @@
           },
           "name": {
             "type": "string",
+            "nullable": true
+          },
+          "organization_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "If omitted, leave unchanged. If null, make global. If set, scope to organization.",
             "nullable": true
           },
           "pkce_required": {
@@ -22571,7 +22916,7 @@
           },
           "billing_model": {
             "type": "string",
-            "description": "Billing model (\"x402_per_request\", \"prepaid_credits\", \"x402_passthrough\")",
+            "description": "Billing model (\"x402_per_request\", \"prepaid_credits\", \"x402_passthrough\", \"pay_per_use\")",
             "nullable": true
           },
           "branch_id": {
@@ -22869,7 +23214,7 @@
           },
           "upstream_cost_response_path": {
             "type": "string",
-            "description": "Dot-separated path to upstream cost in response body (for prepaid passthrough billing).\nExample: \"usage.cost\"",
+            "description": "Dot-separated path to upstream cost in response body (for pay_per_use and prepaid passthrough billing).\nExample: \"usage.cost\"",
             "nullable": true
           },
           "upstream_headers": {
@@ -23175,6 +23520,47 @@
           }
         }
       },
+      "UserMe": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/UserInfo"
+          },
+          {
+            "type": "object",
+            "required": [
+              "default_organization_id"
+            ],
+            "properties": {
+              "default_organization_id": {
+                "type": "string",
+                "format": "uuid",
+                "description": "The user's default organization ID for API calls requiring an organization context.\nThis is typically the first organization the user joined (their personal org)."
+              }
+            }
+          }
+        ],
+        "description": "Response for GET /auth/me - current user info with default organization"
+      },
+      "UserMeResponse": {
+        "type": "object",
+        "description": "Generic API response wrapper with optional pagination\n\nThis wrapper provides a consistent structure for all API responses,\nmaking it easier for clients to handle responses uniformly. It supports\nboth single resources and collections, with optional pagination metadata.\n\n# Response Structure\n\n```json\n{\n\"data\": T,\n\"pagination\": { ... } // optional\n}\n```\n\n# Examples\n\n## Single Resource\n\n```rust\nuse seren_core::http::DataResponse;\nuse serde::Serialize;\n\n#[derive(Serialize)]\nstruct Project {\nid: String,\nname: String,\n}\n\nlet project = Project {\nid: \"123\".to_string(),\nname: \"My Project\".to_string(),\n};\n\nlet response = DataResponse::new(project);\n// Serializes to: {\"data\": {\"id\": \"123\", \"name\": \"My Project\"}}\n```\n\n## Collection with Pagination\n\n```rust\nuse seren_core::http::DataResponse;\nuse seren_core::pagination::PaginationMeta;\nuse serde::Serialize;\n\n#[derive(Serialize)]\nstruct Project {\nid: String,\nname: String,\n}\n\nlet projects: Vec<Project> = Vec::new();\nlet pagination = PaginationMeta {\ntotal: 0,\ncount: 0,\nlimit: 20,\noffset: 0,\nhas_more: false,\n};\n\nlet response = DataResponse::with_pagination(projects, pagination);\n// Serializes to: {\"data\": [...], \"pagination\": {\"total\": 0, \"count\": 0, \"limit\": 20, \"offset\": 0, \"has_more\": false}}\n```",
+        "required": [
+          "data"
+        ],
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/UserMe"
+          },
+          "pagination": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PaginationMeta"
+              }
+            ],
+            "nullable": true
+          }
+        }
+      },
       "UserOAuthConnectionResponse": {
         "type": "object",
         "description": "Response type for user OAuth connection (excludes tokens)",
@@ -23373,7 +23759,8 @@
           "promotional_balance_usd",
           "by_source",
           "total_purchases_cents",
-          "total_purchases_usd"
+          "total_purchases_usd",
+          "has_recovery"
         ],
         "properties": {
           "balance_atomic": {
@@ -23399,6 +23786,10 @@
           "funded_balance_usd": {
             "type": "string"
           },
+          "has_recovery": {
+            "type": "boolean",
+            "description": "Whether recovery is set up for this account"
+          },
           "promotional_balance_atomic": {
             "type": "integer",
             "format": "int64",
@@ -23406,6 +23797,11 @@
           },
           "promotional_balance_usd": {
             "type": "string"
+          },
+          "recovery_warning": {
+            "type": "string",
+            "description": "Warning if funds exist but no recovery is set up",
+            "nullable": true
           },
           "total_purchases_cents": {
             "type": "integer",
@@ -23417,6 +23813,66 @@
           },
           "wallet_address": {
             "type": "string"
+          }
+        }
+      },
+      "WalletRecoverDataResponse": {
+        "type": "object",
+        "description": "Wrapped wallet recover response for OpenAPI",
+        "required": [
+          "data"
+        ],
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/WalletRecoverResponse"
+          }
+        }
+      },
+      "WalletRecoverRequest": {
+        "type": "object",
+        "description": "Request to recover an agent account using a recovery code.\n\nUse this endpoint when you've lost access to your API key but have your\nrecovery code (provided when setting up wallet recovery or on first deposit).",
+        "required": [
+          "recovery_code"
+        ],
+        "properties": {
+          "recovery_code": {
+            "type": "string",
+            "description": "Recovery code (24 characters). Dashes/whitespace are allowed; letters are case-insensitive."
+          }
+        }
+      },
+      "WalletRecoverResponse": {
+        "type": "object",
+        "description": "Response from wallet recovery endpoint.",
+        "required": [
+          "success",
+          "message",
+          "agent",
+          "setup",
+          "skill_files",
+          "new_recovery_code"
+        ],
+        "properties": {
+          "agent": {
+            "$ref": "#/components/schemas/AgentInfo"
+          },
+          "message": {
+            "type": "string",
+            "description": "Message about recovery result"
+          },
+          "new_recovery_code": {
+            "type": "string",
+            "description": "New recovery code (the old one has been rotated). Save this securely!"
+          },
+          "setup": {
+            "$ref": "#/components/schemas/SetupInstructions"
+          },
+          "skill_files": {
+            "$ref": "#/components/schemas/SkillFiles"
+          },
+          "success": {
+            "type": "boolean",
+            "description": "Whether recovery was successful"
           }
         }
       },
@@ -23841,6 +24297,22 @@
     {
       "name": "agent-wallet",
       "description": "Wallet (funded + promotional)"
+    },
+    {
+      "name": "publisher-payments",
+      "description": "Publisher payment APIs for first-party services"
+    },
+    {
+      "name": "publishers",
+      "description": "Unified publisher proxy API"
+    },
+    {
+      "name": "mcp",
+      "description": "MCP (Model Context Protocol) publisher integration"
+    },
+    {
+      "name": "skill",
+      "description": "Endpoints included in skill.md for AI agent discovery"
     }
   ]
 }
