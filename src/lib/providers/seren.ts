@@ -4,6 +4,7 @@
 import { apiBase } from "@/lib/config";
 import { appFetch } from "@/lib/fetch";
 import { getToken } from "@/services/auth";
+import { updateBalanceFromError } from "@/stores/wallet.store";
 import type {
   AuthOptions,
   ChatMessageWithTools,
@@ -17,6 +18,44 @@ import type {
 } from "./types";
 
 const PUBLISHER_SLUG = "seren-models";
+
+/**
+ * User-friendly error message for credits/payment issues.
+ * Hides technical OpenRouter details from end users.
+ */
+const CREDITS_ERROR_MESSAGE =
+  "SerenModels is not available currently. Please contact the Seren team at hello@serendb.com with this alert.";
+
+/**
+ * Check if an error status indicates a credits/payment issue.
+ */
+function isCreditsError(status: number, rawError: string): boolean {
+  // 402 Payment Required
+  if (status === 402) return true;
+  // Check for credit-related keywords in error message
+  const creditKeywords = ["credits", "credit", "afford", "payment", "billing"];
+  const lowerError = rawError.toLowerCase();
+  return creditKeywords.some((kw) => lowerError.includes(kw));
+}
+
+/**
+ * Parse 402 error response and update wallet balance if available.
+ * The 402 response contains the actual balance, so we update the UI immediately.
+ */
+function handleInsufficientBalanceError(errorText: string): void {
+  try {
+    const data = JSON.parse(errorText);
+    // The 402 response includes availableBalanceAtomic as a string
+    if (data.availableBalanceAtomic !== undefined) {
+      const balanceAtomic = Number.parseInt(data.availableBalanceAtomic, 10);
+      if (!Number.isNaN(balanceAtomic)) {
+        updateBalanceFromError(balanceAtomic);
+      }
+    }
+  } catch {
+    // Failed to parse error response, ignore
+  }
+}
 
 /**
  * Normalize old model IDs to current OpenRouter format.
@@ -285,6 +324,10 @@ export const serenProvider: ProviderAdapter = {
 
     if (!response.ok) {
       const errorText = await response.text().catch(() => "");
+      // Update displayed balance from 402 error response
+      if (response.status === 402) {
+        handleInsufficientBalanceError(errorText);
+      }
       throw new Error(`Seren request failed: ${response.status} ${errorText}`);
     }
 
@@ -296,8 +339,16 @@ export const serenProvider: ProviderAdapter = {
       const error = body?.error as Record<string, unknown> | undefined;
       if (error) {
         const metadata = (error.metadata as Record<string, unknown>) || {};
+        const rawError = String(
+          metadata.raw || error.message || "Unknown error",
+        );
+
+        // Show user-friendly message for credits/payment issues
+        if (isCreditsError(data.status, rawError)) {
+          throw new Error(CREDITS_ERROR_MESSAGE);
+        }
+
         const providerName = metadata.provider_name || "Provider";
-        const rawError = metadata.raw || error.message || "Unknown error";
         throw new Error(`${providerName} error (${data.status}): ${rawError}`);
       }
       throw new Error(`Seren upstream error: ${data.status}`);
@@ -338,6 +389,10 @@ export const serenProvider: ProviderAdapter = {
         body: errorText,
         model,
       });
+      // Update displayed balance from 402 error response
+      if (response.status === 402) {
+        handleInsufficientBalanceError(errorText);
+      }
       throw new Error(
         `Seren streaming failed: ${response.status} - ${errorText}`,
       );
@@ -466,6 +521,10 @@ export async function sendMessageWithTools(
 
   if (!response.ok) {
     const errorText = await response.text().catch(() => "");
+    // Update displayed balance from 402 error response
+    if (response.status === 402) {
+      handleInsufficientBalanceError(errorText);
+    }
     throw new Error(`Seren request failed: ${response.status} ${errorText}`);
   }
 
@@ -481,8 +540,16 @@ export async function sendMessageWithTools(
     const error = body?.error as Record<string, unknown> | undefined;
     if (error) {
       const metadata = (error.metadata as Record<string, unknown>) || {};
+      const rawError = String(
+        metadata.raw || error.message || "Unknown error",
+      );
+
+      // Show user-friendly message for credits/payment issues
+      if (isCreditsError(data.status, rawError)) {
+        throw new Error(CREDITS_ERROR_MESSAGE);
+      }
+
       const providerName = metadata.provider_name || "Provider";
-      const rawError = metadata.raw || error.message || "Unknown error";
       throw new Error(`${providerName} error (${data.status}): ${rawError}`);
     }
     throw new Error(`Seren upstream error: ${data.status}`);
