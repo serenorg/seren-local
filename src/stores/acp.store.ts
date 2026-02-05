@@ -6,6 +6,12 @@ import { onRuntimeEvent } from "@/lib/bridge";
 
 type UnlistenFn = () => void;
 
+/** Per-session ready promises — resolved when backend emits "ready" status */
+const sessionReadyPromises = new Map<
+  string,
+  { promise: Promise<void>; resolve: () => void }
+>();
+
 import type {
   AcpEvent,
   AcpSessionInfo,
@@ -282,6 +288,16 @@ export const acpStore = {
       setState("sessions", info.id, session);
       setState("activeSessionId", info.id);
 
+      // Create a ready promise that sendPrompt can await
+      let readyResolve: () => void;
+      const readyPromiseObj = {
+        promise: new Promise<void>((resolve) => {
+          readyResolve = resolve;
+        }),
+        resolve: () => readyResolve(),
+      };
+      sessionReadyPromises.set(info.id, readyPromiseObj);
+
       // Subscribe once to all ACP events and route by sessionId.
       // This avoids missing chunks due to filtering and scales better across sessions.
       if (!globalUnsubscribe) {
@@ -320,7 +336,12 @@ export const acpStore = {
         }
       } catch (_timeoutError) {
         console.warn("[AcpStore] Timeout waiting for ready, proceeding anyway");
-        // The session might still work, just proceed
+        // Resolve the ready promise so sendPrompt doesn't block forever
+        const entry = sessionReadyPromises.get(info.id);
+        if (entry) {
+          entry.resolve();
+          sessionReadyPromises.delete(info.id);
+        }
       }
 
       setState("isLoading", false);
@@ -350,6 +371,9 @@ export const acpStore = {
     } catch (error) {
       console.error("Failed to terminate session:", error);
     }
+
+    // Clean up ready promise if still pending
+    sessionReadyPromises.delete(sessionId);
 
     // Remove from state using produce to properly delete the key
     setState(
@@ -404,6 +428,16 @@ export const acpStore = {
       return;
     }
 
+    // Wait for session to be ready before sending prompt
+    const readyEntry = sessionReadyPromises.get(sessionId);
+    if (readyEntry) {
+      console.info(
+        `[AcpStore] sendPrompt: waiting for session ${sessionId} to be ready...`,
+      );
+      await readyEntry.promise;
+      console.info("[AcpStore] sendPrompt: session is now ready");
+    }
+
     // Optimistically mark as prompting so the UI can show a loading state
     // immediately, even before backend events arrive.
     setState(
@@ -435,8 +469,67 @@ export const acpStore = {
       console.log("[AcpStore] sendPrompt completed successfully");
     } catch (error) {
       console.error("[AcpStore] sendPrompt error:", error);
-      const message =
-        error instanceof Error ? error.message : String(error);
+      const message = error instanceof Error ? error.message : String(error);
+
+      // Auto-recover from dead/zombie sessions
+      if (
+        message.includes("Worker thread dropped") ||
+        message.includes("not found") ||
+        message.includes("Session not initialized")
+      ) {
+        console.info(
+          "[AcpStore] Session appears dead, attempting auto-recovery...",
+        );
+
+        // Preserve conversation history and cwd before cleanup
+        const existingMessages = [...session.messages];
+        const cwd = session.cwd;
+        const agentType = session.info.agentType;
+
+        // Clean up the dead session
+        await this.terminateSession(sessionId);
+
+        // Spawn a fresh session
+        const newSessionId = await this.spawnSession(cwd, agentType);
+        if (newSessionId) {
+          // Restore conversation history to the new session (excluding the
+          // user message we just added, since we'll retry the prompt)
+          const historyToRestore = existingMessages.filter(
+            (m) => m.id !== userMessage.id,
+          );
+          if (historyToRestore.length > 0) {
+            setState("sessions", newSessionId, "messages", historyToRestore);
+          }
+
+          // Retry the prompt on the new session
+          console.info(
+            `[AcpStore] Retrying prompt on new session ${newSessionId}`,
+          );
+          try {
+            // Add the user message to the new session
+            setState("sessions", newSessionId, "messages", (msgs) => [
+              ...msgs,
+              userMessage,
+            ]);
+            await acpService.sendPrompt(newSessionId, prompt, context);
+            console.log("[AcpStore] Retry succeeded on new session");
+            return;
+          } catch (retryError) {
+            console.error("[AcpStore] Retry failed:", retryError);
+            const retryMessage =
+              retryError instanceof Error
+                ? retryError.message
+                : String(retryError);
+            this.addErrorMessage(newSessionId, retryMessage);
+            return;
+          }
+        }
+
+        // Spawn failed, show original error
+        setState("error", "Session died and could not be restarted.");
+        return;
+      }
+
       this.addErrorMessage(sessionId, message);
     }
   },
@@ -633,6 +726,14 @@ export const acpStore = {
 
       case "promptComplete":
         this.finalizeStreamingContent(sessionId);
+        // Transition status back to "ready" so queued messages can be processed
+        setState(
+          "sessions",
+          sessionId,
+          "info",
+          "status",
+          "ready" as SessionStatus,
+        );
         break;
 
       case "sessionStatus":
@@ -751,6 +852,14 @@ export const acpStore = {
 
   handleStatusChange(sessionId: string, status: SessionStatus) {
     setState("sessions", sessionId, "info", "status", status);
+
+    if (status === "ready") {
+      const entry = sessionReadyPromises.get(sessionId);
+      if (entry) {
+        entry.resolve();
+        sessionReadyPromises.delete(sessionId);
+      }
+    }
   },
 
   finalizeStreamingContent(sessionId: string) {
