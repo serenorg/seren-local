@@ -236,6 +236,25 @@ code {
   }
 }
 
+/* Permission required indicator - pulsing orange dot */
+@keyframes permission-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(251, 146, 60, 0.7);
+  }
+  50% {
+    transform: scale(1.1);
+    box-shadow: 0 0 0 4px rgba(251, 146, 60, 0);
+  }
+}
+
+.permission-indicator {
+  @apply w-2 h-2 rounded-full shrink-0;
+  background-color: #fb923c;
+  animation: permission-pulse 1.5s ease-in-out infinite;
+}
+
 /* Bouncing dot animation for thinking indicator */
 @keyframes bounce-dot {
   0%,

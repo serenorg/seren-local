@@ -4,6 +4,7 @@
 import type { Component } from "solid-js";
 import {
   createEffect,
+  createMemo,
   createSignal,
   For,
   on,
@@ -17,6 +18,7 @@ import { VoiceInputButton } from "@/components/chat/VoiceInputButton";
 import { getCompletions, parseCommand } from "@/lib/commands/parser";
 import type { CommandContext } from "@/lib/commands/types";
 import { openExternalLink } from "@/lib/external-link";
+import { formatDurationWithVerb } from "@/lib/format-duration";
 import { pickAndReadImages, toDataUrl } from "@/lib/images/attachments";
 import type { ImageAttachment } from "@/lib/providers/types";
 import { escapeHtmlWithLinks, renderMarkdown } from "@/lib/render-markdown";
@@ -46,8 +48,19 @@ export const AgentChat: Component<AgentChatProps> = (props) => {
   );
   const [commandStatus, setCommandStatus] = createSignal<string | null>(null);
   const [commandPopupIndex, setCommandPopupIndex] = createSignal(0);
+  const [historyIndex, setHistoryIndex] = createSignal(-1);
+  const [savedInput, setSavedInput] = createSignal("");
+  const [isAttaching, setIsAttaching] = createSignal(false);
   let inputRef: HTMLTextAreaElement | undefined;
   let messagesRef: HTMLDivElement | undefined;
+
+  // Build reversed list of user prompts for Up/Down arrow navigation
+  const userMessageHistory = createMemo(() =>
+    acpStore.messages
+      .filter((m) => m.type === "user")
+      .map((m) => m.content)
+      .reverse(),
+  );
 
   const onPickImages = () => handleAttachImages();
   onMount(() => {
@@ -55,6 +68,20 @@ export const AgentChat: Component<AgentChatProps> = (props) => {
   });
   onCleanup(() => {
     window.removeEventListener("seren:pick-images", onPickImages);
+    // Save agent input when component unmounts (e.g., when switching to chat mode)
+    const currentInput = input();
+    if (currentInput) {
+      acpStore.setPendingAgentInput(currentInput);
+    }
+  });
+
+  // Restore pending agent input when component mounts (e.g., when switching back to agent mode)
+  createEffect(() => {
+    const pending = acpStore.pendingAgentInput;
+    if (pending) {
+      setInput(pending);
+      acpStore.setPendingAgentInput(null);
+    }
   });
 
   const hasSession = () => acpStore.activeSession !== null;
@@ -116,9 +143,23 @@ export const AgentChat: Component<AgentChatProps> = (props) => {
   };
 
   const handleAttachImages = async () => {
-    const images = await pickAndReadImages();
-    if (images.length > 0) {
-      setAttachedImages((prev) => [...prev, ...images]);
+    // Prevent multiple concurrent attach operations
+    if (isAttaching()) return;
+
+    setIsAttaching(true);
+    try {
+      const images = await pickAndReadImages();
+      if (images.length > 0) {
+        setAttachedImages((prev) => [...prev, ...images]);
+      }
+    } catch (error) {
+      console.error("[AgentChat] handleAttachImages error:", error);
+      setCommandStatus(
+        `Failed to attach files: ${error instanceof Error ? error.message : "Unknown error"}`,
+      );
+      setTimeout(() => setCommandStatus(null), 5000);
+    } finally {
+      setIsAttaching(false);
     }
   };
 
@@ -253,6 +294,38 @@ export const AgentChat: Component<AgentChatProps> = (props) => {
       }
     }
 
+    // Up/Down arrow prompt history navigation
+    const history = userMessageHistory();
+    if (event.key === "ArrowUp" && history.length > 0) {
+      const textarea = event.currentTarget as HTMLTextAreaElement;
+      if (textarea.selectionStart === 0 || input() === "") {
+        event.preventDefault();
+        if (historyIndex() === -1) {
+          setSavedInput(input());
+        }
+        const newIndex = Math.min(historyIndex() + 1, history.length - 1);
+        setHistoryIndex(newIndex);
+        setInput(history[newIndex]);
+        return;
+      }
+    }
+
+    if (event.key === "ArrowDown" && historyIndex() >= 0) {
+      const textarea = event.currentTarget as HTMLTextAreaElement;
+      if (textarea.selectionStart === textarea.value.length) {
+        event.preventDefault();
+        const newIndex = historyIndex() - 1;
+        setHistoryIndex(newIndex);
+        if (newIndex < 0) {
+          setInput(savedInput());
+          setSavedInput("");
+        } else {
+          setInput(history[newIndex]);
+        }
+        return;
+      }
+    }
+
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
       sendMessage();
@@ -271,15 +344,24 @@ export const AgentChat: Component<AgentChatProps> = (props) => {
           </article>
         );
 
-      case "assistant":
+      case "assistant": {
+        const durationDisplay = message.duration
+          ? formatDurationWithVerb(message.duration)
+          : null;
         return (
           <article class="px-5 py-4 border-b border-[#21262d]">
             <div
               class="text-sm leading-relaxed text-[#e6edf3] break-words [&_p]:m-0 [&_p]:mb-3 [&_p:last-child]:mb-0 [&_code]:bg-[#21262d] [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:rounded [&_code]:font-mono [&_code]:text-[13px] [&_pre]:bg-[#161b22] [&_pre]:border [&_pre]:border-[#30363d] [&_pre]:rounded-lg [&_pre]:p-3 [&_pre]:my-3 [&_pre]:overflow-x-auto [&_pre_code]:bg-transparent [&_pre_code]:p-0 [&_pre_code]:text-[13px] [&_pre_code]:leading-normal [&_ul]:my-2 [&_ul]:pl-6 [&_ol]:my-2 [&_ol]:pl-6 [&_li]:my-1 [&_blockquote]:border-l-[3px] [&_blockquote]:border-[#30363d] [&_blockquote]:my-3 [&_blockquote]:pl-4 [&_blockquote]:text-[#8b949e] [&_a]:text-[#58a6ff] [&_a]:no-underline [&_a:hover]:underline"
               innerHTML={renderMarkdown(message.content)}
             />
+            <Show when={durationDisplay}>
+              <div class="mt-2 text-xs text-[#8b949e]">
+                &#10043; {durationDisplay!.verb} for {durationDisplay!.duration}
+              </div>
+            </Show>
           </article>
         );
+      }
 
       case "thought":
         return (
@@ -450,24 +532,6 @@ export const AgentChat: Component<AgentChatProps> = (props) => {
           >
             <For each={acpStore.messages}>{renderMessage}</For>
 
-            {/* Diff proposal dialogs */}
-            <For each={acpStore.pendingDiffProposals}>
-              {(proposal) => (
-                <div class="px-5 py-2">
-                  <DiffProposalDialog proposal={proposal} />
-                </div>
-              )}
-            </For>
-
-            {/* Permission request dialogs */}
-            <For each={acpStore.pendingPermissions}>
-              {(perm) => (
-                <div class="px-5 py-2">
-                  <AcpPermissionDialog permission={perm} />
-                </div>
-              )}
-            </For>
-
             {/* Loading placeholder while waiting for first chunk */}
             <Show
               when={
@@ -503,6 +567,44 @@ export const AgentChat: Component<AgentChatProps> = (props) => {
           </Show>
         </Show>
       </div>
+
+      {/* Permission and diff proposal dialogs — rendered outside the scroll
+          container so they stay visible while the agent streams content. */}
+      <Show
+        when={
+          acpStore.pendingDiffProposals.some(
+            (p) => p.sessionId === acpStore.activeSessionId,
+          ) ||
+          acpStore.pendingPermissions.some(
+            (p) => p.sessionId === acpStore.activeSessionId,
+          )
+        }
+      >
+        <div class="border-t border-[#30363d] bg-[#0d1117] max-h-[40vh] overflow-y-auto">
+          <For
+            each={acpStore.pendingDiffProposals.filter(
+              (p) => p.sessionId === acpStore.activeSessionId,
+            )}
+          >
+            {(proposal) => (
+              <div class="px-5 py-2">
+                <DiffProposalDialog proposal={proposal} />
+              </div>
+            )}
+          </For>
+          <For
+            each={acpStore.pendingPermissions.filter(
+              (p) => p.sessionId === acpStore.activeSessionId,
+            )}
+          >
+            {(perm) => (
+              <div class="px-5 py-2">
+                <AcpPermissionDialog permission={perm} />
+              </div>
+            )}
+          </For>
+        </div>
+      </Show>
 
       {/* Error Display */}
       <Show when={sessionError()}>
@@ -574,6 +676,7 @@ export const AgentChat: Component<AgentChatProps> = (props) => {
               images={attachedImages()}
               onAttach={handleAttachImages}
               onRemove={handleRemoveImage}
+              isLoading={isAttaching()}
             />
             <div class="relative">
               <SlashCommandPopup
