@@ -46,6 +46,8 @@ export interface Message {
   status?: "pending" | "streaming" | "complete" | "error";
   error?: string | null;
   attemptCount?: number;
+  /** Duration in milliseconds for how long the response took */
+  duration?: number;
   request?: {
     prompt: string;
     context?: ChatContext;
@@ -112,8 +114,9 @@ export async function sendMessage(
   content: string,
   model: string,
   context?: ChatContext,
+  history?: Message[],
 ): Promise<string> {
-  const request = buildChatRequest(content, model, context);
+  const request = buildChatRequest(content, model, context, history);
   const providerId = providerStore.activeProvider;
 
   return sendProviderMessage(providerId, request);
@@ -121,13 +124,15 @@ export async function sendMessage(
 
 /**
  * Stream a message using the active provider.
+ * Includes conversation history for multi-turn context.
  */
 export async function* streamMessage(
   content: string,
   model: string,
   context?: ChatContext,
+  history?: Message[],
 ): AsyncGenerator<string> {
-  const request = buildChatRequest(content, model, context);
+  const request = buildChatRequest(content, model, context, history);
   request.stream = true;
   const providerId = providerStore.activeProvider;
 
@@ -264,10 +269,21 @@ export async function* streamMessageWithTools(
   const tools = enableTools ? getAllTools(model) : undefined;
   const toolCount = tools?.length ?? 0;
 
+  // Seren MCP publishers context - added to all prompts to prevent confusion
+  const serenPublishersContext =
+    "\n\nIMPORTANT - Seren MCP Publishers Context:\n" +
+    "This application connects to Seren MCP publishers - third-party data services accessible through Seren. " +
+    "When users mention publisher names like 'Apollo', 'Perplexity', 'Firecrawl', etc., they are referring to Seren MCP publishers, NOT general technologies with similar names:\n" +
+    "- Apollo = Sales intelligence platform for contacts/leads (NOT Apollo GraphQL)\n" +
+    "- Perplexity = AI-powered search and research tool\n" +
+    "- Firecrawl = Web scraping and crawling service\n" +
+    "Always interpret publisher references in the Seren MCP context unless the user explicitly asks about the technology/framework itself.";
+
   // Build system message - conditional based on actual tool availability
   let systemContent: string;
 
   if (toolCount > 0) {
+    // Tools are available - describe capabilities accurately
     systemContent =
       `You are a helpful coding assistant running inside Seren Desktop with access to ${toolCount} tools. ` +
       "You can read, write, and create files and directories on the user's computer using the available tools. " +
@@ -279,12 +295,15 @@ export async function* streamMessageWithTools(
       "'https://html.duckduckgo.com/html/?q=your+search+terms' to find information.\n" +
       "- For fetching web pages: use seren_web_fetch with the page URL.\n" +
       "- Chain tool calls when needed: search first to find URLs, then fetch those URLs for full content.\n" +
-      "- NEVER say 'I cannot browse the web' or 'I need a URL' — you CAN search by constructing search engine URLs.";
+      "- NEVER say 'I cannot browse the web' or 'I need a URL' — you CAN search by constructing search engine URLs." +
+      serenPublishersContext;
   } else {
+    // No tools available - don't claim tool capabilities
     systemContent =
       "You are a helpful coding assistant running inside Seren Desktop. " +
       "Note: File system tools are currently not available. " +
-      "You can help with code questions, explanations, and provide code snippets, but cannot directly read or write files.";
+      "You can help with code questions, explanations, and provide code snippets, but cannot directly read or write files." +
+      serenPublishersContext;
   }
 
   // Add user-provided context if available

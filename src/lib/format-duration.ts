@@ -26,7 +26,7 @@ const DURATION_VERBS = [
   "Deduced",
   "Inferred",
 
-  // Cognitive (quirky)
+  // Cognitive (quirky) - ~18 unique
   "Cerebrated",
   "Cogitated",
   "Ruminated",
@@ -50,7 +50,7 @@ const DURATION_VERBS = [
   "Built",
   "Cooked",
 
-  // Physical metaphors (quirky)
+  // Physical metaphors (quirky) - ~12+
   "Simmered",
   "Forged",
   "Marinated",
@@ -68,7 +68,7 @@ const DURATION_VERBS = [
   "Woven",
   "Tempered",
 
-  // Technical/Creative
+  // Technical/Creative - ~22
   "Synthesized",
   "Composed",
   "Formulated",

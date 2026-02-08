@@ -1,9 +1,10 @@
 // ABOUTME: Seren Models provider adapter for chat completions.
-// ABOUTME: Routes requests through Seren's /agent/api and /agent/stream endpoints.
+// ABOUTME: Routes requests through Seren's /publishers endpoint.
 
 import { apiBase } from "@/lib/config";
 import { appFetch } from "@/lib/fetch";
 import { getToken } from "@/services/auth";
+import { updateBalanceFromError } from "@/stores/wallet.store";
 import type {
   AuthOptions,
   ChatMessageWithTools,
@@ -17,8 +18,44 @@ import type {
 } from "./types";
 
 const PUBLISHER_SLUG = "seren-models";
-const AGENT_API_ENDPOINT = `${apiBase}/agent/api`;
-const AGENT_STREAM_ENDPOINT = `${apiBase}/agent/stream`;
+
+/**
+ * User-friendly error message for credits/payment issues.
+ * Hides technical OpenRouter details from end users.
+ */
+const CREDITS_ERROR_MESSAGE =
+  "SerenModels is not available currently. Please contact the Seren team at hello@serendb.com with this alert.";
+
+/**
+ * Check if an error status indicates a credits/payment issue.
+ */
+function isCreditsError(status: number, rawError: string): boolean {
+  // 402 Payment Required
+  if (status === 402) return true;
+  // Check for credit-related keywords in error message
+  const creditKeywords = ["credits", "credit", "afford", "payment", "billing"];
+  const lowerError = rawError.toLowerCase();
+  return creditKeywords.some((kw) => lowerError.includes(kw));
+}
+
+/**
+ * Parse 402 error response and update wallet balance if available.
+ * The 402 response contains the actual balance, so we update the UI immediately.
+ */
+function handleInsufficientBalanceError(errorText: string): void {
+  try {
+    const data = JSON.parse(errorText);
+    // The 402 response includes availableBalanceAtomic as a string
+    if (data.availableBalanceAtomic !== undefined) {
+      const balanceAtomic = Number.parseInt(data.availableBalanceAtomic, 10);
+      if (!Number.isNaN(balanceAtomic)) {
+        updateBalanceFromError(balanceAtomic);
+      }
+    }
+  } catch {
+    // Failed to parse error response, ignore
+  }
+}
 
 /**
  * Normalize old model IDs to current OpenRouter format.
@@ -41,17 +78,20 @@ function normalizeModelId(modelId: string): string {
   return migrations[modelId] || modelId;
 }
 
-interface AgentApiPayload {
-  publisher: string;
-  path: string;
-  method: string;
-  body?: {
-    model: string;
-    messages: ChatRequest["messages"] | ChatMessageWithTools[];
-    stream: boolean;
-    tools?: ToolDefinition[];
-    tool_choice?: ToolChoice;
-  };
+/** Request body for chat completions */
+interface ChatCompletionRequest {
+  model: string;
+  messages: ChatRequest["messages"] | ChatMessageWithTools[];
+  stream: boolean;
+  tools?: ToolDefinition[];
+  tool_choice?: ToolChoice;
+}
+
+/** Wrapped response from the /publishers endpoint */
+interface GatewayResponse<T> {
+  status: number;
+  body: T;
+  cost: string;
 }
 
 /**
@@ -262,44 +302,56 @@ export const serenProvider: ProviderAdapter = {
     const token = await requireToken();
     const model = normalizeModelId(request.model);
 
-    const agentPayload: AgentApiPayload = {
-      publisher: PUBLISHER_SLUG,
-      path: "/chat/completions",
-      method: "POST",
-      body: {
-        model,
-        messages: request.messages,
-        stream: false,
-        tools: request.tools,
-        tool_choice: request.tool_choice,
-      },
+    const payload: ChatCompletionRequest = {
+      model,
+      messages: request.messages,
+      stream: false,
+      tools: request.tools,
+      tool_choice: request.tool_choice,
     };
 
-    const response = await appFetch(AGENT_API_ENDPOINT, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-        // For JWT auth, SerenCore derives the wallet from the authenticated identity
-        "X-AGENT-WALLET": "prepaid",
+    const response = await appFetch(
+      `${apiBase}/publishers/${PUBLISHER_SLUG}/chat/completions`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(payload),
       },
-      body: JSON.stringify(agentPayload),
-    });
+    );
 
     if (!response.ok) {
       const errorText = await response.text().catch(() => "");
+      // Update displayed balance from 402 error response
+      if (response.status === 402) {
+        handleInsufficientBalanceError(errorText);
+      }
       throw new Error(`Seren request failed: ${response.status} ${errorText}`);
     }
 
-    const data = await response.json();
+    const data = (await response.json()) as GatewayResponse<unknown>;
 
     // Check for wrapped error responses (HTTP 200 but error in body)
-    if (data.status && data.status >= 400 && data.body?.error) {
-      const error = data.body.error;
-      const metadata = error.metadata || {};
-      const providerName = metadata.provider_name || "Provider";
-      const rawError = metadata.raw || error.message || "Unknown error";
-      throw new Error(`${providerName} error (${data.status}): ${rawError}`);
+    if (data.status && data.status >= 400) {
+      const body = data.body as Record<string, unknown> | undefined;
+      const error = body?.error as Record<string, unknown> | undefined;
+      if (error) {
+        const metadata = (error.metadata as Record<string, unknown>) || {};
+        const rawError = String(
+          metadata.raw || error.message || "Unknown error",
+        );
+
+        // Show user-friendly message for credits/payment issues
+        if (isCreditsError(data.status, rawError)) {
+          throw new Error(CREDITS_ERROR_MESSAGE);
+        }
+
+        const providerName = metadata.provider_name || "Provider";
+        throw new Error(`${providerName} error (${data.status}): ${rawError}`);
+      }
+      throw new Error(`Seren upstream error: ${data.status}`);
     }
 
     return extractContent(data);
@@ -312,33 +364,35 @@ export const serenProvider: ProviderAdapter = {
     const token = await requireToken();
     const model = normalizeModelId(request.model);
 
-    const agentPayload: AgentApiPayload = {
-      publisher: PUBLISHER_SLUG,
-      path: "/chat/completions",
-      method: "POST",
-      body: {
-        model,
-        messages: request.messages,
-        stream: true,
-      },
+    const payload: ChatCompletionRequest = {
+      model,
+      messages: request.messages,
+      stream: true,
     };
 
-    const response = await appFetch(AGENT_STREAM_ENDPOINT, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
+    const response = await appFetch(
+      `${apiBase}/publishers/${PUBLISHER_SLUG}/chat/completions`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(payload),
       },
-      body: JSON.stringify(agentPayload),
-    });
+    );
 
     if (!response.ok || !response.body) {
       const errorText = await response.text().catch(() => "");
       console.error("[Seren Stream Error]", {
         status: response.status,
         body: errorText,
-        payload: agentPayload,
+        model,
       });
+      // Update displayed balance from 402 error response
+      if (response.status === 402) {
+        handleInsufficientBalanceError(errorText);
+      }
       throw new Error(
         `Seren streaming failed: ${response.status} - ${errorText}`,
       );
@@ -391,37 +445,34 @@ export const serenProvider: ProviderAdapter = {
       const token = await getToken();
       if (!token) return DEFAULT_MODELS;
 
-      // GET requests don't need a body - omit it entirely
-      const agentPayload: AgentApiPayload = {
-        publisher: PUBLISHER_SLUG,
-        path: "/models",
-        method: "GET",
-      };
-
-      const response = await appFetch(AGENT_API_ENDPOINT, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-          // For JWT auth, SerenCore derives the wallet from the authenticated identity
-          "X-AGENT-WALLET": "prepaid",
+      const response = await appFetch(
+        `${apiBase}/publishers/${PUBLISHER_SLUG}/models`,
+        {
+          method: "GET",
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
         },
-        body: JSON.stringify(agentPayload),
-      });
+      );
 
       if (!response.ok) {
         return DEFAULT_MODELS;
       }
 
-      const data = await response.json();
-      if (Array.isArray(data.data)) {
-        return data.data.map(
-          (m: { id: string; name?: string; context_length?: number }) => ({
-            id: m.id,
-            name: m.name || m.id,
-            contextWindow: m.context_length || 128000,
-          }),
-        );
+      const result = (await response.json()) as GatewayResponse<{
+        data?: Array<{ id: string; name?: string; context_length?: number }>;
+      }>;
+
+      // Unwrap gateway response
+      const data = result.body || result;
+      if (Array.isArray((data as { data?: unknown[] }).data)) {
+        return (
+          data as { data: Array<{ id: string; name?: string; context_length?: number }> }
+        ).data.map((m) => ({
+          id: m.id,
+          name: m.name || m.id,
+          contextWindow: m.context_length || 128000,
+        }));
       }
 
       return DEFAULT_MODELS;
@@ -448,48 +499,60 @@ export async function sendMessageWithTools(
   const token = await requireToken();
   const normalizedModel = normalizeModelId(model);
 
-  const agentPayload: AgentApiPayload = {
-    publisher: PUBLISHER_SLUG,
-    path: "/chat/completions",
-    method: "POST",
-    body: {
-      model: normalizedModel,
-      messages,
-      stream: false,
-      tools,
-      tool_choice: toolChoice,
-    },
+  const payload: ChatCompletionRequest = {
+    model: normalizedModel,
+    messages,
+    stream: false,
+    tools,
+    tool_choice: toolChoice,
   };
 
-  const response = await appFetch(AGENT_API_ENDPOINT, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`,
-      // For JWT auth, SerenCore derives the wallet from the authenticated identity
-      "X-AGENT-WALLET": "prepaid",
+  const response = await appFetch(
+    `${apiBase}/publishers/${PUBLISHER_SLUG}/chat/completions`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(payload),
     },
-    body: JSON.stringify(agentPayload),
-  });
+  );
 
   if (!response.ok) {
     const errorText = await response.text().catch(() => "");
+    // Update displayed balance from 402 error response
+    if (response.status === 402) {
+      handleInsufficientBalanceError(errorText);
+    }
     throw new Error(`Seren request failed: ${response.status} ${errorText}`);
   }
 
-  const data = await response.json();
+  const data = (await response.json()) as GatewayResponse<unknown>;
   console.log(
     "[sendMessageWithTools] Raw API response:",
     JSON.stringify(data, null, 2),
   );
 
   // Check for wrapped error responses (HTTP 200 but error in body)
-  if (data.status && data.status >= 400 && data.body?.error) {
-    const error = data.body.error;
-    const metadata = error.metadata || {};
-    const providerName = metadata.provider_name || "Provider";
-    const rawError = metadata.raw || error.message || "Unknown error";
-    throw new Error(`${providerName} error (${data.status}): ${rawError}`);
+  if (data.status && data.status >= 400) {
+    const body = data.body as Record<string, unknown> | undefined;
+    const error = body?.error as Record<string, unknown> | undefined;
+    if (error) {
+      const metadata = (error.metadata as Record<string, unknown>) || {};
+      const rawError = String(
+        metadata.raw || error.message || "Unknown error",
+      );
+
+      // Show user-friendly message for credits/payment issues
+      if (isCreditsError(data.status, rawError)) {
+        throw new Error(CREDITS_ERROR_MESSAGE);
+      }
+
+      const providerName = metadata.provider_name || "Provider";
+      throw new Error(`${providerName} error (${data.status}): ${rawError}`);
+    }
+    throw new Error(`Seren upstream error: ${data.status}`);
   }
 
   const parsed = extractChatResponse(data);

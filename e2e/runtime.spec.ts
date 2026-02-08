@@ -18,7 +18,7 @@ test.describe("Runtime embedded SPA", () => {
   });
 
   test("API proxy returns publishers", async ({ request }) => {
-    const res = await request.get("/api/agent/publishers?limit=1");
+    const res = await request.get("/api/publishers?limit=1");
     expect(res.ok()).toBeTruthy();
     const body = await res.json();
     expect(body.data).toBeDefined();

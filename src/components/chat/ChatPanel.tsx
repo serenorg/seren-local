@@ -11,6 +11,7 @@ import {
 } from "solid-js";
 import { SignIn } from "@/components/auth/SignIn";
 import { VoiceInputButton } from "@/components/chat/VoiceInputButton";
+import { ResizableTextarea } from "@/components/common/ResizableTextarea";
 import { FileTree } from "@/components/sidebar/FileTree";
 import { openExternalLink } from "@/lib/external-link";
 import {
@@ -18,6 +19,7 @@ import {
   openFileInTab,
   openFolder,
 } from "@/lib/files/service";
+import { formatDurationWithVerb } from "@/lib/format-duration";
 import { escapeHtmlWithLinks, renderMarkdown } from "@/lib/render-markdown";
 import { catalog, type Publisher } from "@/services/catalog";
 import {
@@ -77,6 +79,7 @@ interface StreamingSession {
   context?: ChatContext;
   stream: AsyncGenerator<string>;
   toolsEnabled: false;
+  startTime: number;
 }
 
 interface ToolStreamingSession {
@@ -87,6 +90,7 @@ interface ToolStreamingSession {
   context?: ChatContext;
   stream: AsyncGenerator<ToolStreamEvent>;
   toolsEnabled: true;
+  startTime: number;
 }
 
 type ActiveStreamingSession = StreamingSession | ToolStreamingSession;
@@ -182,16 +186,24 @@ export const ChatPanel: Component<ChatPanelProps> = (_props) => {
 
     const isMod = event.metaKey || event.ctrlKey;
 
-    // Ctrl/Cmd+T: New tab
+    // Ctrl/Cmd+T: New tab (blocked during streaming)
     if (isMod && event.key === "t") {
       event.preventDefault();
+      if (chatStore.isLoading) {
+        console.log("[ChatPanel] Blocked new tab during streaming");
+        return;
+      }
       chatStore.createConversation();
       return;
     }
 
-    // Ctrl/Cmd+W: Close current tab
+    // Ctrl/Cmd+W: Close current tab (blocked during streaming)
     if (isMod && event.key === "w") {
       event.preventDefault();
+      if (chatStore.isLoading) {
+        console.log("[ChatPanel] Blocked tab close during streaming");
+        return;
+      }
       const activeId = chatStore.activeConversationId;
       if (activeId) {
         chatStore.archiveConversation(activeId);
@@ -199,9 +211,13 @@ export const ChatPanel: Component<ChatPanelProps> = (_props) => {
       return;
     }
 
-    // Ctrl+Tab / Ctrl+Shift+Tab: Switch tabs
+    // Ctrl+Tab / Ctrl+Shift+Tab: Switch tabs (blocked during streaming)
     if (event.ctrlKey && event.key === "Tab") {
       event.preventDefault();
+      if (chatStore.isLoading) {
+        console.log("[ChatPanel] Blocked tab switch during streaming");
+        return;
+      }
       const conversations = chatStore.conversations.filter(
         (c) => !c.isArchived,
       );
@@ -224,8 +240,9 @@ export const ChatPanel: Component<ChatPanelProps> = (_props) => {
     // Register keyboard shortcuts
     document.addEventListener("keydown", handleKeyDown);
 
-    // Register copy button handler (event delegation)
-    messagesRef?.addEventListener("click", handleCopyClick);
+    // Register copy button handler on document for better reliability
+    // Using document-level delegation ensures copy buttons work even if messagesRef timing is off
+    document.addEventListener("click", handleCopyClick);
 
     try {
       await chatStore.loadHistory();
@@ -245,7 +262,7 @@ export const ChatPanel: Component<ChatPanelProps> = (_props) => {
 
   onCleanup(() => {
     document.removeEventListener("keydown", handleKeyDown);
-    messagesRef?.removeEventListener("click", handleCopyClick);
+    document.removeEventListener("click", handleCopyClick);
     if (suggestionDebounceTimer) {
       clearTimeout(suggestionDebounceTimer);
     }
@@ -434,6 +451,7 @@ export const ChatPanel: Component<ChatPanelProps> = (_props) => {
             chatStore.messages,
           ),
           toolsEnabled: true,
+          startTime: Date.now(),
         }
       : {
           id: assistantId,
@@ -443,6 +461,7 @@ export const ChatPanel: Component<ChatPanelProps> = (_props) => {
           context,
           stream: streamMessage(trimmed, chatStore.selectedModel, context),
           toolsEnabled: false,
+          startTime: Date.now(),
         };
 
     chatStore.setLoading(true);
@@ -460,6 +479,7 @@ export const ChatPanel: Component<ChatPanelProps> = (_props) => {
     content: string,
     thinking?: string,
   ) => {
+    const duration = Date.now() - session.startTime;
     const assistantMessage: Message = {
       id: session.id,
       role: "assistant",
@@ -468,6 +488,7 @@ export const ChatPanel: Component<ChatPanelProps> = (_props) => {
       timestamp: Date.now(),
       model: session.model,
       status: "complete",
+      duration,
       request: { prompt: session.prompt, context: session.context },
     };
 
@@ -674,6 +695,23 @@ export const ChatPanel: Component<ChatPanelProps> = (_props) => {
                                 : escapeHtmlWithLinks(message.content)
                             }
                           />
+                          <Show
+                            when={
+                              message.role === "assistant" &&
+                              message.status === "complete" &&
+                              message.duration
+                            }
+                          >
+                            {(() => {
+                              const { verb, duration } =
+                                formatDurationWithVerb(message.duration!);
+                              return (
+                                <div class="mt-2 text-xs text-[#8b949e]">
+                                  &#10043; {verb} for {duration}
+                                </div>
+                              );
+                            })()}
+                          </Show>
                           <Show when={message.status === "error"}>
                             <div class="mt-3 px-3 py-2 bg-[rgba(248,81,73,0.1)] border border-[rgba(248,81,73,0.4)] rounded-md flex items-center gap-3 text-[13px] text-[#f85149]">
                               <span>{message.error ?? "Message failed"}</span>
@@ -795,11 +833,11 @@ export const ChatPanel: Component<ChatPanelProps> = (_props) => {
                       onSelect={handlePublisherSelect}
                       onDismiss={dismissSuggestions}
                     />
-                    <textarea
+                    <ResizableTextarea
                       ref={inputRef}
                       value={input()}
                       placeholder="Ask Seren anything…"
-                      class="w-full min-h-[80px] max-h-[50vh] resize-y bg-[#0d1117] border border-[#30363d] rounded-lg text-[#e6edf3] p-3 font-inherit text-sm leading-normal transition-colors focus:outline-none focus:border-[#58a6ff] placeholder:text-[#484f58] disabled:opacity-60 disabled:cursor-not-allowed"
+                      class="w-full bg-[#0d1117] border border-[#30363d] rounded-lg text-[#e6edf3] p-3 font-inherit text-sm leading-normal transition-colors focus:outline-none focus:border-[#58a6ff] placeholder:text-[#484f58] disabled:opacity-60 disabled:cursor-not-allowed"
                       onInput={(event) => {
                         setInput(event.currentTarget.value);
                         // Reset history browsing when user types manually

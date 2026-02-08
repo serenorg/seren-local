@@ -15,6 +15,7 @@ import {
 import { AcpPermissionDialog } from "@/components/acp/AcpPermissionDialog";
 import { DiffProposalDialog } from "@/components/acp/DiffProposalDialog";
 import { VoiceInputButton } from "@/components/chat/VoiceInputButton";
+import { ResizableTextarea } from "@/components/common/ResizableTextarea";
 import { getCompletions, parseCommand } from "@/lib/commands/parser";
 import type { CommandContext } from "@/lib/commands/types";
 import { openExternalLink } from "@/lib/external-link";
@@ -689,7 +690,7 @@ export const AgentChat: Component<AgentChatProps> = (props) => {
                   setCommandPopupIndex(0);
                 }}
               />
-              <textarea
+              <ResizableTextarea
                 ref={inputRef}
                 value={input()}
                 placeholder={
@@ -697,7 +698,7 @@ export const AgentChat: Component<AgentChatProps> = (props) => {
                     ? "Type to queue message..."
                     : "Tell the agent what to do… (type / for commands)"
                 }
-                class="w-full min-h-[80px] max-h-[50vh] resize-y bg-[#0d1117] border border-[#30363d] rounded-lg text-[#e6edf3] p-3 font-inherit text-sm leading-normal transition-colors focus:outline-none focus:border-[#58a6ff] placeholder:text-[#484f58] disabled:opacity-60 disabled:cursor-not-allowed"
+                class="w-full bg-[#0d1117] border border-[#30363d] rounded-lg text-[#e6edf3] p-3 font-inherit text-sm leading-normal transition-colors focus:outline-none focus:border-[#58a6ff] placeholder:text-[#484f58] disabled:opacity-60 disabled:cursor-not-allowed"
                 onInput={(e) => {
                   setInput(e.currentTarget.value);
                   setCommandPopupIndex(0);
