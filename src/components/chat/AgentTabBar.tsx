@@ -1,5 +1,5 @@
 // ABOUTME: Tab bar for managing multiple agent sessions.
-// ABOUTME: Displays session tabs with close buttons and a new session button with agent type picker.
+// ABOUTME: Displays session tabs with permission indicators, close buttons, and agent type picker.
 
 import { type Component, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import type { AgentType } from "@/services/acp";
@@ -32,6 +32,11 @@ export const AgentTabBar: Component<AgentTabBarProps> = (props) => {
 
   const availableAgents = () =>
     acpStore.availableAgents.filter((a) => a.available);
+
+  // Check if a session has pending permission requests
+  const sessionHasPendingPermissions = (sessionId: string) =>
+    acpStore.pendingPermissions.some((p) => p.sessionId === sessionId) ||
+    acpStore.pendingDiffProposals.some((p) => p.sessionId === sessionId);
 
   const handleNewClick = () => {
     const agents = availableAgents();
@@ -72,6 +77,12 @@ export const AgentTabBar: Component<AgentTabBarProps> = (props) => {
               onClick={() => handleTabClick(id)}
               title={sessionLabel(id, index())}
             >
+              <Show when={sessionHasPendingPermissions(id)}>
+                <span
+                  class="permission-indicator"
+                  title="Permission required"
+                />
+              </Show>
               <span class="overflow-hidden text-ellipsis max-w-[140px]">
                 {sessionLabel(id, index())}
               </span>

@@ -288,7 +288,14 @@ export async function* streamMessageWithTools(
       `You are a helpful coding assistant running inside Seren Desktop with access to ${toolCount} tools. ` +
       "You can read, write, and create files and directories on the user's computer using the available tools. " +
       "When the user asks you to save, export, or write content to a file, use the write_file tool to save it to their filesystem. " +
-      "Always ask for the desired file path if the user doesn't specify one." +
+      "Always ask for the desired file path if the user doesn't specify one.\n\n" +
+      "IMPORTANT — Tool Usage Guidelines:\n" +
+      "- ALWAYS use your tools proactively to accomplish tasks. Do NOT tell the user you cannot do something if a tool can help.\n" +
+      "- For web searches: use seren_web_fetch with a search engine URL like " +
+      "'https://html.duckduckgo.com/html/?q=your+search+terms' to find information.\n" +
+      "- For fetching web pages: use seren_web_fetch with the page URL.\n" +
+      "- Chain tool calls when needed: search first to find URLs, then fetch those URLs for full content.\n" +
+      "- NEVER say 'I cannot browse the web' or 'I need a URL' — you CAN search by constructing search engine URLs." +
       serenPublishersContext;
   } else {
     // No tools available - don't claim tool capabilities
@@ -342,6 +349,8 @@ export async function* streamMessageWithTools(
 
   // Accumulated content across all iterations
   let fullContent = "";
+  let hasExecutedTools = false;
+  let hasNudged = false;
 
   for (
     let iteration = 0;
@@ -372,6 +381,28 @@ export async function* streamMessageWithTools(
 
     // Check if model wants to call tools
     if (!response.tool_calls || response.tool_calls.length === 0) {
+      // Model returned no tool calls. If we executed tools but got no text
+      // response, the model may have silently stopped mid-task. Nudge it once
+      // to complete the task or explain what happened.
+      if (hasExecutedTools && !fullContent.trim() && !hasNudged) {
+        hasNudged = true;
+        console.warn(
+          "[streamMessageWithTools] Empty response after tool execution — nudging model to complete task",
+        );
+        messages.push({
+          role: "assistant",
+          content: response.content || "",
+        });
+        messages.push({
+          role: "user",
+          content:
+            "You called tools but did not provide a response or complete the requested task. " +
+            "Please review the tool results above and either complete the task using the appropriate tools, " +
+            "or explain what happened.",
+        });
+        continue;
+      }
+
       // No tool calls, we're done
       console.log(
         "[streamMessageWithTools] No tool_calls, completing with content length:",
@@ -393,6 +424,7 @@ export async function* streamMessageWithTools(
 
     // Execute tools
     const results = await executeTools(response.tool_calls);
+    hasExecutedTools = true;
 
     // Yield results for UI
     yield { type: "tool_results", results };

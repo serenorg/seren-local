@@ -35,6 +35,8 @@ export interface AgentMessage {
   type: "user" | "assistant" | "thought" | "tool" | "diff" | "error";
   content: string;
   timestamp: number;
+  /** Duration in milliseconds for how long the response took */
+  duration?: number;
   toolCallId?: string;
   diff?: DiffEvent;
   toolCall?: ToolCallEvent;
@@ -48,6 +50,10 @@ export interface ActiveSession {
   streamingContent: string;
   streamingThinking: string;
   cwd: string;
+  /** Session-specific error message */
+  error?: string | null;
+  /** Timestamp when the current prompt started */
+  promptStartTime?: number;
 }
 
 interface AcpState {
@@ -67,6 +73,8 @@ interface AcpState {
   error: string | null;
   /** CLI install progress message */
   installStatus: string | null;
+  /** Pending agent input to restore when switching back to agent mode */
+  pendingAgentInput: string | null;
   /** Pending permission requests awaiting user response */
   pendingPermissions: import("@/services/acp").PermissionRequestEvent[];
   /** Pending diff proposals awaiting user accept/reject */
@@ -82,6 +90,7 @@ const [state, setState] = createStore<AcpState>({
   isLoading: false,
   error: null,
   installStatus: null,
+  pendingAgentInput: null,
   pendingPermissions: [],
   pendingDiffProposals: [],
 });
@@ -127,11 +136,17 @@ export const acpStore = {
   },
 
   get error() {
-    return state.error;
+    // Return session-specific error for active session, fall back to global error
+    const session = this.activeSession;
+    return session?.error ?? state.error;
   },
 
   get installStatus() {
     return state.installStatus;
+  },
+
+  get pendingAgentInput() {
+    return state.pendingAgentInput;
   },
 
   get pendingPermissions() {
@@ -462,6 +477,8 @@ export const acpStore = {
     ]);
     setState("sessions", sessionId, "streamingContent", "");
     setState("sessions", sessionId, "streamingThinking", "");
+    // Track when the prompt started for duration calculation
+    setState("sessions", sessionId, "promptStartTime", Date.now());
 
     console.log("[AcpStore] Calling acpService.sendPrompt...");
     try {
@@ -683,9 +700,21 @@ export const acpStore = {
   },
 
   /**
+   * Set pending agent input (used to preserve input when switching modes).
+   */
+  setPendingAgentInput(input: string | null) {
+    setState("pendingAgentInput", input);
+  },
+
+  /**
    * Clear error state.
    */
   clearError() {
+    const sessionId = state.activeSessionId;
+    if (sessionId) {
+      setState("sessions", sessionId, "error", null);
+    }
+    // Also clear global error for backwards compatibility
     setState("error", null);
   },
 
@@ -800,6 +829,39 @@ export const acpStore = {
     const session = state.sessions[sessionId];
     if (!session) return;
 
+    // Skip duplicate if a message with this toolCallId already exists
+    if (session.messages.some((m) => m.toolCallId === toolCall.toolCallId)) {
+      return;
+    }
+
+    // Flush accumulated streaming content so tool cards appear in correct chronological order
+    if (session.streamingThinking) {
+      const thinkingMsg: AgentMessage = {
+        id: crypto.randomUUID(),
+        type: "thought",
+        content: session.streamingThinking,
+        timestamp: Date.now(),
+      };
+      setState("sessions", sessionId, "messages", (msgs) => [
+        ...msgs,
+        thinkingMsg,
+      ]);
+      setState("sessions", sessionId, "streamingThinking", "");
+    }
+    if (session.streamingContent) {
+      const contentMsg: AgentMessage = {
+        id: crypto.randomUUID(),
+        type: "assistant",
+        content: session.streamingContent,
+        timestamp: Date.now(),
+      };
+      setState("sessions", sessionId, "messages", (msgs) => [
+        ...msgs,
+        contentMsg,
+      ]);
+      setState("sessions", sessionId, "streamingContent", "");
+    }
+
     // Store pending tool call
     session.pendingToolCalls.set(toolCall.toolCallId, toolCall);
 
@@ -883,14 +945,22 @@ export const acpStore = {
 
     // Finalize assistant content if any
     if (session.streamingContent) {
+      // Calculate duration if we have a start time
+      const duration = session.promptStartTime
+        ? Date.now() - session.promptStartTime
+        : undefined;
+
       const message: AgentMessage = {
         id: crypto.randomUUID(),
         type: "assistant",
         content: session.streamingContent,
         timestamp: Date.now(),
+        duration,
       };
       setState("sessions", sessionId, "messages", (msgs) => [...msgs, message]);
       setState("sessions", sessionId, "streamingContent", "");
+      // Clear the start time
+      setState("sessions", sessionId, "promptStartTime", undefined);
     }
   },
 
@@ -903,7 +973,7 @@ export const acpStore = {
     };
 
     setState("sessions", sessionId, "messages", (msgs) => [...msgs, message]);
-    setState("error", error);
+    setState("sessions", sessionId, "error", error);
   },
 
   // ============================================================================

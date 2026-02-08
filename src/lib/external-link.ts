@@ -14,6 +14,7 @@ export async function openExternalLink(url: string): Promise<void> {
  */
 export function installExternalLinkInterceptor(): void {
   document.addEventListener("click", (e) => {
+    if (e.defaultPrevented) return;
     const anchor = (e.target as HTMLElement).closest("a[href]");
     if (!anchor) return;
     const href = (anchor as HTMLAnchorElement).href;
