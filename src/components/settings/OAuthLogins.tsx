@@ -16,12 +16,24 @@ import {
   type PublisherOAuthProviderResponse,
   type UserOAuthConnectionResponse,
 } from "@/api";
+import attioLogo from "@/assets/oauth-logos/attio.svg";
+import githubLogo from "@/assets/oauth-logos/github.svg";
+import googleLogo from "@/assets/oauth-logos/google.svg";
+import linearLogo from "@/assets/oauth-logos/linear.svg";
 import { apiBase } from "@/lib/config";
 import {
   connectPublisher,
   disconnectPublisher,
 } from "@/services/publisher-oauth";
 import { authStore } from "@/stores/auth.store";
+
+/** Local fallback logos for OAuth providers */
+const LOCAL_PROVIDER_LOGOS: Record<string, string> = {
+  github: githubLogo,
+  google: googleLogo,
+  linear: linearLogo,
+  attio: attioLogo,
+};
 
 interface OAuthLoginsProps {
   onSignInClick?: () => void;
@@ -256,7 +268,9 @@ export const OAuthLogins: Component<OAuthLoginsProps> = (props) => {
                     {/* Publisher Logo */}
                     <Show
                       when={
-                        provider.logo_url || publisherLogos()?.[provider.id]
+                        provider.logo_url ||
+                        publisherLogos()?.[provider.id] ||
+                        LOCAL_PROVIDER_LOGOS[provider.slug]
                       }
                       fallback={
                         <div class="w-10 h-10 flex items-center justify-center bg-[rgba(148,163,184,0.1)] rounded-lg text-base font-semibold text-muted-foreground">
