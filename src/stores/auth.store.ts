@@ -165,4 +165,12 @@ export async function logout(): Promise<void> {
   });
 }
 
+/**
+ * Prompt the user to log in by clearing authentication state.
+ * Used by /login command and session expiration handlers.
+ */
+export function promptLogin(): void {
+  setState({ isAuthenticated: false, user: null });
+}
+
 export const authStore = state;

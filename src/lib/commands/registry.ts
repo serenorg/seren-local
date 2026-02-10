@@ -2,6 +2,7 @@
 // ABOUTME: Commands are organized by tier and registered at module load.
 
 import { acpStore } from "@/stores/acp.store";
+import { promptLogin } from "@/stores/auth.store";
 import { chatStore } from "@/stores/chat.store";
 import { providerStore } from "@/stores/provider.store";
 import { settingsStore } from "@/stores/settings.store";
@@ -131,6 +132,18 @@ registry.register({
       ctx.showStatus("No response to copy.");
     }
     ctx.clearInput();
+    return true;
+  },
+});
+
+registry.register({
+  name: "login",
+  description: "Sign in to your account",
+  panels: ["chat", "agent"],
+  execute: (ctx) => {
+    promptLogin();
+    ctx.clearInput();
+    ctx.showStatus("Opening sign in...");
     return true;
   },
 });
