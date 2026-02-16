@@ -547,7 +547,12 @@ export const acpStore = {
         return;
       }
 
-      this.addErrorMessage(sessionId, message);
+      // Skip addErrorMessage for cancellation — the error event handler
+      // already recorded it in chat history. Adding it again here would
+      // create a duplicate banner.
+      if (!message.includes("Task cancelled")) {
+        this.addErrorMessage(sessionId, message);
+      }
     }
   },
 
@@ -770,7 +775,26 @@ export const acpStore = {
         break;
 
       case "error":
-        this.addErrorMessage(sessionId, event.data.error);
+        // Clean up any in-flight streaming and tool cards
+        this.finalizeStreamingContent(sessionId);
+        this.markPendingToolCallsComplete(sessionId);
+
+        if (String(event.data.error).includes("Task cancelled")) {
+          // User-initiated cancellation: record in chat history but don't
+          // show the persistent error banner (it's not a real error).
+          const cancelMsg: AgentMessage = {
+            id: crypto.randomUUID(),
+            type: "error",
+            content: event.data.error,
+            timestamp: Date.now(),
+          };
+          setState("sessions", sessionId, "messages", (msgs) => [
+            ...msgs,
+            cancelMsg,
+          ]);
+        } else {
+          this.addErrorMessage(sessionId, event.data.error);
+        }
         break;
 
       case "permissionRequest": {
@@ -974,6 +998,42 @@ export const acpStore = {
 
     setState("sessions", sessionId, "messages", (msgs) => [...msgs, message]);
     setState("sessions", sessionId, "error", error);
+  },
+
+  /**
+   * Mark any pending/running tool call cards as completed.
+   * Called on cancellation and error to stop spinners.
+   */
+  markPendingToolCallsComplete(sessionId: string) {
+    const session = state.sessions[sessionId];
+    if (!session) return;
+
+    const runningStatuses = ["running", "pending", "in_progress"];
+    const hasRunning = session.messages.some(
+      (msg) =>
+        msg.toolCall &&
+        runningStatuses.includes(msg.toolCall.status.toLowerCase()),
+    );
+
+    if (!hasRunning) return;
+
+    setState("sessions", sessionId, "messages", (msgs) =>
+      msgs.map((msg) => {
+        if (
+          msg.toolCall &&
+          runningStatuses.includes(msg.toolCall.status.toLowerCase())
+        ) {
+          return {
+            ...msg,
+            toolCall: { ...msg.toolCall, status: "completed" },
+          };
+        }
+        return msg;
+      }),
+    );
+
+    // Clear pending map
+    session.pendingToolCalls.clear();
   },
 
   // ============================================================================
