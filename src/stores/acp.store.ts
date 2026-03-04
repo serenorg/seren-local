@@ -97,6 +97,9 @@ const [state, setState] = createStore<AcpState>({
 
 let globalUnsubscribe: UnlistenFn | null = null;
 
+/** Guard against concurrent auto-recovery spawns in sendPrompt. */
+let recoveryInFlight: Promise<string | null> | null = null;
+
 // ============================================================================
 // Store
 // ============================================================================
@@ -320,6 +323,10 @@ export const acpStore = {
           const eventSessionId = event.data.sessionId;
           if (!eventSessionId) return;
           if (!state.sessions[eventSessionId]) return;
+          // Skip logging high-frequency messageChunk events to avoid flooding DevTools
+          if (event.type !== "messageChunk") {
+            console.log("[ACP] Event received - type:", event.type, "sessionId:", eventSessionId);
+          }
           this.handleSessionEvent(eventSessionId, event);
         });
       }
@@ -494,6 +501,16 @@ export const acpStore = {
         message.includes("not found") ||
         message.includes("Session not initialized")
       ) {
+        // If another recovery is already in-flight, wait for it instead of
+        // spawning a duplicate session.
+        if (recoveryInFlight) {
+          console.info(
+            "[AcpStore] Recovery already in-flight, waiting for it...",
+          );
+          await recoveryInFlight;
+          return;
+        }
+
         console.info(
           "[AcpStore] Session appears dead, attempting auto-recovery...",
         );
@@ -506,44 +523,64 @@ export const acpStore = {
         // Clean up the dead session
         await this.terminateSession(sessionId);
 
-        // Spawn a fresh session
-        const newSessionId = await this.spawnSession(cwd, agentType);
-        if (newSessionId) {
-          // Restore conversation history to the new session (excluding the
-          // user message we just added, since we'll retry the prompt)
-          const historyToRestore = existingMessages.filter(
-            (m) => m.id !== userMessage.id,
-          );
-          if (historyToRestore.length > 0) {
-            setState("sessions", newSessionId, "messages", historyToRestore);
-          }
+        // Guard against concurrent recoveries: set the in-flight promise
+        // before spawning so any parallel sendPrompt calls will wait.
+        const doRecovery = async (): Promise<string | null> => {
+          const newSessionId = await this.spawnSession(cwd, agentType);
+          if (newSessionId) {
+            // Restore conversation history to the new session (excluding the
+            // user message we just added, since we'll retry the prompt)
+            const historyToRestore = existingMessages.filter(
+              (m) => m.id !== userMessage.id,
+            );
+            if (historyToRestore.length > 0) {
+              setState("sessions", newSessionId, "messages", historyToRestore);
+            }
 
-          // Retry the prompt on the new session
-          console.info(
-            `[AcpStore] Retrying prompt on new session ${newSessionId}`,
-          );
-          try {
-            // Add the user message to the new session
+            // Show recovery indicator so the user knows what happened
+            const recoveryMsg: AgentMessage = {
+              id: crypto.randomUUID(),
+              type: "assistant",
+              content:
+                "Agent session restarted due to inactivity timeout. Retrying your message...",
+              timestamp: Date.now(),
+            };
             setState("sessions", newSessionId, "messages", (msgs) => [
               ...msgs,
+              recoveryMsg,
               userMessage,
             ]);
-            await acpService.sendPrompt(newSessionId, prompt, context);
-            console.log("[AcpStore] Retry succeeded on new session");
-            return;
-          } catch (retryError) {
-            console.error("[AcpStore] Retry failed:", retryError);
-            const retryMessage =
-              retryError instanceof Error
-                ? retryError.message
-                : String(retryError);
-            this.addErrorMessage(newSessionId, retryMessage);
-            return;
-          }
-        }
 
-        // Spawn failed, show original error
-        setState("error", "Session died and could not be restarted.");
+            // Retry the prompt on the new session
+            console.info(
+              `[AcpStore] Retrying prompt on new session ${newSessionId}`,
+            );
+            try {
+              await acpService.sendPrompt(newSessionId, prompt, context);
+              console.log("[AcpStore] Retry succeeded on new session");
+            } catch (retryError) {
+              console.error("[AcpStore] Retry failed:", retryError);
+              const retryMessage =
+                retryError instanceof Error
+                  ? retryError.message
+                  : String(retryError);
+              this.addErrorMessage(
+                newSessionId,
+                `Recovery failed: ${retryMessage}. Please try sending your message again.`,
+              );
+            }
+          }
+          return newSessionId;
+        };
+
+        recoveryInFlight = doRecovery().finally(() => {
+          recoveryInFlight = null;
+        });
+
+        const newSessionId = await recoveryInFlight;
+        if (!newSessionId) {
+          setState("error", "Session died and could not be restarted.");
+        }
         return;
       }
 
@@ -572,7 +609,15 @@ export const acpStore = {
       await acpService.cancelPrompt(sessionId);
       console.info("[AcpStore] Cancel acknowledged by backend:", sessionId);
     } catch (error) {
-      console.error("[AcpStore] Failed to cancel prompt:", error);
+      const msg = error instanceof Error ? error.message : String(error);
+      if (msg.includes("not found")) {
+        console.warn(
+          "[AcpStore] cancelPrompt: stale session, resetting status",
+        );
+        setState("sessions", sessionId, "info", "status", "ready" as SessionStatus);
+      } else {
+        console.error("[AcpStore] cancelPrompt failed:", error);
+      }
     }
   },
 
@@ -608,7 +653,15 @@ export const acpStore = {
       );
       console.info("[AcpStore] Permission response delivered:", requestId);
     } catch (error) {
-      console.error("[AcpStore] Failed to respond to permission:", error);
+      const errorMsg = String(error);
+      if (errorMsg.includes("not found") || errorMsg.includes("timed out")) {
+        // Permission already timed out or was cleaned up on backend
+        console.warn(
+          `[AcpStore] Permission ${requestId} no longer valid (likely timed out)`,
+        );
+      } else {
+        console.error("[AcpStore] Failed to respond to permission:", error);
+      }
     }
 
     setState(
@@ -728,7 +781,10 @@ export const acpStore = {
   // ============================================================================
 
   handleSessionEvent(sessionId: string, event: AcpEvent) {
-    console.log("[AcpStore] handleSessionEvent:", event.type, sessionId);
+    // Skip logging high-frequency messageChunk events to avoid flooding DevTools
+    if (event.type !== "messageChunk") {
+      console.log("[AcpStore] handleSessionEvent:", event.type, sessionId);
+    }
     switch (event.type) {
       case "messageChunk":
         this.handleMessageChunk(
@@ -760,6 +816,25 @@ export const acpStore = {
 
       case "promptComplete":
         this.finalizeStreamingContent(sessionId);
+        this.markPendingToolCallsComplete(sessionId);
+
+        // Mark any remaining in-progress plan entries as completed.
+        // Plan entry status is set by planUpdate events from the backend,
+        // but a final planUpdate may not arrive after the last tool finishes.
+        {
+          const plan = state.sessions[sessionId]?.plan;
+          if (plan?.some((e) => e.status === "in_progress")) {
+            setState(
+              "sessions",
+              sessionId,
+              "plan",
+              plan.map((e) =>
+                e.status === "in_progress" ? { ...e, status: "completed" } : e,
+              ),
+            );
+          }
+        }
+
         // Transition status back to "ready" so queued messages can be processed
         setState(
           "sessions",
@@ -792,6 +867,51 @@ export const acpStore = {
             ...msgs,
             cancelMsg,
           ]);
+
+          // Transition back to "ready" so the UI unfreezes and the send
+          // button reappears. Without this the session stays stuck in
+          // "prompting" forever (the promptComplete event never fires
+          // after a cancellation).
+          setState(
+            "sessions",
+            sessionId,
+            "info",
+            "status",
+            "ready" as SessionStatus,
+          );
+        } else if (
+          String(event.data.error).includes("Permission request timed out")
+        ) {
+          // Permission timeout: clean up stale permission dialogs and notify user
+          console.warn(
+            "[AcpStore] Permission request timed out for session:",
+            sessionId,
+          );
+
+          // Remove all pending permissions for this session (they've timed out on backend)
+          const timedOutPermissions = state.pendingPermissions.filter(
+            (p) => p.sessionId === sessionId,
+          );
+          setState(
+            "pendingPermissions",
+            state.pendingPermissions.filter((p) => p.sessionId !== sessionId),
+          );
+
+          // Add error message to notify user
+          if (timedOutPermissions.length > 0) {
+            const timeoutMsg: AgentMessage = {
+              id: crypto.randomUUID(),
+              type: "error",
+              content:
+                "Permission request timed out after 5 minutes. " +
+                "Please try your request again.",
+              timestamp: Date.now(),
+            };
+            setState("sessions", sessionId, "messages", (msgs) => [
+              ...msgs,
+              timeoutMsg,
+            ]);
+          }
         } else {
           this.addErrorMessage(sessionId, event.data.error);
         }
@@ -824,12 +944,6 @@ export const acpStore = {
   },
 
   handleMessageChunk(sessionId: string, text: string, isThought?: boolean) {
-    console.log("[AcpStore] handleMessageChunk:", {
-      sessionId,
-      text: `${text.slice(0, 50)}...`,
-      isThought,
-    });
-
     if (isThought) {
       // Append to streaming thinking content
       setState(
@@ -940,6 +1054,21 @@ export const acpStore = {
     setState("sessions", sessionId, "info", "status", status);
 
     if (status === "ready") {
+      // Clear stale error banner when session recovers — a ready session has
+      // no persistent error to surface. Error messages in chat history remain.
+      setState("sessions", sessionId, "error", null);
+      const entry = sessionReadyPromises.get(sessionId);
+      if (entry) {
+        entry.resolve();
+        sessionReadyPromises.delete(sessionId);
+      }
+    }
+
+    // When a session is terminated (force-stopped, permission timeout, etc.),
+    // resolve any pending ready promise so sendPrompt unblocks instead of
+    // hanging forever. sendPrompt will then detect the dead session and
+    // trigger recovery.
+    if (status === "terminated") {
       const entry = sessionReadyPromises.get(sessionId);
       if (entry) {
         entry.resolve();
