@@ -3,6 +3,11 @@
 
 import { createStore, produce } from "solid-js/store";
 import { onRuntimeEvent } from "@/lib/bridge";
+import {
+  isPromptTooLongError,
+  isRateLimitError,
+  performAgentFallback,
+} from "@/lib/rate-limit-fallback";
 
 type UnlistenFn = () => void;
 
@@ -54,6 +59,10 @@ export interface ActiveSession {
   error?: string | null;
   /** Timestamp when the current prompt started */
   promptStartTime?: number;
+  /** Set when the agent hits a rate limit — triggers fallback to Chat mode */
+  rateLimitHit?: boolean;
+  /** Set when the agent's context window is full — triggers fallback to Chat mode */
+  promptTooLong?: boolean;
 }
 
 interface AcpState {
@@ -198,6 +207,30 @@ export const acpStore = {
   get cwd(): string | null {
     const session = this.activeSession;
     return session?.cwd ?? null;
+  },
+
+  /** Whether the active session hit a rate limit. */
+  get rateLimitHit(): boolean {
+    const session = this.activeSession;
+    return session?.rateLimitHit === true;
+  },
+
+  /** Whether the active session's context window is full. */
+  get promptTooLong(): boolean {
+    const session = this.activeSession;
+    return session?.promptTooLong === true;
+  },
+
+  /** Whether the active session needs a fallback to Chat mode. */
+  get agentFallbackNeeded(): boolean {
+    return this.rateLimitHit || this.promptTooLong;
+  },
+
+  /** Reason for the fallback, or null if no fallback is needed. */
+  get agentFallbackReason(): "rate_limit" | "prompt_too_long" | null {
+    if (this.promptTooLong) return "prompt_too_long";
+    if (this.rateLimitHit) return "rate_limit";
+    return null;
   },
 
   // ============================================================================
@@ -584,10 +617,13 @@ export const acpStore = {
         return;
       }
 
-      // Skip addErrorMessage for cancellation — the error event handler
-      // already recorded it in chat history. Adding it again here would
-      // create a duplicate banner.
-      if (!message.includes("Task cancelled")) {
+      // Skip addErrorMessage for cancellation and prompt-too-long — the error
+      // event handler already recorded them and triggers the appropriate
+      // recovery flow. Adding them again here would create duplicates.
+      if (
+        !message.includes("Task cancelled") &&
+        !isPromptTooLongError(message)
+      ) {
         this.addErrorMessage(sessionId, message);
       }
     }
@@ -726,6 +762,40 @@ export const acpStore = {
    */
   setAgentModeEnabled(enabled: boolean) {
     setState("agentModeEnabled", enabled);
+  },
+
+  /**
+   * Accept the fallback: switch agent history to a Chat conversation.
+   */
+  async acceptRateLimitFallback(): Promise<string | null> {
+    const session = this.activeSession;
+    if (!session) return null;
+
+    const agentType = session.info.agentType;
+    const messages = [...session.messages];
+    const agentModelId = undefined; // Agent model not tracked in session info
+    const title = undefined; // Session title not tracked in seren-local
+    const reason = this.agentFallbackReason ?? "rate_limit";
+
+    // Clear the flags first so the banner disappears immediately
+    const sessionId = state.activeSessionId;
+    if (sessionId) {
+      setState("sessions", sessionId, "rateLimitHit", false);
+      setState("sessions", sessionId, "promptTooLong", false);
+    }
+
+    return performAgentFallback(agentType, messages, agentModelId, title, reason);
+  },
+
+  /**
+   * Dismiss the rate limit / prompt-too-long banner without switching.
+   */
+  dismissRateLimitPrompt() {
+    const sessionId = state.activeSessionId;
+    if (sessionId) {
+      setState("sessions", sessionId, "rateLimitHit", false);
+      setState("sessions", sessionId, "promptTooLong", false);
+    }
   },
 
   /**
@@ -912,6 +982,28 @@ export const acpStore = {
               timeoutMsg,
             ]);
           }
+        } else if (isPromptTooLongError(String(event.data.error))) {
+          // Context window full — automatically switch to chat mode
+          console.info(
+            "[AcpStore] Prompt too long detected, automatically switching to chat mode",
+          );
+          setState("sessions", sessionId, "promptTooLong", true);
+          this.addErrorMessage(sessionId, event.data.error);
+
+          this.acceptRateLimitFallback().catch((err) => {
+            console.error("[AcpStore] Auto-failover failed:", err);
+          });
+        } else if (isRateLimitError(String(event.data.error))) {
+          // Rate limit hit — automatically switch to chat mode
+          console.info(
+            "[AcpStore] Rate limit detected, automatically switching to chat mode",
+          );
+          setState("sessions", sessionId, "rateLimitHit", true);
+          this.addErrorMessage(sessionId, event.data.error);
+
+          this.acceptRateLimitFallback().catch((err) => {
+            console.error("[AcpStore] Auto-failover failed:", err);
+          });
         } else {
           this.addErrorMessage(sessionId, event.data.error);
         }
@@ -1110,6 +1202,21 @@ export const acpStore = {
         timestamp: Date.now(),
         duration,
       };
+      // If the agent's response is a prompt-too-long error (context window full),
+      // automatically switch to Chat mode with history preserved.
+      if (isPromptTooLongError(session.streamingContent)) {
+        console.info(
+          "[AcpStore] Prompt too long detected in streamed content, switching to Chat mode",
+        );
+        setState("sessions", sessionId, "promptTooLong", true);
+        this.acceptRateLimitFallback().catch((err) => {
+          console.error(
+            "[AcpStore] Auto-failover from streamed content failed:",
+            err,
+          );
+        });
+      }
+
       setState("sessions", sessionId, "messages", (msgs) => [...msgs, message]);
       setState("sessions", sessionId, "streamingContent", "");
       // Clear the start time

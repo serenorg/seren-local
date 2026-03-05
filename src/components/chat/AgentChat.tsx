@@ -21,6 +21,10 @@ import { getCompletions, parseCommand } from "@/lib/commands/parser";
 import type { CommandContext } from "@/lib/commands/types";
 import { collapseDirectoryListings } from "@/lib/directory-listing";
 import { openExternalLink } from "@/lib/external-link";
+import {
+  getModelDisplayName,
+  mapAgentModelToChat,
+} from "@/lib/rate-limit-fallback";
 import { formatDurationWithVerb } from "@/lib/format-duration";
 import { pickAndReadImages, toDataUrl } from "@/lib/images/attachments";
 import type { ImageAttachment } from "@/lib/providers/types";
@@ -690,6 +694,54 @@ export const AgentChat: Component<AgentChatProps> = (props) => {
             </button>
           </div>
         </div>
+      </Show>
+
+      {/* Agent Fallback Banner (rate limit or context window full) */}
+      <Show when={acpStore.agentFallbackNeeded}>
+        {(() => {
+          const agentType =
+            acpStore.activeSession?.info.agentType ?? "claude-code";
+          const chatModelId = mapAgentModelToChat(undefined, agentType);
+          const modelName = getModelDisplayName(chatModelId);
+          const agentName = agentType === "codex" ? "Codex" : "Claude Code";
+          const reason = acpStore.agentFallbackReason;
+          const title =
+            reason === "prompt_too_long"
+              ? `${agentName}'s context window is full`
+              : `${agentName} hit its rate limit`;
+          const description = `Automatically switching to Chat mode with ${modelName}. Your conversation history will be preserved.`;
+          return (
+            <div class="mx-4 mb-2 px-3 py-3 border rounded-md text-sm bg-[rgba(88,166,255,0.1)] border-[rgba(88,166,255,0.4)] text-[#58a6ff]">
+              <div class="flex items-start gap-3">
+                <svg
+                  class="w-5 h-5 mt-0.5 flex-shrink-0"
+                  fill="currentColor"
+                  viewBox="0 0 20 20"
+                  role="img"
+                  aria-label="Info"
+                >
+                  <path
+                    fill-rule="evenodd"
+                    d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z"
+                    clip-rule="evenodd"
+                  />
+                </svg>
+                <div class="flex-1">
+                  <p class="m-0 mb-2 font-medium text-[#e6edf3]">{title}</p>
+                  <p class="m-0 text-xs text-[#8b949e]">{description}</p>
+                </div>
+                <button
+                  type="button"
+                  class="px-2 py-1 text-xs font-medium bg-transparent text-[#8b949e] hover:text-[#e6edf3] transition-colors flex-shrink-0"
+                  onClick={() => acpStore.dismissRateLimitPrompt()}
+                  title="Dismiss"
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+          );
+        })()}
       </Show>
 
       {/* Agent CWD Display */}
