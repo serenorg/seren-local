@@ -16,8 +16,10 @@ import { AcpPermissionDialog } from "@/components/acp/AcpPermissionDialog";
 import { DiffProposalDialog } from "@/components/acp/DiffProposalDialog";
 import { VoiceInputButton } from "@/components/chat/VoiceInputButton";
 import { ResizableTextarea } from "@/components/common/ResizableTextarea";
+import { collapseBuildOutput } from "@/lib/build-output";
 import { getCompletions, parseCommand } from "@/lib/commands/parser";
 import type { CommandContext } from "@/lib/commands/types";
+import { collapseDirectoryListings } from "@/lib/directory-listing";
 import { openExternalLink } from "@/lib/external-link";
 import { formatDurationWithVerb } from "@/lib/format-duration";
 import { pickAndReadImages, toDataUrl } from "@/lib/images/attachments";
@@ -340,6 +342,12 @@ export const AgentChat: Component<AgentChatProps> = (props) => {
         const newIndex = Math.min(historyIndex() + 1, history.length - 1);
         setHistoryIndex(newIndex);
         setInput(history[newIndex]);
+        queueMicrotask(() => {
+          textarea.setSelectionRange(
+            textarea.value.length,
+            textarea.value.length,
+          );
+        });
         return;
       }
     }
@@ -356,6 +364,12 @@ export const AgentChat: Component<AgentChatProps> = (props) => {
         } else {
           setInput(history[newIndex]);
         }
+        queueMicrotask(() => {
+          textarea.setSelectionRange(
+            textarea.value.length,
+            textarea.value.length,
+          );
+        });
         return;
       }
     }
@@ -386,7 +400,11 @@ export const AgentChat: Component<AgentChatProps> = (props) => {
           <article class="px-5 py-4 border-b border-[#21262d]">
             <div
               class="text-sm leading-relaxed text-[#e6edf3] break-words [&_p]:m-0 [&_p]:mb-3 [&_p:last-child]:mb-0 [&_code]:bg-[#21262d] [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:rounded [&_code]:font-mono [&_code]:text-[13px] [&_pre]:bg-[#161b22] [&_pre]:border [&_pre]:border-[#30363d] [&_pre]:rounded-lg [&_pre]:p-3 [&_pre]:my-3 [&_pre]:overflow-x-auto [&_pre_code]:bg-transparent [&_pre_code]:p-0 [&_pre_code]:text-[13px] [&_pre_code]:leading-normal [&_ul]:my-2 [&_ul]:pl-6 [&_ol]:my-2 [&_ol]:pl-6 [&_li]:my-1 [&_blockquote]:border-l-[3px] [&_blockquote]:border-[#30363d] [&_blockquote]:my-3 [&_blockquote]:pl-4 [&_blockquote]:text-[#8b949e] [&_a]:text-[#58a6ff] [&_a]:no-underline [&_a:hover]:underline"
-              innerHTML={renderMarkdown(message.content)}
+              innerHTML={collapseBuildOutput(
+                collapseDirectoryListings(
+                  renderMarkdown(message.content),
+                ),
+              )}
             />
             <Show when={durationDisplay}>
               <div class="mt-2 text-xs text-[#8b949e]">
@@ -644,9 +662,9 @@ export const AgentChat: Component<AgentChatProps> = (props) => {
 
       {/* Error Display */}
       <Show when={sessionError()}>
-        <div class="mx-4 mb-2 px-3 py-2 bg-[rgba(248,81,73,0.1)] border border-[rgba(248,81,73,0.4)] rounded-md text-sm text-[#f85149] flex items-center justify-between">
-          <span>{sessionError()}</span>
-          <div class="flex items-center gap-2">
+        <div class="mx-4 mb-2 px-3 py-2 bg-[rgba(248,81,73,0.1)] border border-[rgba(248,81,73,0.4)] rounded-md text-sm text-[#f85149] flex items-start justify-between gap-2">
+          <span class="flex-1 max-h-28 overflow-y-auto break-words">{sessionError()}</span>
+          <div class="flex items-center gap-2 shrink-0">
             <Show when={acpStore.activeSession?.info.status === "error"}>
               <button
                 type="button"
