@@ -55,6 +55,8 @@ export interface ActiveSession {
   streamingContent: string;
   streamingThinking: string;
   cwd: string;
+  /** Derived session title (from first user prompt) */
+  title?: string;
   /** Session-specific error message */
   error?: string | null;
   /** Timestamp when the current prompt started */
@@ -235,6 +237,12 @@ export const acpStore = {
     return session?.cwd ?? null;
   },
 
+  /** Derived title for the active session. */
+  get sessionTitle(): string | null {
+    const session = this.activeSession;
+    return session?.title ?? null;
+  },
+
   /** Whether the active session hit a rate limit. */
   get rateLimitHit(): boolean {
     const session = this.activeSession;
@@ -273,6 +281,37 @@ export const acpStore = {
     } catch (error) {
       console.error("Failed to load available agents:", error);
     }
+
+    this.setupStaleSessionDetection();
+  },
+
+  /**
+   * Set up stale session detection on tab visibility change.
+   * When the user returns to the tab, verify the active session still
+   * exists in the backend. If it died while the tab was hidden, clean up.
+   */
+  setupStaleSessionDetection() {
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState !== "visible") return;
+      const sessionId = state.activeSessionId;
+      if (!sessionId) return;
+
+      acpService.listSessions().then((backendSessions) => {
+        const alive = backendSessions.some((s) => s.id === sessionId);
+        if (!alive) {
+          console.warn(
+            `[AcpStore] Session ${sessionId} no longer exists in backend — cleaning up`,
+          );
+          this.terminateSession(sessionId);
+          setState(
+            "error",
+            "Agent session ended unexpectedly. Please start a new session.",
+          );
+        }
+      }).catch((err) => {
+        console.warn("[AcpStore] Failed to check session liveness:", err);
+      });
+    });
   },
 
   // ============================================================================
@@ -599,6 +638,25 @@ export const acpStore = {
     setState("sessions", sessionId, "streamingThinking", "");
     // Track when the prompt started for duration calculation
     setState("sessions", sessionId, "promptStartTime", Date.now());
+
+    // Derive session title from first user prompt
+    if (!state.sessions[sessionId]?.title) {
+      const t = prompt.trim();
+      const title =
+        t.length <= 40
+          ? t.split("\n")[0]
+          : (() => {
+              const sp = t.indexOf(" ", 10);
+              return `${sp > 10 ? t.slice(0, sp) : t.slice(0, 40)}\u2026`;
+            })();
+      setState("sessions", sessionId, "title", title);
+      // Persist to localStorage
+      try {
+        localStorage.setItem(`seren_session_title_${sessionId}`, title);
+      } catch (_) {
+        // localStorage may be unavailable
+      }
+    }
 
     console.log("[AcpStore] Calling acpService.sendPrompt...");
     try {
@@ -1356,6 +1414,65 @@ export const acpStore = {
 
     // Clear pending map
     session.pendingToolCalls.clear();
+  },
+
+  // ============================================================================
+  // Fork
+  // ============================================================================
+
+  /**
+   * Fork the current agent conversation from a specific message.
+   *
+   * Creates a new agent session and copies messages up to `fromMessageId`
+   * into it, giving the user a fresh session with visual context.
+   */
+  async forkConversation(fromMessageId: string): Promise<string | null> {
+    const session = this.activeSession;
+    const sessionId = state.activeSessionId;
+    if (!session || !sessionId) {
+      console.error("[AcpStore] forkConversation: no active session");
+      return null;
+    }
+
+    // Collect messages up to the fork point
+    const forkIndex = session.messages.findIndex(
+      (m) => m.id === fromMessageId,
+    );
+    if (forkIndex === -1) {
+      console.error("[AcpStore] forkConversation: message not found");
+      return null;
+    }
+    const forkedMessages = session.messages.slice(0, forkIndex + 1);
+
+    // Spawn a new session
+    const cwd = session.cwd;
+    const agentType = session.info.agentType;
+    const newSessionId = await this.spawnSession(cwd, agentType);
+    if (!newSessionId) {
+      console.error("[AcpStore] forkConversation: spawn failed");
+      return null;
+    }
+
+    // Copy messages into the new session
+    setState("sessions", newSessionId, "messages", forkedMessages);
+
+    // Set title
+    const forkTitle = `Fork of ${session.title ?? "Agent"}`;
+    setState("sessions", newSessionId, "title", forkTitle);
+    try {
+      localStorage.setItem(
+        `seren_session_title_${newSessionId}`,
+        forkTitle,
+      );
+    } catch (_) {
+      // localStorage may be unavailable
+    }
+
+    console.info(
+      `[AcpStore] Forked session ${sessionId} -> ${newSessionId} at message ${fromMessageId}`,
+    );
+
+    return newSessionId;
   },
 
   // ============================================================================

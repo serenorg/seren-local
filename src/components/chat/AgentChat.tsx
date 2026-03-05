@@ -59,6 +59,19 @@ export const AgentChat: Component<AgentChatProps> = (props) => {
   const [attachedImages, setAttachedImages] = createSignal<ImageAttachment[]>(
     [],
   );
+  const [forking, setForking] = createSignal(false);
+
+  const handleForkFromMessage = async (messageId: string) => {
+    if (forking()) return;
+    setForking(true);
+    try {
+      await acpStore.forkConversation(messageId);
+    } catch (e) {
+      console.error("[AgentChat] Fork failed:", e);
+    } finally {
+      setForking(false);
+    }
+  };
   const [commandStatus, setCommandStatus] = createSignal<string | null>(null);
   const [commandPopupIndex, setCommandPopupIndex] = createSignal(0);
   const [historyIndex, setHistoryIndex] = createSignal(-1);
@@ -390,11 +403,22 @@ export const AgentChat: Component<AgentChatProps> = (props) => {
     switch (message.type) {
       case "user":
         return (
-          <article class="px-5 py-4 bg-[#161b22] border-b border-[#21262d]">
+          <article class="group/msg relative px-5 py-4 bg-[#161b22] border-b border-[#21262d]">
             <div
               class="text-sm leading-relaxed text-[#e6edf3] whitespace-pre-wrap"
               innerHTML={escapeHtmlWithLinks(message.content)}
             />
+            <button
+              type="button"
+              class="absolute top-2 right-2 p-1 rounded text-[#484f58] hover:text-[#e6edf3] hover:bg-[#30363d] opacity-0 group-hover/msg:opacity-100 transition-opacity"
+              title="Fork conversation from here"
+              disabled={forking()}
+              onClick={() => handleForkFromMessage(message.id)}
+            >
+              <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" role="img" aria-label="Fork">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 3v6m0 0a3 3 0 103 3V9m-3 3a3 3 0 10-3 3m12-9v6m0 0a3 3 0 103 3v-3m-3 3a3 3 0 10-3 3" />
+              </svg>
+            </button>
           </article>
         );
 
@@ -403,7 +427,7 @@ export const AgentChat: Component<AgentChatProps> = (props) => {
           ? formatDurationWithVerb(message.duration)
           : null;
         return (
-          <article class="px-5 py-4 border-b border-[#21262d]">
+          <article class="group/msg relative px-5 py-4 border-b border-[#21262d]">
             <div
               class="text-sm leading-relaxed text-[#e6edf3] break-words [&_p]:m-0 [&_p]:mb-3 [&_p:last-child]:mb-0 [&_code]:bg-[#21262d] [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:rounded [&_code]:font-mono [&_code]:text-[13px] [&_pre]:bg-[#161b22] [&_pre]:border [&_pre]:border-[#30363d] [&_pre]:rounded-lg [&_pre]:p-3 [&_pre]:my-3 [&_pre]:overflow-x-auto [&_pre_code]:bg-transparent [&_pre_code]:p-0 [&_pre_code]:text-[13px] [&_pre_code]:leading-normal [&_ul]:my-2 [&_ul]:pl-6 [&_ol]:my-2 [&_ol]:pl-6 [&_li]:my-1 [&_blockquote]:border-l-[3px] [&_blockquote]:border-[#30363d] [&_blockquote]:my-3 [&_blockquote]:pl-4 [&_blockquote]:text-[#8b949e] [&_a]:text-[#58a6ff] [&_a]:no-underline [&_a:hover]:underline"
               innerHTML={collapseVerboseOutput(
@@ -419,6 +443,17 @@ export const AgentChat: Component<AgentChatProps> = (props) => {
                 &#10043; {durationDisplay!.verb} for {durationDisplay!.duration}
               </div>
             </Show>
+            <button
+              type="button"
+              class="absolute top-2 right-2 p-1 rounded text-[#484f58] hover:text-[#e6edf3] hover:bg-[#30363d] opacity-0 group-hover/msg:opacity-100 transition-opacity"
+              title="Fork conversation from here"
+              disabled={forking()}
+              onClick={() => handleForkFromMessage(message.id)}
+            >
+              <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" role="img" aria-label="Fork">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 3v6m0 0a3 3 0 103 3V9m-3 3a3 3 0 10-3 3m12-9v6m0 0a3 3 0 103 3v-3m-3 3a3 3 0 10-3 3" />
+              </svg>
+            </button>
           </article>
         );
       }
