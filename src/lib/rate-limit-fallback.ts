@@ -249,7 +249,10 @@ export async function performAgentFallback(
 
     chatStore.setMessages(conversation.id, [...chatMessages, redirectNotice]);
 
-    // Switch UI from Agent → Chat
+    // Switch UI from Agent → Chat: navigate to the new chat conversation so
+    // AgentChat unmounts and subsequent messages go to the chat orchestrator,
+    // not the already-full ACP session.
+    chatStore.setActiveConversation(conversation.id);
     acpStore.setAgentModeEnabled(false);
 
     console.info(
