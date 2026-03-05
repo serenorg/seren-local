@@ -22,7 +22,11 @@ import { openExternalLink } from "@/lib/external-link";
 import { formatDurationWithVerb } from "@/lib/format-duration";
 import { pickAndReadImages, toDataUrl } from "@/lib/images/attachments";
 import type { ImageAttachment } from "@/lib/providers/types";
-import { escapeHtmlWithLinks, renderMarkdown } from "@/lib/render-markdown";
+import {
+  escapeHtmlWithLinks,
+  renderMarkdown,
+  renderMarkdownStreaming,
+} from "@/lib/render-markdown";
 import type { AgentType, DiffEvent } from "@/services/acp";
 import { type AgentMessage, acpStore } from "@/stores/acp.store";
 import { fileTreeState } from "@/stores/fileTree";
@@ -54,6 +58,7 @@ export const AgentChat: Component<AgentChatProps> = (props) => {
   const [isAttaching, setIsAttaching] = createSignal(false);
   let inputRef: HTMLTextAreaElement | undefined;
   let messagesRef: HTMLDivElement | undefined;
+  let userHasScrolledUp = false;
 
   // Build reversed list of user prompts for Up/Down arrow navigation
   const userMessageHistory = createMemo(() =>
@@ -85,6 +90,29 @@ export const AgentChat: Component<AgentChatProps> = (props) => {
     }
   });
 
+  // Throttled streaming markdown: renders at most every 80 ms to avoid
+  // saturating the main thread with O(n) marked.parse calls on every chunk.
+  const [streamingMarkdown, setStreamingMarkdown] = createSignal("");
+  let streamingThrottle: ReturnType<typeof setTimeout> | null = null;
+  createEffect(() => {
+    const content = acpStore.streamingContent;
+    if (streamingThrottle !== null) clearTimeout(streamingThrottle);
+    if (!content) {
+      setStreamingMarkdown("");
+      return;
+    }
+    streamingThrottle = setTimeout(() => {
+      streamingThrottle = null;
+      setStreamingMarkdown(renderMarkdownStreaming(content));
+    }, 80);
+    onCleanup(() => {
+      if (streamingThrottle !== null) {
+        clearTimeout(streamingThrottle);
+        streamingThrottle = null;
+      }
+    });
+  });
+
   const hasSession = () => acpStore.activeSession !== null;
   const isReady = () => acpStore.activeSession?.info.status === "ready";
   const isPrompting = () => acpStore.activeSession?.info.status === "prompting";
@@ -98,20 +126,22 @@ export const AgentChat: Component<AgentChatProps> = (props) => {
   const hasFolderOpen = () => Boolean(fileTreeState.rootPath);
 
   const scrollToBottom = () => {
-    if (messagesRef) {
+    if (messagesRef && !userHasScrolledUp) {
       messagesRef.scrollTop = messagesRef.scrollHeight;
     }
   };
 
+  const handleMessagesScroll = () => {
+    if (!messagesRef) return;
+    const { scrollTop, scrollHeight, clientHeight } = messagesRef;
+    // Consider "near bottom" within 80px
+    userHasScrolledUp = scrollHeight - scrollTop - clientHeight > 80;
+  };
+
   // Auto-scroll when messages change
   createEffect(() => {
-    const messages = acpStore.messages;
-    const streaming = acpStore.streamingContent;
-    console.log("[AgentChat] Effect triggered:", {
-      messagesCount: messages.length,
-      streamingLength: streaming.length,
-      streamingPreview: streaming.slice(0, 100),
-    });
+    acpStore.messages;
+    acpStore.streamingContent;
     requestAnimationFrame(scrollToBottom);
   });
 
@@ -221,6 +251,7 @@ export const AgentChat: Component<AgentChatProps> = (props) => {
 
     setInput("");
     setAttachedImages([]);
+    userHasScrolledUp = false;
     await acpStore.sendPrompt(trimmed, context);
   };
 
@@ -418,6 +449,7 @@ export const AgentChat: Component<AgentChatProps> = (props) => {
       {/* Messages Area */}
       <div
         ref={messagesRef}
+        onScroll={handleMessagesScroll}
         class="flex-1 min-h-0 overflow-y-auto [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-[#30363d] [&::-webkit-scrollbar-thumb]:rounded"
         onClick={(e) => {
           const target = e.target as HTMLElement;
@@ -561,10 +593,11 @@ export const AgentChat: Component<AgentChatProps> = (props) => {
             {/* Streaming Content */}
             <Show when={acpStore.streamingContent}>
               <article class="px-5 py-4 border-b border-[#21262d]">
-                <div class="text-sm leading-relaxed text-[#e6edf3] whitespace-pre-wrap">
-                  {acpStore.streamingContent}
-                  <span class="inline-block w-2 h-4 ml-0.5 bg-[#58a6ff] animate-pulse" />
-                </div>
+                <div
+                  class="text-sm leading-relaxed text-[#e6edf3] break-words [&_p]:m-0 [&_p]:mb-3 [&_p:last-child]:mb-0 [&_h1]:text-xl [&_h1]:font-bold [&_h1]:mt-4 [&_h1]:mb-2 [&_h2]:text-lg [&_h2]:font-bold [&_h2]:mt-3 [&_h2]:mb-2 [&_h3]:text-base [&_h3]:font-semibold [&_h3]:mt-3 [&_h3]:mb-1 [&_h4]:text-sm [&_h4]:font-semibold [&_h4]:mt-2 [&_h4]:mb-1 [&_code]:bg-[#21262d] [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:rounded [&_code]:font-mono [&_code]:text-[13px] [&_pre]:bg-[#161b22] [&_pre]:border [&_pre]:border-[#30363d] [&_pre]:rounded-lg [&_pre]:p-3 [&_pre]:my-3 [&_pre]:overflow-x-auto [&_pre_code]:bg-transparent [&_pre_code]:p-0 [&_pre_code]:text-[13px] [&_pre_code]:leading-normal [&_ul]:my-2 [&_ul]:pl-6 [&_ol]:my-2 [&_ol]:pl-6 [&_li]:my-1 [&_blockquote]:border-l-[3px] [&_blockquote]:border-[#30363d] [&_blockquote]:my-3 [&_blockquote]:pl-4 [&_blockquote]:text-[#8b949e] [&_a]:text-[#58a6ff] [&_a]:no-underline [&_a:hover]:underline"
+                  innerHTML={streamingMarkdown()}
+                />
+                <span class="inline-block w-2 h-4 ml-0.5 bg-[#58a6ff] animate-pulse" />
               </article>
             </Show>
           </Show>
