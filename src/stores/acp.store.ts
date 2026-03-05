@@ -1031,13 +1031,15 @@ export const acpStore = {
         // but a final planUpdate may not arrive after the last tool finishes.
         {
           const plan = state.sessions[sessionId]?.plan;
-          if (plan?.some((e) => e.status === "in_progress")) {
+          const isInProgress = (s: string) =>
+            s === "in_progress" || s === "inprogress" || s === "inProgress";
+          if (plan?.some((e) => isInProgress(e.status))) {
             setState(
               "sessions",
               sessionId,
               "plan",
               plan.map((e) =>
-                e.status === "in_progress" ? { ...e, status: "completed" } : e,
+                isInProgress(e.status) ? { ...e, status: "completed" } : e,
               ),
             );
           }

@@ -20,6 +20,7 @@ import { collapseBuildOutput } from "@/lib/build-output";
 import { getCompletions, parseCommand } from "@/lib/commands/parser";
 import type { CommandContext } from "@/lib/commands/types";
 import { collapseDirectoryListings } from "@/lib/directory-listing";
+import { createDragDrop } from "@/lib/drag-drop";
 import { openExternalLink } from "@/lib/external-link";
 import { openFileInTab } from "@/lib/files/service";
 import {
@@ -58,6 +59,9 @@ export const AgentChat: Component<AgentChatProps> = (props) => {
   const [messageQueue, setMessageQueue] = createSignal<string[]>([]);
   const [attachedImages, setAttachedImages] = createSignal<ImageAttachment[]>(
     [],
+  );
+  const { isDragging, setDropTarget } = createDragDrop((files) =>
+    setAttachedImages((prev) => [...prev, ...files]),
   );
   const [forking, setForking] = createSignal(false);
 
@@ -498,7 +502,14 @@ export const AgentChat: Component<AgentChatProps> = (props) => {
   };
 
   return (
-    <div class="flex-1 flex flex-col min-h-0">
+    <div class="relative flex-1 flex flex-col min-h-0" ref={setDropTarget}>
+      <Show when={isDragging()}>
+        <div class="absolute inset-0 bg-[#1f6feb]/10 border-2 border-dashed border-[#1f6feb]/50 rounded-sm z-50 pointer-events-none flex items-center justify-center">
+          <span class="text-[#58a6ff] text-sm font-medium bg-[#0d1117]/90 px-3 py-1.5 rounded-md shadow-sm">
+            Drop files to attach
+          </span>
+        </div>
+      </Show>
       {/* Agent Tab Bar */}
       <Show when={hasSession()}>
         <AgentTabBar onNewSession={startSession} />
