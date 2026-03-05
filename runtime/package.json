@@ -1,6 +1,6 @@
 {
   "name": "@serendb/serendesktop",
-  "version": "0.1.17",
+  "version": "0.1.18",
   "description": "Seren Local runtime — enables ACP agents, local MCP, and file access",
   "type": "module",
   "license": "MIT",
