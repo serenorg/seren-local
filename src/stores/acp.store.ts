@@ -109,6 +109,32 @@ let globalUnsubscribe: UnlistenFn | null = null;
 /** Guard against concurrent auto-recovery spawns in sendPrompt. */
 let recoveryInFlight: Promise<string | null> | null = null;
 
+/** Spawn cascade guard: track recent failures per session to prevent infinite loops. */
+const SPAWN_CASCADE_WINDOW_MS = 30_000;
+const SPAWN_CASCADE_MAX_FAILURES = 3;
+const spawnFailureTimestamps = new Map<string, number[]>();
+
+function recordSpawnFailure(sessionId: string): void {
+  const now = Date.now();
+  const timestamps = spawnFailureTimestamps.get(sessionId) ?? [];
+  timestamps.push(now);
+  const cutoff = now - SPAWN_CASCADE_WINDOW_MS;
+  const recent = timestamps.filter((t) => t >= cutoff);
+  spawnFailureTimestamps.set(sessionId, recent);
+}
+
+function isSpawnCascading(sessionId: string): boolean {
+  const now = Date.now();
+  const timestamps = spawnFailureTimestamps.get(sessionId) ?? [];
+  const cutoff = now - SPAWN_CASCADE_WINDOW_MS;
+  const recent = timestamps.filter((t) => t >= cutoff);
+  return recent.length >= SPAWN_CASCADE_MAX_FAILURES;
+}
+
+function clearSpawnFailures(sessionId: string): void {
+  spawnFailureTimestamps.delete(sessionId);
+}
+
 // ============================================================================
 // Store
 // ============================================================================
@@ -261,6 +287,20 @@ export const acpStore = {
     agentType?: AgentType,
   ): Promise<string | null> {
     const resolvedAgentType = agentType ?? state.selectedAgentType;
+
+    // Prevent infinite spawn-crash-respawn cascades
+    if (isSpawnCascading(resolvedAgentType)) {
+      console.error(
+        `[AcpStore] Spawn cascade detected for ${resolvedAgentType} — ${SPAWN_CASCADE_MAX_FAILURES} failures in ${SPAWN_CASCADE_WINDOW_MS / 1000}s. Stopping auto-resume.`,
+      );
+      setState(
+        "error",
+        "Agent failed to start after multiple attempts. Please try again or check Settings.",
+      );
+      setState("isLoading", false);
+      return null;
+    }
+
     setState("isLoading", true);
     setState("error", null);
 
@@ -402,10 +442,12 @@ export const acpStore = {
       setState("isLoading", false);
       tempUnsubscribe();
 
+      clearSpawnFailures(resolvedAgentType);
       return info.id;
     } catch (error) {
       console.error("[AcpStore] Spawn error:", error);
       tempUnsubscribe();
+      recordSpawnFailure(resolvedAgentType);
       const message =
         error instanceof Error ? error.message : String(error);
       setState("error", message);
@@ -483,6 +525,29 @@ export const acpStore = {
       return;
     }
 
+    // If auto-recovery is in-flight (triggered by another sendPrompt call),
+    // wait for it to complete. Recovery already retries the original prompt,
+    // so proceeding would race and cause "Another prompt is already active".
+    if (recoveryInFlight) {
+      console.info(
+        "[AcpStore] sendPrompt: recovery in-flight, waiting before proceeding...",
+      );
+      await recoveryInFlight;
+      const refreshed = state.sessions[sessionId];
+      if (!refreshed) {
+        console.info(
+          "[AcpStore] sendPrompt: session gone after recovery, aborting",
+        );
+        return;
+      }
+      if (refreshed.info.status === "prompting") {
+        console.info(
+          "[AcpStore] sendPrompt: session already prompting after recovery, aborting duplicate",
+        );
+        return;
+      }
+    }
+
     // Wait for session to be ready before sending prompt
     const readyEntry = sessionReadyPromises.get(sessionId);
     if (readyEntry) {
@@ -491,6 +556,21 @@ export const acpStore = {
       );
       await readyEntry.promise;
       console.info("[AcpStore] sendPrompt: session is now ready");
+    }
+
+    // Re-check after async waits — recovery may have started while we waited.
+    if (recoveryInFlight) {
+      console.info(
+        "[AcpStore] sendPrompt: recovery started during ready-wait, deferring...",
+      );
+      await recoveryInFlight;
+      const refreshed = state.sessions[sessionId];
+      if (!refreshed || refreshed.info.status === "prompting") {
+        console.info(
+          "[AcpStore] sendPrompt: session busy after recovery, aborting duplicate",
+        );
+        return;
+      }
     }
 
     // Optimistically mark as prompting so the UI can show a loading state
@@ -920,6 +1000,12 @@ export const acpStore = {
         break;
 
       case "error":
+        // Log full error content for diagnostics (helps debug cascade crashes)
+        console.error(
+          `[AcpStore] Error event for session ${sessionId}:`,
+          event.data.error,
+        );
+
         // Clean up any in-flight streaming and tool cards
         this.finalizeStreamingContent(sessionId);
         this.markPendingToolCallsComplete(sessionId);

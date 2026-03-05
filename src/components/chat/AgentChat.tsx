@@ -21,6 +21,7 @@ import { getCompletions, parseCommand } from "@/lib/commands/parser";
 import type { CommandContext } from "@/lib/commands/types";
 import { collapseDirectoryListings } from "@/lib/directory-listing";
 import { openExternalLink } from "@/lib/external-link";
+import { openFileInTab } from "@/lib/files/service";
 import {
   getModelDisplayName,
   mapAgentModelToChat,
@@ -482,7 +483,40 @@ export const AgentChat: Component<AgentChatProps> = (props) => {
           if (link) {
             e.preventDefault();
             const url = link.dataset.externalUrl;
-            if (url) openExternalLink(url);
+            if (url) {
+              // Detect local file paths and open them in the editor
+              const isFilePath =
+                url.startsWith("/") ||
+                url.startsWith("./") ||
+                url.startsWith("../") ||
+                url.startsWith("~");
+              if (isFilePath && !url.startsWith("//")) {
+                const cwd = acpStore.cwd;
+                const resolved =
+                  url.startsWith("/") || url.startsWith("~")
+                    ? url
+                    : cwd
+                      ? `${cwd.replace(/\/$/, "")}/${url}`
+                      : url;
+                openFileInTab(resolved)
+                  .then(() => {
+                    window.dispatchEvent(
+                      new CustomEvent("seren:open-panel", {
+                        detail: "editor",
+                      }),
+                    );
+                  })
+                  .catch((err) =>
+                    console.warn(
+                      "[AgentChat] Failed to open file:",
+                      resolved,
+                      err,
+                    ),
+                  );
+              } else {
+                openExternalLink(url);
+              }
+            }
             return;
           }
           const copyBtn = target.closest(".code-copy-btn") as HTMLElement;
