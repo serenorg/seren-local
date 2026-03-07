@@ -11,6 +11,7 @@ import {
   onCleanup,
   onMount,
   Show,
+  untrack,
 } from "solid-js";
 import { AcpPermissionDialog } from "@/components/acp/AcpPermissionDialog";
 import { DiffProposalDialog } from "@/components/acp/DiffProposalDialog";
@@ -27,7 +28,6 @@ import {
   getModelDisplayName,
   mapAgentModelToChat,
 } from "@/lib/rate-limit-fallback";
-import { collapseVerboseOutput } from "@/lib/verbose-output";
 import { formatDurationWithVerb } from "@/lib/format-duration";
 import { pickAndReadImages, toDataUrl } from "@/lib/images/attachments";
 import type { ImageAttachment } from "@/lib/providers/types";
@@ -53,6 +53,9 @@ import { ToolCallCard } from "./ToolCallCard";
 interface AgentChatProps {
   onViewDiff?: (diff: DiffEvent) => void;
 }
+
+// Per-session input drafts so switching sessions doesn't leak text between them.
+const agentDrafts = new Map<string, string>();
 
 export const AgentChat: Component<AgentChatProps> = (props) => {
   const [input, setInput] = createSignal("");
@@ -84,6 +87,24 @@ export const AgentChat: Component<AgentChatProps> = (props) => {
   let inputRef: HTMLTextAreaElement | undefined;
   let messagesRef: HTMLDivElement | undefined;
   let userHasScrolledUp = false;
+  let prevSessionId: string | null = null;
+
+  // Save/restore per-session input drafts when switching agent sessions
+  createEffect(() => {
+    const currentId = acpStore.activeSessionId;
+    if (currentId !== prevSessionId) {
+      if (prevSessionId) {
+        const currentInput = untrack(input);
+        if (currentInput) {
+          agentDrafts.set(prevSessionId, currentInput);
+        } else {
+          agentDrafts.delete(prevSessionId);
+        }
+      }
+      setInput(currentId ? (agentDrafts.get(currentId) ?? "") : "");
+      prevSessionId = currentId;
+    }
+  });
 
   // Build reversed list of user prompts for Up/Down arrow navigation
   const userMessageHistory = createMemo(() =>
@@ -434,11 +455,9 @@ export const AgentChat: Component<AgentChatProps> = (props) => {
           <article class="group/msg relative px-5 py-4 border-b border-[#21262d]">
             <div
               class="text-sm leading-relaxed text-[#e6edf3] break-words [&_p]:m-0 [&_p]:mb-3 [&_p:last-child]:mb-0 [&_code]:bg-[#21262d] [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:rounded [&_code]:font-mono [&_code]:text-[13px] [&_pre]:bg-[#161b22] [&_pre]:border [&_pre]:border-[#30363d] [&_pre]:rounded-lg [&_pre]:p-3 [&_pre]:my-3 [&_pre]:overflow-x-auto [&_pre_code]:bg-transparent [&_pre_code]:p-0 [&_pre_code]:text-[13px] [&_pre_code]:leading-normal [&_ul]:my-2 [&_ul]:pl-6 [&_ol]:my-2 [&_ol]:pl-6 [&_li]:my-1 [&_blockquote]:border-l-[3px] [&_blockquote]:border-[#30363d] [&_blockquote]:my-3 [&_blockquote]:pl-4 [&_blockquote]:text-[#8b949e] [&_a]:text-[#58a6ff] [&_a]:no-underline [&_a:hover]:underline"
-              innerHTML={collapseVerboseOutput(
-                collapseBuildOutput(
-                  collapseDirectoryListings(
-                    renderMarkdown(message.content),
-                  ),
+              innerHTML={collapseBuildOutput(
+                collapseDirectoryListings(
+                  renderMarkdown(message.content),
                 ),
               )}
             />

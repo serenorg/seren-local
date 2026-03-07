@@ -11,6 +11,7 @@ import {
   onCleanup,
   onMount,
   Show,
+  untrack,
 } from "solid-js";
 import { SignIn } from "@/components/auth/SignIn";
 import { VoiceInputButton } from "@/components/chat/VoiceInputButton";
@@ -19,7 +20,6 @@ import { getCompletions, parseCommand } from "@/lib/commands/parser";
 import type { CommandContext } from "@/lib/commands/types";
 import { collapseDirectoryListings } from "@/lib/directory-listing";
 import { openExternalLink } from "@/lib/external-link";
-import { collapseVerboseOutput } from "@/lib/verbose-output";
 import { pickAndReadImages } from "@/lib/images/attachments";
 import type { ImageAttachment } from "@/lib/providers/types";
 import { escapeHtmlWithLinks, renderMarkdown } from "@/lib/render-markdown";
@@ -97,6 +97,9 @@ interface ChatContentProps {
   onSignInClick?: () => void;
 }
 
+// Per-conversation input drafts so switching conversations doesn't leak text.
+const chatDrafts = new Map<string, string>();
+
 export const ChatContent: Component<ChatContentProps> = (_props) => {
   const [input, setInput] = createSignal("");
   const [streamingSession, setStreamingSession] =
@@ -118,6 +121,24 @@ export const ChatContent: Component<ChatContentProps> = (_props) => {
   let inputRef: HTMLTextAreaElement | undefined;
   let messagesRef: HTMLDivElement | undefined;
   let suggestionDebounceTimer: ReturnType<typeof setTimeout> | undefined;
+  let prevConversationId: string | null = null;
+
+  // Save/restore per-conversation input drafts when switching conversations
+  createEffect(() => {
+    const currentId = chatStore.activeConversationId;
+    if (currentId !== prevConversationId) {
+      if (prevConversationId) {
+        const currentInput = untrack(input);
+        if (currentInput) {
+          chatDrafts.set(prevConversationId, currentInput);
+        } else {
+          chatDrafts.delete(prevConversationId);
+        }
+      }
+      setInput(currentId ? (chatDrafts.get(currentId) ?? "") : "");
+      prevConversationId = currentId;
+    }
+  });
   const handlePickImages = () => handleAttachImages();
 
   // Click handler for copy buttons and external links (event delegation)
@@ -761,11 +782,9 @@ export const ChatContent: Component<ChatContentProps> = (_props) => {
                           class="chat-message-content text-[14px] leading-[1.7] text-[#e6edf3] break-words [&_p]:m-0 [&_p]:mb-3 [&_p:last-child]:mb-0 [&_h1]:text-[1.3em] [&_h1]:font-semibold [&_h1]:mt-5 [&_h1]:mb-3 [&_h1]:text-[#f0f6fc] [&_h1]:border-b [&_h1]:border-[#21262d] [&_h1]:pb-2 [&_h2]:text-[1.15em] [&_h2]:font-semibold [&_h2]:mt-4 [&_h2]:mb-2 [&_h2]:text-[#f0f6fc] [&_h3]:text-[1.05em] [&_h3]:font-semibold [&_h3]:mt-3 [&_h3]:mb-2 [&_h3]:text-[#f0f6fc] [&_code]:bg-[#1c2333] [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:rounded [&_code]:font-mono [&_code]:text-[13px] [&_pre]:bg-[#161b22] [&_pre]:border [&_pre]:border-[#30363d] [&_pre]:rounded-lg [&_pre]:p-3 [&_pre]:my-3 [&_pre]:overflow-x-auto [&_pre_code]:bg-transparent [&_pre_code]:p-0 [&_ul]:my-2 [&_ul]:pl-6 [&_ol]:my-2 [&_ol]:pl-6 [&_li]:my-1 [&_li]:leading-[1.6] [&_blockquote]:border-l-[3px] [&_blockquote]:border-[#30363d] [&_blockquote]:my-3 [&_blockquote]:pl-4 [&_blockquote]:text-[#8b949e] [&_a]:text-[#58a6ff] [&_a]:no-underline [&_a:hover]:underline [&_strong]:text-[#f0f6fc] [&_strong]:font-semibold"
                           innerHTML={
                             message.role === "assistant"
-                              ? collapseVerboseOutput(
-                                  collapseBuildOutput(
-                                    collapseDirectoryListings(
-                                      renderMarkdown(message.content),
-                                    ),
+                              ? collapseBuildOutput(
+                                  collapseDirectoryListings(
+                                    renderMarkdown(message.content),
                                   ),
                                 )
                               : escapeHtmlWithLinks(message.content)
