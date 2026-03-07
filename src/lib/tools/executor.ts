@@ -26,8 +26,8 @@ interface FileEntry {
   is_directory: boolean;
 }
 
-const OPENCLAW_APPROVAL_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
-const GATEWAY_APPROVAL_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
+// No approval timeout — users may need time to review operations.
+// Channel cleanup handles session termination (sender drops, receiver gets Err).
 
 function parseOpenClawApprovalError(
   message: string,
@@ -58,16 +58,9 @@ function parseOpenClawApprovalError(
 
 async function waitForOpenClawApproval(approvalId: string): Promise<boolean> {
   return new Promise((resolve) => {
-    let unlisten: UnlistenFn | undefined;
-    const timeout = setTimeout(() => {
-      unlisten?.();
-      resolve(false);
-    }, OPENCLAW_APPROVAL_TIMEOUT_MS);
-
-    unlisten = onRuntimeEvent("openclaw://approval-response", (payload) => {
+    const unlisten = onRuntimeEvent("openclaw://approval-response", (payload) => {
       const data = payload as { id: string; approved: boolean };
       if (data.id !== approvalId) return;
-      clearTimeout(timeout);
       unlisten?.();
       resolve(data.approved);
     });
@@ -103,22 +96,14 @@ async function requestGatewayApproval(
     },
   });
 
-  // Wait for approval response
+  // Wait for approval response — no timeout, user may need time to review
   return new Promise((resolve) => {
-    let unlisten: UnlistenFn | undefined;
-    const timeout = setTimeout(() => {
-      console.log(`[Tool Executor] Approval timeout for ${approvalId}`);
-      unlisten?.();
-      resolve(false);
-    }, GATEWAY_APPROVAL_TIMEOUT_MS);
-
-    unlisten = onRuntimeEvent("gateway://approval-response", (payload) => {
+    const unlisten = onRuntimeEvent("gateway://approval-response", (payload) => {
       const data = payload as { id: string; approved: boolean };
       if (data.id !== approvalId) return;
       console.log(
         `[Tool Executor] Received approval response: ${data.approved}`,
       );
-      clearTimeout(timeout);
       unlisten?.();
       resolve(data.approved);
     });
