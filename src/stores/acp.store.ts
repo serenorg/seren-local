@@ -65,6 +65,12 @@ export interface ActiveSession {
   rateLimitHit?: boolean;
   /** Set when the agent's context window is full — triggers fallback to Chat mode */
   promptTooLong?: boolean;
+  /** Most recent user prompt text — used to retry after compaction. */
+  lastUserPrompt?: string;
+  /** Set after a compact-and-retry attempt so we only try once per prompt. */
+  compactRetryAttempted?: boolean;
+  /** Set when conversation is being compacted. */
+  isCompacting?: boolean;
 }
 
 interface AcpState {
@@ -638,6 +644,9 @@ export const acpStore = {
     setState("sessions", sessionId, "streamingThinking", "");
     // Track when the prompt started for duration calculation
     setState("sessions", sessionId, "promptStartTime", Date.now());
+    // Store the prompt so we can retry after compaction if needed
+    setState("sessions", sessionId, "lastUserPrompt", prompt);
+    setState("sessions", sessionId, "compactRetryAttempted", false);
 
     // Derive session title from first user prompt
     if (!state.sessions[sessionId]?.title) {
@@ -937,6 +946,113 @@ export const acpStore = {
   },
 
   /**
+   * Compact the conversation and retry the last user prompt.
+   * Returns true if compaction + retry succeeded, false if we should fall back.
+   */
+  async compactAndRetry(sessionId: string): Promise<boolean> {
+    const session = state.sessions[sessionId];
+    if (!session || session.compactRetryAttempted || session.isCompacting) {
+      return false;
+    }
+
+    const lastPrompt = session.lastUserPrompt;
+    if (!lastPrompt) {
+      console.warn("[AcpStore] compactAndRetry: no lastUserPrompt to retry");
+      return false;
+    }
+
+    setState("sessions", sessionId, "compactRetryAttempted", true);
+    setState("sessions", sessionId, "isCompacting", true);
+    console.info(
+      "[AcpStore] Prompt too long — attempting compaction before falling back to Chat",
+    );
+
+    try {
+      const messages = session.messages;
+      const preserveCount = 20;
+      if (messages.length <= preserveCount) {
+        console.info("[AcpStore] Not enough messages to compact");
+        return false;
+      }
+
+      const toCompact: AgentMessage[] = messages.slice(0, messages.length - preserveCount);
+      const toPreserve: AgentMessage[] = messages.slice(-preserveCount);
+
+      // Generate summary via Seren Chat API
+      const { sendMessage } = await import("@/services/chat");
+      const summaryPrompt = `Please provide a concise summary of the following AI coding agent conversation. Focus on: what tasks were requested, what files were modified, key decisions made, and current state of the work. Keep the summary under 500 words.
+
+Conversation to summarize:
+${toCompact.map((m) => `${m.type.toUpperCase()}: ${m.content}`).join("\n\n")}
+
+Summary:`;
+
+      const summary = await sendMessage(summaryPrompt, "anthropic/claude-sonnet-4");
+
+      // Terminate old session and spawn a new one
+      const cwd = session.cwd;
+      const agentType = session.info.agentType;
+
+      await this.terminateSession(sessionId);
+
+      const newSessionId = await this.spawnSession(cwd, agentType);
+      if (!newSessionId) {
+        console.error("[AcpStore] Failed to spawn new session after compaction");
+        return false;
+      }
+
+      // Restore preserved messages on the new session
+      setState("sessions", newSessionId, "messages", toPreserve);
+
+      console.info(
+        `[AcpStore] Compacted ${toCompact.length} messages, preserved ${toPreserve.length}. Seeding new session.`,
+      );
+
+      // Seed the new agent with context
+      const MAX_MSG_CHARS = 2000;
+      const preservedContext = toPreserve
+        .filter((m) => m.type === "user" || m.type === "assistant")
+        .map((m) => {
+          const content =
+            m.content.length > MAX_MSG_CHARS
+              ? `${m.content.slice(0, MAX_MSG_CHARS)}... [truncated]`
+              : m.content;
+          return `${m.type.toUpperCase()}: ${content}`;
+        })
+        .join("\n\n");
+
+      const seedPrompt = preservedContext
+        ? `Here is a summary of our prior conversation:\n\n${summary}\n\nHere are the most recent messages:\n\n${preservedContext}\n\nContinue from where we left off. The user may send a new message shortly.`
+        : `Here is a summary of our prior conversation:\n\n${summary}\n\nContinue from where we left off. The user may send a new message shortly.`;
+
+      // Wait for the new session to be ready, then seed + retry
+      const readyEntry = sessionReadyPromises.get(newSessionId);
+      if (readyEntry) {
+        await readyEntry.promise;
+      }
+
+      await acpService.sendPrompt(newSessionId, seedPrompt);
+
+      // Now retry the original prompt
+      console.info(
+        `[AcpStore] Compaction complete, retrying prompt on session ${newSessionId}`,
+      );
+      await acpService.sendPrompt(newSessionId, lastPrompt);
+      return true;
+    } catch (error) {
+      console.error(
+        "[AcpStore] compactAndRetry failed, falling back to Chat:",
+        error,
+      );
+      return false;
+    } finally {
+      if (state.sessions[sessionId]) {
+        setState("sessions", sessionId, "isCompacting", false);
+      }
+    }
+  },
+
+  /**
    * Set the selected agent type for new sessions.
    */
   setSelectedAgentType(agentType: AgentType) {
@@ -1129,15 +1245,32 @@ export const acpStore = {
             ]);
           }
         } else if (isPromptTooLongError(String(event.data.error))) {
-          // Context window full — automatically switch to chat mode
-          console.info(
-            "[AcpStore] Prompt too long detected, automatically switching to chat mode",
-          );
-          setState("sessions", sessionId, "promptTooLong", true);
-          this.addErrorMessage(sessionId, event.data.error);
+          // Context window full — try compaction + retry before falling back
+          console.info("[AcpStore] Prompt too long detected in error event");
 
-          this.acceptRateLimitFallback().catch((err) => {
-            console.error("[AcpStore] Auto-failover failed:", err);
+          // Reset to "ready" so the UI unfreezes — promptComplete never
+          // fires after this error so the session would stay stuck in
+          // "prompting" forever without this.
+          setState(
+            "sessions",
+            sessionId,
+            "info",
+            "status",
+            "ready" as SessionStatus,
+          );
+
+          // Try compact-and-retry first; fall back to Chat only if it fails
+          this.compactAndRetry(sessionId).then((retried) => {
+            if (!retried) {
+              console.info(
+                "[AcpStore] Compact-and-retry not possible, falling back to Chat mode",
+              );
+              setState("sessions", sessionId, "promptTooLong", true);
+              this.addErrorMessage(sessionId, event.data.error);
+              this.acceptRateLimitFallback().catch((err) => {
+                console.error("[AcpStore] Auto-failover failed:", err);
+              });
+            }
           });
         } else if (isRateLimitError(String(event.data.error))) {
           // Rate limit hit — automatically switch to chat mode
@@ -1147,11 +1280,31 @@ export const acpStore = {
           setState("sessions", sessionId, "rateLimitHit", true);
           this.addErrorMessage(sessionId, event.data.error);
 
+          // Reset to "ready" so the UI unfreezes (same reason as above).
+          setState(
+            "sessions",
+            sessionId,
+            "info",
+            "status",
+            "ready" as SessionStatus,
+          );
+
           this.acceptRateLimitFallback().catch((err) => {
             console.error("[AcpStore] Auto-failover failed:", err);
           });
         } else {
           this.addErrorMessage(sessionId, event.data.error);
+
+          // Ensure the session is not stuck in "prompting" after any error.
+          if (state.sessions[sessionId]?.info.status === "prompting") {
+            setState(
+              "sessions",
+              sessionId,
+              "info",
+              "status",
+              "ready" as SessionStatus,
+            );
+          }
         }
         break;
 
@@ -1349,17 +1502,21 @@ export const acpStore = {
         duration,
       };
       // If the agent's response is a prompt-too-long error (context window full),
-      // automatically switch to Chat mode with history preserved.
+      // try compaction + retry before falling back to Chat mode.
       if (isPromptTooLongError(session.streamingContent)) {
         console.info(
-          "[AcpStore] Prompt too long detected in streamed content, switching to Chat mode",
+          "[AcpStore] Prompt too long detected in streamed content",
         );
-        setState("sessions", sessionId, "promptTooLong", true);
-        this.acceptRateLimitFallback().catch((err) => {
-          console.error(
-            "[AcpStore] Auto-failover from streamed content failed:",
-            err,
-          );
+        this.compactAndRetry(sessionId).then((retried) => {
+          if (!retried) {
+            setState("sessions", sessionId, "promptTooLong", true);
+            this.acceptRateLimitFallback().catch((err) => {
+              console.error(
+                "[AcpStore] Auto-failover from streamed content failed:",
+                err,
+              );
+            });
+          }
         });
       }
 

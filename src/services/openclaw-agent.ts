@@ -274,8 +274,6 @@ async function getAIResponse(
 // Approval Flow
 // ============================================================================
 
-const APPROVAL_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
-
 async function requestApproval(
   msg: InboundMessage,
   draftResponse: string,
@@ -300,21 +298,14 @@ async function requestApproval(
       resolve(false);
     });
 
-    // Listen for approval/rejection
+    // Listen for approval/rejection — no timeout, user may need time to review
     let unlisten: UnlistenFn | undefined;
     let resolved = false;
-    const timeout = setTimeout(() => {
-      if (resolved) return;
-      resolved = true;
-      unlisten?.();
-      resolve(false);
-    }, APPROVAL_TIMEOUT_MS);
 
     unlisten = onRuntimeEvent("openclaw://approval-response", (payload) => {
       const data = payload as { id: string; approved: boolean };
       if (data.id === approvalId && !resolved) {
         resolved = true;
-        clearTimeout(timeout);
         unlisten?.();
         resolve(data.approved);
       }
