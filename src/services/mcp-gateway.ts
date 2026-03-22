@@ -93,29 +93,119 @@ function isCacheValid(): boolean {
 function parsePublisherFromToolName(toolName: string): {
   publisher: string;
   originalName: string;
-} {
+} | null {
   const match = toolName.match(/^mcp__([^_]+)__(.+)$/);
   if (match) {
     return { publisher: match[1], originalName: match[2] };
   }
-  // Fallback for tools without publisher prefix
-  return { publisher: "seren", originalName: toolName };
+  // No publisher prefix — not a gateway tool
+  return null;
 }
 
 /**
  * Convert MCP tool to GatewayTool format.
  */
-function convertToGatewayTool(tool: McpTool): GatewayTool {
-  const { publisher } = parsePublisherFromToolName(tool.name);
+function convertToGatewayTool(tool: McpTool): GatewayTool | null {
+  const parsed = parsePublisherFromToolName(tool.name);
+  if (!parsed) return null;
   return {
-    publisher,
-    publisherName: publisher, // We don't have the display name from MCP
+    publisher: parsed.publisher,
+    publisherName: parsed.publisher, // We don't have the display name from MCP
     tool: {
       name: tool.name,
       description: tool.description,
       inputSchema: tool.inputSchema as McpToolInfo["inputSchema"],
     },
   };
+}
+
+/**
+ * Discover dynamic publisher tools via the gateway.
+ *
+ * Queries `list_agent_publishers` for all active publishers, then calls
+ * `list_mcp_tools` for each to discover tools (Gmail, Google Calendar, etc.).
+ * Publishers that don't expose tools return empty/error and are skipped.
+ */
+async function discoverPublisherTools(): Promise<GatewayTool[]> {
+  // Get all available publishers from the gateway
+  const pubResult: McpToolResult = await mcpClient.callToolHttp(
+    SEREN_MCP_SERVER_NAME,
+    { name: "list_agent_publishers", arguments: {} },
+  );
+
+  if (pubResult.isError || !pubResult.content) return [];
+
+  let publisherSlugs: string[] = [];
+  try {
+    const contentArray = pubResult.content as Array<{
+      type: string;
+      text?: string;
+    }>;
+    const textContent = contentArray?.find((c) => c.type === "text")?.text;
+    if (textContent) {
+      const parsed = JSON.parse(textContent);
+      const pubs = parsed.publishers ?? parsed.data ?? parsed ?? [];
+      publisherSlugs = pubs
+        .map((p: { slug?: string; name?: string }) => p.slug ?? p.name)
+        .filter(Boolean);
+    }
+  } catch {
+    return [];
+  }
+
+  if (publisherSlugs.length === 0) return [];
+
+  // For each MCP publisher, query its tools
+  const allTools: GatewayTool[] = [];
+  const results = await Promise.allSettled(
+    publisherSlugs.map(async (slug) => {
+      const toolResult: McpToolResult = await mcpClient.callToolHttp(
+        SEREN_MCP_SERVER_NAME,
+        { name: "list_mcp_tools", arguments: { publisher: slug } },
+      );
+      if (toolResult.isError || !toolResult.content) return [];
+
+      const contentArray = toolResult.content as Array<{
+        type: string;
+        text?: string;
+      }>;
+      const textContent = contentArray?.find((c) => c.type === "text")?.text;
+      if (!textContent) return [];
+
+      let tools: Array<{
+        name: string;
+        description?: string;
+        inputSchema?: McpToolInfo["inputSchema"];
+      }> = [];
+      try {
+        const parsed = JSON.parse(textContent);
+        tools = parsed.tools ?? parsed ?? [];
+      } catch {
+        return [];
+      }
+
+      return tools.map((tool) => ({
+        publisher: slug,
+        publisherName: slug,
+        tool: {
+          name: `mcp__${slug}__${tool.name}`,
+          description: tool.description ?? `${tool.name} from ${slug}`,
+          inputSchema: tool.inputSchema ?? {
+            type: "object" as const,
+            properties: {} as Record<string, McpPropertySchema>,
+          },
+        },
+      }));
+    }),
+  );
+
+  for (const result of results) {
+    if (result.status === "fulfilled" && result.value.length > 0) {
+      allTools.push(...result.value);
+    }
+  }
+
+  return allTools;
 }
 
 /**
@@ -176,8 +266,36 @@ export async function initializeGateway(): Promise<void> {
         throw new Error("Connection not found after connecting");
       }
 
-      // Convert MCP tools to GatewayTool format
-      cachedTools = connection.tools.map(convertToGatewayTool);
+      // Convert MCP tools to GatewayTool format (filter out non-gateway tools)
+      cachedTools = connection.tools
+        .map(convertToGatewayTool)
+        .filter((t): t is GatewayTool => t !== null);
+
+      // Discover dynamic publisher tools
+      try {
+        const publisherTools = await discoverPublisherTools();
+        if (publisherTools.length > 0) {
+          // Merge with deduplication
+          const existingNames = new Set(
+            cachedTools.map((t) => t.tool.name),
+          );
+          for (const pt of publisherTools) {
+            if (!existingNames.has(pt.tool.name)) {
+              cachedTools.push(pt);
+              existingNames.add(pt.tool.name);
+            }
+          }
+          console.log(
+            `[MCP Gateway] Added ${publisherTools.length} dynamic publisher tools`,
+          );
+        }
+      } catch (err) {
+        console.warn(
+          "[MCP Gateway] Failed to discover publisher tools:",
+          err,
+        );
+      }
+
       lastFetchedAt = Date.now();
 
       console.log(
@@ -307,7 +425,9 @@ export async function callGatewayTool(
     };
   } catch (error) {
     const executionTime = Date.now() - startTime;
-    console.error("[MCP Gateway] Tool call failed:", error);
+    console.error(
+      `[MCP Gateway] Tool call failed: ${error instanceof Error ? error.message : String(error)}`,
+    );
 
     return {
       result: error instanceof Error ? error.message : String(error),

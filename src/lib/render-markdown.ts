@@ -1,9 +1,14 @@
 // ABOUTME: Converts markdown text to HTML for display in agent chat messages.
-// ABOUTME: Handles code highlighting, link safety, and agent unfenced-code normalization.
+// ABOUTME: Handles code highlighting, link safety, and Codex unfenced-code normalization.
 import hljs from "highlight.js";
 import { marked, type Tokens } from "marked";
 import { escapeHtml } from "@/lib/escape-html";
-import "./render-markdown.css";
+
+// Size-limit constants for ReDoS protection
+const MAX_HIGHLIGHT_AUTO_CHARS = 10_000;
+const MAX_HIGHLIGHT_CHARS = 100_000;
+const MAX_WRAP_ISLANDS_CHARS = 50_000;
+const MAX_MARKDOWN_CHARS = 200_000;
 
 // Custom renderer for markdown
 const renderer = new marked.Renderer();
@@ -29,10 +34,14 @@ renderer.code = (token: Tokens.Code): string => {
   const { text, lang } = token;
   let highlighted: string;
 
-  if (lang && hljs.getLanguage(lang)) {
+  if (text.length > MAX_HIGHLIGHT_CHARS) {
+    highlighted = escapeHtml(text);
+  } else if (lang && hljs.getLanguage(lang)) {
     highlighted = hljs.highlight(text, { language: lang }).value;
-  } else {
+  } else if (text.length <= MAX_HIGHLIGHT_AUTO_CHARS) {
     highlighted = hljs.highlightAuto(text).value;
+  } else {
+    highlighted = escapeHtml(text);
   }
 
   const langClass = lang ? ` class="language-${escapeHtml(lang)}"` : "";
@@ -207,25 +216,17 @@ export function wrapCodeIslands(text: string): string {
 function normalizeAgentMarkdown(markdown: string): string {
   let result = markdown.replace(/([^\n])\n(#{1,6} )/g, "$1\n\n$2");
   result = result.replace(/([^\n])\n(`{3,}|~{3,})/g, "$1\n\n$2");
+  if (result.length > MAX_WRAP_ISLANDS_CHARS) {
+    return result;
+  }
   return wrapCodeIslands(result);
 }
 
 export function renderMarkdown(markdown: string): string {
+  if (markdown.length > MAX_MARKDOWN_CHARS) {
+    return `<pre style="white-space:pre-wrap;word-break:break-word">${escapeHtml(markdown)}</pre>`;
+  }
   const result = marked.parse(normalizeAgentMarkdown(markdown));
-  return typeof result === "string" ? result : "";
-}
-
-// Fast path for streaming: skip wrapCodeIslands (expensive O(n) scan per chunk).
-// Called on every throttle tick during active streaming; wrapCodeIslands runs
-// once when the final message is committed to messages.
-function normalizeStreaming(markdown: string): string {
-  let result = markdown.replace(/([^\n])\n(#{1,6} )/g, "$1\n\n$2");
-  result = result.replace(/([^\n])\n(`{3,}|~{3,})/g, "$1\n\n$2");
-  return result;
-}
-
-export function renderMarkdownStreaming(markdown: string): string {
-  const result = marked.parse(normalizeStreaming(markdown));
   return typeof result === "string" ? result : "";
 }
 

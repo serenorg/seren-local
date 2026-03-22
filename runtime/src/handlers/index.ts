@@ -2,6 +2,7 @@
 // ABOUTME: Called once at server startup.
 
 import { registerHandler } from "../rpc.js";
+import { orchestrate, cancelOrchestration } from "../services/orchestrator.js";
 import * as acp from "./acp.js";
 import * as chat from "./chat.js";
 import * as dialogs from "./dialogs.js";
@@ -11,6 +12,7 @@ import * as mcp from "./mcp.js";
 import * as openclaw from "./openclaw.js";
 import * as sync from "./sync.js";
 import * as updater from "./updater.js";
+import * as skills from "./skills.js";
 import * as wallet from "./wallet.js";
 
 export function registerAllHandlers(): void {
@@ -44,6 +46,9 @@ export function registerAllHandlers(): void {
   registerHandler("acp_get_available_agents", acp.acpGetAvailableAgents);
   registerHandler("acp_check_agent_available", acp.acpCheckAgentAvailable);
   registerHandler("acp_ensure_claude_cli", acp.acpEnsureClaudeCli);
+  registerHandler("acp_ensure_codex_cli", acp.acpEnsureCodexCli);
+  registerHandler("acp_ensure_agent_cli", acp.acpEnsureAgentCli);
+  registerHandler("acp_launch_login", acp.acpLaunchLogin);
 
   // OpenClaw messaging gateway handlers
   registerHandler("openclaw_start", openclaw.openclawStart);
@@ -95,6 +100,9 @@ export function registerAllHandlers(): void {
   registerHandler("check_for_update", updater.checkForUpdate);
   registerHandler("install_update", updater.installUpdate);
 
+  // Skills handlers
+  skills.registerSkillsHandlers(registerHandler);
+
   // Chat/conversation handlers
   registerHandler("create_conversation", chat.createConversation);
   registerHandler("get_conversations", chat.getConversations);
@@ -104,4 +112,37 @@ export function registerAllHandlers(): void {
   registerHandler("delete_conversation", chat.deleteConversation);
   registerHandler("save_message", chat.saveMessage);
   registerHandler("get_messages", chat.getMessages);
+
+  // Orchestrator handlers
+  registerHandler("orchestrate", async (params: {
+    conversationId: string;
+    prompt: string;
+    history: Array<{ role: string; content: string }>;
+    capabilities: Record<string, unknown>;
+    images?: Array<{ name: string; mime_type: string; base64: string }>;
+    gatewayBase?: string;
+    authToken: string;
+  }) => {
+    // Fire-and-forget: orchestration streams events over WebSocket,
+    // the RPC response just acknowledges the request was accepted.
+    orchestrate({
+      conversationId: params.conversationId,
+      prompt: params.prompt,
+      history: params.history,
+      capabilities: params.capabilities as any,
+      images: params.images,
+      gatewayBase: params.gatewayBase,
+      authToken: params.authToken,
+    }).catch((err) => {
+      console.error("[Orchestrator] Unhandled error:", err);
+    });
+    return { accepted: true };
+  });
+
+  registerHandler("cancel_orchestration", async (params: {
+    conversationId: string;
+  }) => {
+    const cancelled = cancelOrchestration(params.conversationId);
+    return { cancelled };
+  });
 }

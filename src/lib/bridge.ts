@@ -19,6 +19,7 @@ export interface Conversation {
   created_at: number;
   selected_model: string | null;
   selected_provider: string | null;
+  project_root: string | null;
   is_archived: boolean;
 }
 
@@ -29,6 +30,24 @@ export interface StoredMessage {
   content: string;
   model: string | null;
   timestamp: number;
+  metadata: string | null;
+}
+
+/**
+ * An agent conversation stored locally (IndexedDB or runtime SQLite).
+ */
+export interface AgentConversation {
+  id: string;
+  title: string;
+  created_at: number;
+  agent_type: string;
+  agent_session_id: string | null;
+  agent_cwd: string | null;
+  agent_model_id: string | null;
+  agent_metadata: string | null;
+  project_id: string | null;
+  project_root: string | null;
+  is_archived: boolean;
 }
 
 export interface SignX402Response {
@@ -548,6 +567,7 @@ export async function createConversation(
   title: string,
   selectedModel?: string,
   selectedProvider?: string,
+  projectRoot?: string,
 ): Promise<Conversation> {
   if (isRuntimeConnected()) {
     return runtimeInvoke<Conversation>("create_conversation", {
@@ -555,6 +575,7 @@ export async function createConversation(
       title,
       selectedModel,
       selectedProvider,
+      projectRoot,
     });
   }
 
@@ -565,6 +586,7 @@ export async function createConversation(
     created_at: Date.now(),
     selected_model: selectedModel ?? null,
     selected_provider: selectedProvider ?? null,
+    project_root: projectRoot ?? null,
     is_archived: false,
   };
   return new Promise((resolve, reject) => {
@@ -738,6 +760,7 @@ export async function saveMessage(
   content: string,
   model: string | null,
   timestamp: number,
+  metadata?: string | null,
 ): Promise<void> {
   if (isRuntimeConnected()) {
     await runtimeInvoke<void>("save_message", {
@@ -747,6 +770,7 @@ export async function saveMessage(
       content,
       model,
       timestamp,
+      metadata,
     });
     return;
   }
@@ -758,6 +782,7 @@ export async function saveMessage(
     content,
     model,
     timestamp,
+    metadata: metadata ?? null,
   };
   const db = await openDB();
   return new Promise((resolve, reject) => {
@@ -843,6 +868,309 @@ export async function clearAllHistory(): Promise<void> {
     );
     tx.objectStore(CONVERSATIONS_STORE).clear();
     tx.objectStore(MESSAGES_STORE).clear();
+    tx.oncomplete = () => {
+      db.close();
+      resolve();
+    };
+    tx.onerror = () => {
+      db.close();
+      reject(tx.error);
+    };
+  });
+}
+
+// ============================================================================
+// Agent conversation storage (runtime RPC with IndexedDB fallback)
+// ============================================================================
+
+const AGENT_CONVERSATIONS_STORE = "agent_conversations";
+
+/**
+ * Ensure the IndexedDB schema includes the agent_conversations object store.
+ * Because the main DB was created at version 1 without this store, we bump to
+ * version 2 on first use. Subsequent calls are no-ops.
+ */
+const DB_VERSION_AGENT = 2;
+
+function openDBWithAgents(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(DB_NAME, DB_VERSION_AGENT);
+
+    request.onupgradeneeded = () => {
+      const db = request.result;
+      if (!db.objectStoreNames.contains(CONVERSATIONS_STORE)) {
+        db.createObjectStore(CONVERSATIONS_STORE, { keyPath: "id" });
+      }
+      if (!db.objectStoreNames.contains(MESSAGES_STORE)) {
+        const msgStore = db.createObjectStore(MESSAGES_STORE, {
+          keyPath: "id",
+        });
+        msgStore.createIndex("conversation_id", "conversation_id", {
+          unique: false,
+        });
+      }
+      if (!db.objectStoreNames.contains(AGENT_CONVERSATIONS_STORE)) {
+        const agentStore = db.createObjectStore(AGENT_CONVERSATIONS_STORE, {
+          keyPath: "id",
+        });
+        agentStore.createIndex("agent_type", "agent_type", { unique: false });
+      }
+    };
+
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+export async function createAgentConversation(
+  id: string,
+  title: string,
+  agentType: string,
+  agentCwd: string | null,
+  projectRoot: string | null,
+  agentSessionId?: string,
+  agentMetadata?: string,
+): Promise<AgentConversation> {
+  if (isRuntimeConnected()) {
+    return runtimeInvoke<AgentConversation>("create_agent_conversation", {
+      id,
+      title,
+      agentType,
+      agentCwd,
+      projectRoot,
+      agentSessionId,
+      agentMetadata,
+    });
+  }
+
+  const conv: AgentConversation = {
+    id,
+    title,
+    created_at: Date.now(),
+    agent_type: agentType,
+    agent_session_id: agentSessionId ?? null,
+    agent_cwd: agentCwd,
+    agent_model_id: null,
+    agent_metadata: agentMetadata ?? null,
+    project_id: null,
+    project_root: projectRoot,
+    is_archived: false,
+  };
+  const db = await openDBWithAgents();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(AGENT_CONVERSATIONS_STORE, "readwrite");
+    tx.objectStore(AGENT_CONVERSATIONS_STORE).put(conv);
+    tx.oncomplete = () => {
+      db.close();
+      resolve(conv);
+    };
+    tx.onerror = () => {
+      db.close();
+      reject(tx.error);
+    };
+  });
+}
+
+export async function getAgentConversations(
+  limit = 20,
+  projectRoot?: string,
+): Promise<AgentConversation[]> {
+  if (isRuntimeConnected()) {
+    return runtimeInvoke<AgentConversation[]>("get_agent_conversations", {
+      limit,
+      projectRoot,
+    });
+  }
+
+  const db = await openDBWithAgents();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(AGENT_CONVERSATIONS_STORE, "readonly");
+    const request = tx.objectStore(AGENT_CONVERSATIONS_STORE).getAll();
+    request.onsuccess = () => {
+      db.close();
+      let all = (request.result as AgentConversation[])
+        .filter((c) => !c.is_archived)
+        .sort((a, b) => b.created_at - a.created_at);
+      if (projectRoot) {
+        all = all.filter(
+          (c) => c.project_root === projectRoot || c.agent_cwd === projectRoot,
+        );
+      }
+      resolve(all.slice(0, limit));
+    };
+    request.onerror = () => {
+      db.close();
+      reject(request.error);
+    };
+  });
+}
+
+export async function getAgentConversation(
+  id: string,
+): Promise<AgentConversation | null> {
+  if (isRuntimeConnected()) {
+    return runtimeInvoke<AgentConversation | null>("get_agent_conversation", {
+      id,
+    });
+  }
+
+  const db = await openDBWithAgents();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(AGENT_CONVERSATIONS_STORE, "readonly");
+    const request = tx.objectStore(AGENT_CONVERSATIONS_STORE).get(id);
+    request.onsuccess = () => {
+      db.close();
+      resolve((request.result as AgentConversation) ?? null);
+    };
+    request.onerror = () => {
+      db.close();
+      reject(request.error);
+    };
+  });
+}
+
+export async function setAgentConversationSessionId(
+  id: string,
+  agentSessionId: string,
+): Promise<void> {
+  if (isRuntimeConnected()) {
+    await runtimeInvoke<void>("set_agent_conversation_session_id", {
+      id,
+      agentSessionId,
+    });
+    return;
+  }
+
+  const existing = await getAgentConversation(id);
+  if (!existing) return;
+
+  const db = await openDBWithAgents();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(AGENT_CONVERSATIONS_STORE, "readwrite");
+    tx.objectStore(AGENT_CONVERSATIONS_STORE).put({
+      ...existing,
+      agent_session_id: agentSessionId,
+    });
+    tx.oncomplete = () => {
+      db.close();
+      resolve();
+    };
+    tx.onerror = () => {
+      db.close();
+      reject(tx.error);
+    };
+  });
+}
+
+export async function setAgentConversationTitle(
+  id: string,
+  title: string,
+): Promise<void> {
+  if (isRuntimeConnected()) {
+    await runtimeInvoke<void>("set_agent_conversation_title", { id, title });
+    return;
+  }
+
+  const existing = await getAgentConversation(id);
+  if (!existing) return;
+
+  const db = await openDBWithAgents();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(AGENT_CONVERSATIONS_STORE, "readwrite");
+    tx.objectStore(AGENT_CONVERSATIONS_STORE).put({ ...existing, title });
+    tx.oncomplete = () => {
+      db.close();
+      resolve();
+    };
+    tx.onerror = () => {
+      db.close();
+      reject(tx.error);
+    };
+  });
+}
+
+export async function setAgentConversationModelId(
+  id: string,
+  agentModelId: string,
+): Promise<void> {
+  if (isRuntimeConnected()) {
+    await runtimeInvoke<void>("set_agent_conversation_model_id", {
+      id,
+      agentModelId,
+    });
+    return;
+  }
+
+  const existing = await getAgentConversation(id);
+  if (!existing) return;
+
+  const db = await openDBWithAgents();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(AGENT_CONVERSATIONS_STORE, "readwrite");
+    tx.objectStore(AGENT_CONVERSATIONS_STORE).put({
+      ...existing,
+      agent_model_id: agentModelId,
+    });
+    tx.oncomplete = () => {
+      db.close();
+      resolve();
+    };
+    tx.onerror = () => {
+      db.close();
+      reject(tx.error);
+    };
+  });
+}
+
+export async function setAgentConversationMetadata(
+  id: string,
+  agentMetadata?: string | null,
+): Promise<void> {
+  if (isRuntimeConnected()) {
+    await runtimeInvoke<void>("set_agent_conversation_metadata", {
+      id,
+      agentMetadata,
+    });
+    return;
+  }
+
+  const existing = await getAgentConversation(id);
+  if (!existing) return;
+
+  const db = await openDBWithAgents();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(AGENT_CONVERSATIONS_STORE, "readwrite");
+    tx.objectStore(AGENT_CONVERSATIONS_STORE).put({
+      ...existing,
+      agent_metadata: agentMetadata ?? null,
+    });
+    tx.oncomplete = () => {
+      db.close();
+      resolve();
+    };
+    tx.onerror = () => {
+      db.close();
+      reject(tx.error);
+    };
+  });
+}
+
+export async function archiveAgentConversation(id: string): Promise<void> {
+  if (isRuntimeConnected()) {
+    await runtimeInvoke<void>("archive_agent_conversation", { id });
+    return;
+  }
+
+  const existing = await getAgentConversation(id);
+  if (!existing) return;
+
+  const db = await openDBWithAgents();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(AGENT_CONVERSATIONS_STORE, "readwrite");
+    tx.objectStore(AGENT_CONVERSATIONS_STORE).put({
+      ...existing,
+      is_archived: true,
+    });
     tx.oncomplete = () => {
       db.close();
       resolve();

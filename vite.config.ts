@@ -42,5 +42,7 @@ export default defineConfig({
       "**/dist/**",
       "**/.{git,cache,output,temp}/**",
     ],
+    // Disable Node.js built-in localStorage so happy-dom's takes precedence
+    execArgv: ["--no-experimental-webstorage"],
   },
 });

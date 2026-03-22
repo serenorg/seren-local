@@ -6,6 +6,8 @@ export interface SlashCommand {
   description: string;
   /** Optional argument hint shown in autocomplete, e.g. "<model-name>" */
   argHint?: string;
+  /** Whether this command is provided by a skill (shown as badge in UI) */
+  isSkill?: boolean;
   /** Which panels support this command */
   panels: ("chat" | "agent")[];
   /** Execute the command. Returns true if handled (suppress send). */

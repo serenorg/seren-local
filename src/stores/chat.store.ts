@@ -22,7 +22,7 @@ import {
 import type { Message } from "@/services/chat";
 import { sendMessage } from "@/services/chat";
 
-const DEFAULT_MODEL = "anthropic/claude-opus-4.5";
+const DEFAULT_MODEL = "anthropic/claude-sonnet-4";
 const MAX_MESSAGES_PER_CONVERSATION = 1000;
 
 /**
@@ -45,6 +45,8 @@ export interface Conversation {
   selectedProvider: ProviderId | null;
   isArchived: boolean;
   compactedSummary?: CompactedSummary;
+  /** Reasoning effort level: "minimal" | "low" | "medium" | "high" | "xhigh". */
+  reasoningEffort?: string;
 }
 
 type MessagePatch = Partial<
@@ -183,6 +185,14 @@ export const chatStore = {
   get compactedSummary(): CompactedSummary | undefined {
     const active = this.activeConversation;
     return active?.compactedSummary;
+  },
+
+  /**
+   * Get the reasoning effort for the active conversation.
+   */
+  get reasoningEffort(): string | undefined {
+    const active = this.activeConversation;
+    return active?.reasoningEffort;
   },
 
   /**
@@ -384,6 +394,17 @@ export const chatStore = {
     }
   },
 
+  setReasoningEffort(effort: string | undefined) {
+    const conversationId = state.activeConversationId;
+    if (!conversationId) return;
+
+    setState("conversations", (convos) =>
+      convos.map((c) =>
+        c.id === conversationId ? { ...c, reasoningEffort: effort } : c,
+      ),
+    );
+  },
+
   setLoading(isLoading: boolean) {
     setState("isLoading", isLoading);
   },
@@ -418,7 +439,11 @@ export const chatStore = {
         message.timestamp,
       );
     } catch (error) {
-      console.warn("Unable to persist message", error);
+      console.error("[chatStore] Failed to persist message:", error);
+      setState(
+        "error",
+        "Failed to save message. Chat history may be incomplete.",
+      );
     }
   },
 

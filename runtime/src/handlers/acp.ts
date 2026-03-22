@@ -2,13 +2,13 @@
 // ABOUTME: Implements client-side ACP connection over stdio with event forwarding via WebSocket.
 
 import * as acp from "@agentclientprotocol/sdk";
-import { spawn, type ChildProcess, execFile } from "node:child_process";
+import { spawn, spawnSync, type ChildProcess, execFile } from "node:child_process";
 import { Readable, Writable } from "node:stream";
-import { existsSync } from "node:fs";
+import { existsSync, readdirSync } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
-import { resolve } from "node:path";
-import { platform } from "node:os";
+import path, { resolve } from "node:path";
+import { platform, homedir } from "node:os";
 import { emit } from "../events.js";
 
 // ── Auth helpers ─────────────────────────────────────────────────────
@@ -21,7 +21,15 @@ function isAuthError(message: string): boolean {
     lower.includes("authentication required") ||
     lower.includes("auth required") ||
     lower.includes("please run /login") ||
-    lower.includes("authrequired")
+    lower.includes("authrequired") ||
+    lower.includes("failed to authenticate") ||
+    lower.includes("login required") ||
+    lower.includes("not logged in") ||
+    lower.includes("please login again") ||
+    lower.includes("please sign in") ||
+    lower.includes("session expired") ||
+    lower.includes("does not have access") ||
+    lower.includes("re-authenticate")
   );
 }
 
@@ -30,28 +38,32 @@ function authErrorMessage(agentType: string): string {
   if (agentType === "claude-code") {
     return "Claude Code login required. A terminal window has been opened — please complete the login there, then try starting the agent again.";
   }
+  if (agentType === "codex") {
+    return "Codex login required. A terminal window has been opened — please complete the login there, then try starting the agent again.";
+  }
   return "Agent authentication required. Please log in via the agent CLI first.";
 }
 
-/** Open a new terminal window running `claude login`. */
-function launchClaudeLogin(): void {
-  const os = platform();
+/** Open a new terminal window running `<command> login`. */
+function launchLoginCommand(command: string): void {
+  const loginCommand = `${command} login`;
+  const currentPlatform = platform();
   try {
-    if (os === "darwin") {
+    if (currentPlatform === "darwin") {
       spawn("osascript", [
         "-e",
-        'tell application "Terminal" to do script "claude login"',
+        `tell application "Terminal" to do script "${loginCommand}"`,
         "-e",
         'tell application "Terminal" to activate',
       ], { detached: true, stdio: "ignore" }).unref();
-    } else if (os === "win32") {
-      spawn("cmd", ["/c", "start", "cmd", "/c", "claude login"], {
+    } else if (currentPlatform === "win32") {
+      spawn("cmd", ["/c", "start", "cmd", "/c", loginCommand], {
         detached: true,
         stdio: "ignore",
       }).unref();
     } else {
       // Linux — try common terminal emulators
-      spawn("x-terminal-emulator", ["-e", "claude", "login"], {
+      spawn("x-terminal-emulator", ["-e", command, "login"], {
         detached: true,
         stdio: "ignore",
       }).unref();
@@ -59,6 +71,217 @@ function launchClaudeLogin(): void {
   } catch {
     // Silently ignore — the error message in the UI still tells the user what to do
   }
+}
+
+/** Convenience wrapper for Claude Code login. */
+function launchClaudeLogin(): void {
+  launchLoginCommand("claude");
+}
+
+// ── Process Management ──────────────────────────────────────────────
+
+/** Kill a child process tree (handles Windows taskkill). */
+function killChildTree(child: ChildProcess): void {
+  if (platform() === "win32" && child.pid !== undefined) {
+    try {
+      spawnSync("taskkill", ["/pid", String(child.pid), "/T", "/F"], {
+        stdio: "ignore",
+      });
+      return;
+    } catch {
+      // Fall through to direct kill.
+    }
+  }
+
+  try {
+    child.kill();
+  } catch {
+    // Ignore double-kill races during cleanup.
+  }
+}
+
+// ── Extended PATH for macOS ─────────────────────────────────────────
+
+/**
+ * Build a PATH string that includes well-known Node.js install locations.
+ * macOS GUI apps don't inherit the user's shell profile, so node/npm from
+ * nvm, fnm, Homebrew, or Volta aren't on PATH. Without this, agent
+ * processes that shell out to `node` fail with "command not found".
+ */
+function buildExtendedPath(): string {
+  const sep = platform() === "win32" ? ";" : ":";
+  const base = process.env.PATH ?? "";
+  if (platform() === "win32") return base;
+
+  const home = homedir();
+  const extra: string[] = [
+    // nvm (most common)
+    path.join(home, ".nvm", "versions", "node"),
+    // fnm
+    path.join(home, ".local", "share", "fnm", "aliases", "default", "bin"),
+    path.join(home, "Library", "Application Support", "fnm", "aliases", "default", "bin"),
+    // Volta
+    path.join(home, ".volta", "bin"),
+    // Homebrew (Apple Silicon + Intel)
+    "/opt/homebrew/bin",
+    "/usr/local/bin",
+    // Common Linux paths
+    "/usr/bin",
+  ];
+
+  // For nvm, find the active or default version directory
+  const nvmDir = extra[0];
+  if (existsSync(nvmDir)) {
+    try {
+      const versions = readdirSync(nvmDir).sort().reverse();
+      for (const ver of versions) {
+        const binDir = path.join(nvmDir, ver, "bin");
+        if (existsSync(binDir)) {
+          extra[0] = binDir;
+          break;
+        }
+      }
+    } catch {
+      // Can't read nvm versions — remove placeholder
+      extra[0] = "";
+    }
+  } else {
+    extra[0] = "";
+  }
+
+  const additions = extra.filter((p) => p && !base.includes(p));
+  return additions.length > 0 ? `${additions.join(sep)}${sep}${base}` : base;
+}
+
+// ── npm CLI resolution ──────────────────────────────────────────────
+
+/**
+ * Resolve the path to npm-cli.js relative to the running Node.js binary.
+ * This bypasses shell wrapper shims that break execFile() on macOS/Linux
+ * after bundling replaces symlinks with shell scripts.
+ */
+function resolveNpmCliScript(): string | null {
+  const nodeDir = path.dirname(process.execPath);
+
+  if (platform() === "win32") {
+    const candidate = path.join(nodeDir, "node_modules", "npm", "bin", "npm-cli.js");
+    if (existsSync(candidate)) {
+      return candidate;
+    }
+  } else {
+    const prefix = path.dirname(nodeDir);
+    const candidate = path.join(prefix, "lib", "node_modules", "npm", "bin", "npm-cli.js");
+    if (existsSync(candidate)) {
+      return candidate;
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Install a global npm package, using npm-cli.js directly when possible
+ * to avoid shell wrapper shim issues.
+ */
+async function ensureGlobalNpmPackage({
+  command,
+  packageName,
+  label,
+}: {
+  command: string;
+  packageName: string;
+  label: string;
+}): Promise<string> {
+  if (await isCommandAvailable(command)) {
+    return command;
+  }
+
+  emit("provider://cli-install-progress", {
+    stage: "installing",
+    message: `Installing ${label} CLI...`,
+  });
+
+  const npmCliScript = resolveNpmCliScript();
+  if (npmCliScript) {
+    await new Promise<string>((resolvePromise, rejectPromise) => {
+      execFile(
+        process.execPath,
+        [npmCliScript, "install", "-g", packageName],
+        (error, stdout, stderr) => {
+          if (error) {
+            rejectPromise(new Error(stderr || error.message));
+            return;
+          }
+          resolvePromise(stdout.trim());
+        },
+      );
+    });
+  } else {
+    const npmCommand = platform() === "win32" ? "npm.cmd" : "npm";
+    await new Promise<string>((resolvePromise, rejectPromise) => {
+      execFile(
+        npmCommand,
+        ["install", "-g", packageName],
+        (error, stdout, stderr) => {
+          if (error) {
+            rejectPromise(new Error(stderr || error.message));
+            return;
+          }
+          resolvePromise(stdout.trim());
+        },
+      );
+    });
+  }
+
+  emit("provider://cli-install-progress", {
+    stage: "complete",
+    message: `${label} CLI installed successfully`,
+  });
+
+  return command;
+}
+
+/**
+ * Install Claude Code via the official native installer script
+ * (curl | bash on Unix, irm | iex on Windows).
+ */
+async function ensureClaudeCodeViaNativeInstaller(): Promise<string> {
+  if (await isCommandAvailable("claude")) {
+    return "claude";
+  }
+
+  emit("provider://cli-install-progress", {
+    stage: "installing",
+    message: "Installing Claude Code CLI via official installer...",
+  });
+
+  await new Promise<string>((resolvePromise, rejectPromise) => {
+    let cmd: string;
+    let args: string[];
+
+    if (platform() === "win32") {
+      cmd = "powershell";
+      args = ["-NoProfile", "-Command", "irm https://claude.ai/install.ps1 | iex"];
+    } else {
+      cmd = "bash";
+      args = ["-c", "curl -fsSL https://claude.ai/install.sh | bash"];
+    }
+
+    execFile(cmd, args, { timeout: 120_000 }, (error, stdout, stderr) => {
+      if (error) {
+        rejectPromise(new Error(stderr || error.message));
+        return;
+      }
+      resolvePromise(stdout.trim());
+    });
+  });
+
+  emit("provider://cli-install-progress", {
+    stage: "complete",
+    message: "Claude Code CLI installed successfully",
+  });
+
+  return "claude";
 }
 
 // ── Types ────────────────────────────────────────────────────────────
@@ -318,10 +541,12 @@ export async function acpSpawn(params: any): Promise<any> {
     args.push("--sandbox", sandboxMode);
   }
 
+  const extendedPath = buildExtendedPath();
   const agentProcess = spawn(command, args, {
     cwd: resolvedCwd,
     stdio: ["pipe", "pipe", "pipe"],
-    env: { ...process.env },
+    env: { ...process.env, PATH: extendedPath },
+    shell: platform() === "win32",
   });
 
   if (!agentProcess.stdin || !agentProcess.stdout) {
@@ -364,6 +589,22 @@ export async function acpSpawn(params: any): Promise<any> {
   };
 
   sessions.set(sessionId, session);
+
+  // Catch spawn errors (e.g. ENOENT) to prevent crashing the runtime
+  agentProcess.on("error", (spawnError: NodeJS.ErrnoException) => {
+    console.error(`[ACP] Spawn error: ${spawnError.message}`);
+    sessions.delete(sessionId);
+    emit("acp://error", {
+      sessionId,
+      error: spawnError.code === "ENOENT"
+        ? `Agent binary not found at "${command}". Ensure the agent is installed.`
+        : `Failed to start agent: ${spawnError.message}`,
+    });
+    emit("acp://session-status", {
+      sessionId,
+      status: "terminated",
+    });
+  });
 
   // Handle process exit
   agentProcess.on("exit", (code, signal) => {
@@ -415,7 +656,13 @@ export async function acpSpawn(params: any): Promise<any> {
     session.status = "error";
     const rawMessage = err instanceof Error ? err.message : JSON.stringify(err);
     const authDetected = isAuthError(rawMessage);
-    if (authDetected) launchClaudeLogin();
+    if (authDetected) {
+      if (agentType === "codex") {
+        launchLoginCommand("codex");
+      } else {
+        launchClaudeLogin();
+      }
+    }
     const errorMsg = authDetected
       ? authErrorMessage(agentType)
       : `Failed to initialize agent: ${rawMessage}`;
@@ -511,7 +758,7 @@ export async function acpTerminate(params: any): Promise<void> {
   const session = sessions.get(sessionId);
   if (!session) throw new Error(`Session not found: ${sessionId}`);
 
-  session.process.kill();
+  killChildTree(session.process);
   sessions.delete(sessionId);
   session.status = "terminated";
 
@@ -566,21 +813,42 @@ export async function acpRespondToDiffProposal(params: any): Promise<void> {
 
 export async function acpGetAvailableAgents(): Promise<any[]> {
   const agents = [
-    { type: "claude-code", name: "Claude Code", description: "AI coding assistant by Anthropic", command: "seren-acp-claude" },
-    { type: "codex", name: "Codex", description: "AI coding assistant powered by OpenAI Codex", command: "seren-acp-codex" },
+    {
+      type: "claude-code",
+      name: "Claude Code",
+      description: "Anthropic Claude Code via direct provider runtime",
+      command: "claude",
+    },
+    {
+      type: "codex",
+      name: "Codex",
+      description: "OpenAI Codex via direct App Server integration",
+      command: "codex",
+    },
   ];
 
-  return agents.map((agent) => {
-    let available = false;
-    let unavailableReason: string | undefined;
-    try {
-      findAgentCommand(agent.type);
-      available = true;
-    } catch (err: any) {
-      unavailableReason = err.message;
-    }
-    return { ...agent, available, unavailableReason };
-  });
+  return Promise.all(
+    agents.map(async (agent) => {
+      let hasSidecar = false;
+      try {
+        findAgentCommand(agent.type);
+        hasSidecar = true;
+      } catch {
+        // No sidecar binary found
+      }
+      const cliInstalled = await isCommandAvailable(agent.command);
+      const installed = hasSidecar || cliInstalled;
+      return {
+        ...agent,
+        available: true,
+        ...(installed
+          ? {}
+          : {
+              unavailableReason: `${agent.name} CLI is not installed yet. Seren can install it automatically on first launch.`,
+            }),
+      };
+    }),
+  );
 }
 
 export async function acpCheckAgentAvailable(params: any): Promise<boolean> {
@@ -593,29 +861,39 @@ export async function acpCheckAgentAvailable(params: any): Promise<boolean> {
 }
 
 export async function acpEnsureClaudeCli(): Promise<string> {
-  // Check if claude is already available
-  if (await isCommandAvailable("claude")) {
-    return "claude";
-  }
+  return ensureClaudeCodeViaNativeInstaller();
+}
 
-  // Try to install via npm
-  const npmCmd = platform() === "win32" ? "npm.cmd" : "npm";
-  return new Promise((resolve, reject) => {
-    const proc = execFile(
-      npmCmd,
-      ["install", "-g", "@anthropic-ai/claude-code"],
-      (err, stdout, stderr) => {
-        if (err) {
-          reject(
-            new Error(
-              `Failed to install Claude Code CLI: ${stderr || err.message}`,
-            ),
-          );
-          return;
-        }
-        console.log(`[ACP] Claude Code CLI installed: ${stdout}`);
-        resolve("claude");
-      },
-    );
+export async function acpEnsureCodexCli(): Promise<string> {
+  return ensureGlobalNpmPackage({
+    command: "codex",
+    packageName: "@openai/codex",
+    label: "Codex",
   });
+}
+
+export async function acpEnsureAgentCli(params: any): Promise<string> {
+  const { agentType } = params;
+  if (agentType === "claude-code") {
+    return ensureClaudeCodeViaNativeInstaller();
+  }
+  if (agentType === "codex") {
+    return ensureGlobalNpmPackage({
+      command: "codex",
+      packageName: "@openai/codex",
+      label: "Codex",
+    });
+  }
+  throw new Error(`Unknown agent type for CLI install: ${agentType}`);
+}
+
+export async function acpLaunchLogin(params: any): Promise<void> {
+  const { agentType } = params;
+  if (agentType === "claude-code") {
+    launchLoginCommand("claude");
+  } else if (agentType === "codex") {
+    launchLoginCommand("codex");
+  } else {
+    throw new Error(`Unknown agent type for login: ${agentType}`);
+  }
 }

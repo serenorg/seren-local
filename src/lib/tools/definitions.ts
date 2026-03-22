@@ -27,8 +27,8 @@ export const MODEL_TOOL_LIMITS: Record<string, number> = {
   // Google models
   gemini: 256,
 
-  // Default for unknown models - be conservative
-  default: 128,
+  // Default for unknown models - use permissive limit
+  default: 4096,
 };
 
 /**
@@ -202,6 +202,7 @@ function convertMcpToolToDefinition(
         type: schema.type,
         description: schema.description,
         enum: schema.enum,
+        items: schema.items,
       };
     }
   }
@@ -237,6 +238,7 @@ function convertGatewayToolToDefinition(
         type: schema.type,
         description: schema.description,
         enum: schema.enum,
+        items: schema.items,
       };
     }
   }
@@ -361,6 +363,7 @@ export const FILE_TOOLS: ToolDefinition[] = [
       name: "seren_web_fetch",
       description:
         "Fetch content from any public URL. Returns page content as markdown. " +
+        "IMPORTANT: Before using this tool, check if a specialized publisher tool is available for the domain. " +
         "Use this tool proactively when users ask about web content, news, documentation, or current events. " +
         "To SEARCH the web, construct a search engine URL: " +
         "'https://html.duckduckgo.com/html/?q=your+search+terms' or " +

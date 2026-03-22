@@ -34,7 +34,6 @@ import type { ImageAttachment } from "@/lib/providers/types";
 import {
   escapeHtmlWithLinks,
   renderMarkdown,
-  renderMarkdownStreaming,
 } from "@/lib/render-markdown";
 import type { AgentType, DiffEvent } from "@/services/acp";
 import { type AgentMessage, acpStore } from "@/stores/acp.store";
@@ -149,7 +148,7 @@ export const AgentChat: Component<AgentChatProps> = (props) => {
     }
     streamingThrottle = setTimeout(() => {
       streamingThrottle = null;
-      setStreamingMarkdown(renderMarkdownStreaming(content));
+      setStreamingMarkdown(renderMarkdown(content));
     }, 80);
     onCleanup(() => {
       if (streamingThrottle !== null) {

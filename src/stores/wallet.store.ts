@@ -37,6 +37,8 @@ interface WalletState {
   dailyClaimDismissed: boolean;
   /** Whether daily claim check is in progress */
   dailyClaimLoading: boolean;
+  /** Timer for periodic daily claim eligibility re-checks */
+  dailyClaimTimerId: ReturnType<typeof setInterval> | null;
 }
 
 /**
@@ -55,6 +57,7 @@ const initialState: WalletState = {
   dailyClaim: null,
   dailyClaimDismissed: false,
   dailyClaimLoading: false,
+  dailyClaimTimerId: null,
 };
 
 const [walletState, setWalletState] = createStore<WalletState>(initialState);
@@ -62,8 +65,15 @@ const [walletState, setWalletState] = createStore<WalletState>(initialState);
 // Refresh interval in milliseconds (60 seconds)
 const REFRESH_INTERVAL = 60_000;
 
+// Daily claim re-check interval (30 minutes)
+const DAILY_CLAIM_POLL_INTERVAL = 30 * 60 * 1_000;
+
 // Lock to prevent duplicate top-ups
 let topUpInProgress = false;
+
+// Track consecutive failures to stop refresh after persistent errors
+const MAX_CONSECUTIVE_FAILURES = 5;
+let consecutiveFailures = 0;
 
 /**
  * Refresh the wallet balance from the API.
@@ -86,7 +96,7 @@ async function refreshBalance(): Promise<void> {
 
   try {
     const data: WalletBalance = await fetchBalance();
-    console.log("[Wallet Store] Setting isLoading = false (success)");
+    consecutiveFailures = 0;
     setWalletState({
       balance: data.balance_atomic / 1_000_000,
       balance_atomic: data.balance_atomic,
@@ -94,23 +104,29 @@ async function refreshBalance(): Promise<void> {
       lastUpdated: new Date().toISOString(),
       isLoading: false,
     });
-    console.log(
-      "[Wallet Store] State updated, isLoading:",
-      walletState.isLoading,
-    );
   } catch (err) {
+    consecutiveFailures++;
     const message =
       err instanceof Error ? err.message : "Failed to fetch balance";
     console.error("[Wallet Store] Error refreshing balance:", message);
-    // Stop auto-refresh on auth errors to prevent 401 spam
-    if (
+
+    const isAuthError =
       message.includes("expired") ||
       message.includes("401") ||
-      message.includes("Authentication")
-    ) {
+      message.includes("Authentication") ||
+      message.includes("Unauthorized");
+
+    if (isAuthError) {
+      console.warn(
+        "[Wallet Store] Auth error, stopping poller (backend handles refresh)",
+      );
+      stopAutoRefresh();
+    } else if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
+      console.warn(
+        `[Wallet Store] Stopping auto-refresh after ${consecutiveFailures} consecutive failures`,
+      );
       stopAutoRefresh();
     }
-    console.log("[Wallet Store] Setting isLoading = false (error)");
     setWalletState({
       isLoading: false,
       error: message,
@@ -133,6 +149,7 @@ function startAutoRefresh(): void {
     new Error().stack?.split("\n")[2]?.trim(),
   );
   setWalletState("autoRefreshActive", true);
+  consecutiveFailures = 0;
 
   // Fetch immediately (but only if not already loading)
   if (!walletState.isLoading) {
@@ -266,10 +283,43 @@ function dismissDailyClaim(): void {
 /**
  * Reset wallet state (e.g., on logout).
  */
+/**
+ * Start periodic re-checking of daily claim eligibility.
+ * Surfaces the claim popup for long-running sessions that span midnight UTC.
+ */
+function startDailyClaimPolling(): void {
+  if (walletState.dailyClaimTimerId) return;
+
+  const timerId = setInterval(async () => {
+    const wasPreviouslyEligible = walletState.dailyClaim?.can_claim ?? false;
+    try {
+      const eligibility = await fetchDailyEligibility();
+      setWalletState("dailyClaim", eligibility);
+      if (!wasPreviouslyEligible && eligibility.can_claim) {
+        setWalletState("dailyClaimDismissed", false);
+      }
+    } catch {
+      // Silently ignore
+    }
+  }, DAILY_CLAIM_POLL_INTERVAL);
+
+  setWalletState("dailyClaimTimerId", timerId);
+}
+
+function stopDailyClaimPolling(): void {
+  const timerId = walletState.dailyClaimTimerId;
+  if (timerId) {
+    clearInterval(timerId);
+  }
+  setWalletState("dailyClaimTimerId", null);
+}
+
 function resetWalletState(): void {
   stopAutoRefresh();
+  stopDailyClaimPolling();
   setWalletState(initialState);
   topUpInProgress = false;
+  consecutiveFailures = 0;
 }
 
 /**
@@ -359,4 +409,6 @@ export {
   claimDaily,
   dismissDailyClaim,
   updateBalanceFromError,
+  startDailyClaimPolling,
+  stopDailyClaimPolling,
 };

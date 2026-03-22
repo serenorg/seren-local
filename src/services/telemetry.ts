@@ -38,6 +38,9 @@ class TelemetryService {
   private errorQueue: ErrorReport[] = [];
   private batchTimer: ReturnType<typeof setInterval> | null = null;
   private initialized = false;
+  private errorHandler: ((event: ErrorEvent) => void) | null = null;
+  private rejectionHandler: ((event: PromiseRejectionEvent) => void) | null =
+    null;
 
   constructor(config: Partial<TelemetryConfig> = {}) {
     this.config = { ...DEFAULT_CONFIG, ...config };
@@ -51,23 +54,25 @@ class TelemetryService {
     if (this.initialized || !this.config.enabled) return;
 
     // Global error handler
-    window.addEventListener("error", (event) => {
+    this.errorHandler = (event: ErrorEvent) => {
       this.captureError(event.error || new Error(event.message), {
         type: "uncaught",
         filename: event.filename,
         lineno: event.lineno,
         colno: event.colno,
       });
-    });
+    };
+    window.addEventListener("error", this.errorHandler);
 
     // Unhandled promise rejection handler
-    window.addEventListener("unhandledrejection", (event) => {
+    this.rejectionHandler = (event: PromiseRejectionEvent) => {
       const error =
         event.reason instanceof Error
           ? event.reason
           : new Error(String(event.reason));
       this.captureError(error, { type: "unhandledrejection" });
-    });
+    };
+    window.addEventListener("unhandledrejection", this.rejectionHandler);
 
     // Start batch processing
     this.startBatchTimer();
@@ -93,7 +98,7 @@ class TelemetryService {
       timestamp: new Date().toISOString(),
       appVersion: this.getAppVersion(),
       platform: this.getPlatform(),
-      context,
+      context: context ? scrubContext(context) : undefined,
     };
 
     this.errorQueue.push(report);
@@ -167,6 +172,14 @@ class TelemetryService {
    * Shutdown telemetry service.
    */
   shutdown(): void {
+    if (this.errorHandler) {
+      window.removeEventListener("error", this.errorHandler);
+      this.errorHandler = null;
+    }
+    if (this.rejectionHandler) {
+      window.removeEventListener("unhandledrejection", this.rejectionHandler);
+      this.rejectionHandler = null;
+    }
     this.stopBatchTimer();
     this.flush();
     this.initialized = false;
@@ -198,6 +211,20 @@ class TelemetryService {
     if (ua.includes("Linux")) return "linux";
     return "unknown";
   }
+}
+
+function scrubContext(ctx: Record<string, unknown>): Record<string, unknown> {
+  const scrubbed: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(ctx)) {
+    if (typeof value === "string") {
+      scrubbed[key] = scrubSensitive(value);
+    } else if (value && typeof value === "object" && !Array.isArray(value)) {
+      scrubbed[key] = scrubContext(value as Record<string, unknown>);
+    } else {
+      scrubbed[key] = value;
+    }
+  }
+  return scrubbed;
 }
 
 // Default singleton instance

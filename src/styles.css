@@ -55,8 +55,14 @@ code {
   --success: #4ec9b0;
   --warning: #dcdcaa;
 
+  /* Surface levels */
+  --surface-3: #2a2d2e;
+
   /* Border and input */
   --border: #333333;
+  --border-hover: rgba(148, 163, 184, 0.2);
+  --border-medium: rgba(148, 163, 184, 0.15);
+  --border-strong: rgba(148, 163, 184, 0.25);
   --input: #3c3c3c;
   --ring: #0078d4;
 
@@ -96,7 +102,11 @@ code {
   --color-destructive-foreground: var(--destructive-foreground);
   --color-success: var(--success);
   --color-warning: var(--warning);
+  --color-surface-3: var(--surface-3);
   --color-border: var(--border);
+  --color-border-hover: var(--border-hover);
+  --color-border-medium: var(--border-medium);
+  --color-border-strong: var(--border-strong);
   --color-input: var(--input);
   --color-ring: var(--ring);
   --color-sidebar: var(--sidebar);

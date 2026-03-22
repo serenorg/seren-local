@@ -24,7 +24,7 @@ const PUBLISHER_SLUG = "seren-models";
  * Hides technical OpenRouter details from end users.
  */
 const CREDITS_ERROR_MESSAGE =
-  "SerenModels is not available currently. Please contact the Seren team at hello@serendb.com with this alert.";
+  "Insufficient SerenBucks balance. Please add funds to continue.";
 
 /**
  * Check if an error status indicates a credits/payment issue.
@@ -100,6 +100,11 @@ interface GatewayResponse<T> {
 const DEFAULT_MODELS: ProviderModel[] = [
   // Anthropic
   {
+    id: "anthropic/claude-opus-4.6",
+    name: "Claude Opus 4.6",
+    contextWindow: 1000000,
+  },
+  {
     id: "anthropic/claude-opus-4.5",
     name: "Claude Opus 4.5",
     contextWindow: 200000,
@@ -120,6 +125,16 @@ const DEFAULT_MODELS: ProviderModel[] = [
   { id: "openai/gpt-4o-mini", name: "GPT-4o Mini", contextWindow: 128000 },
   // Google Gemini
   {
+    id: "google/gemini-3.1-pro-preview",
+    name: "Gemini 3.1 Pro",
+    contextWindow: 1048576,
+  },
+  {
+    id: "google/gemini-3-flash-preview",
+    name: "Gemini 3 Flash",
+    contextWindow: 1048576,
+  },
+  {
     id: "google/gemini-2.5-pro",
     name: "Gemini 2.5 Pro",
     contextWindow: 1000000,
@@ -127,11 +142,6 @@ const DEFAULT_MODELS: ProviderModel[] = [
   {
     id: "google/gemini-2.5-flash",
     name: "Gemini 2.5 Flash",
-    contextWindow: 1000000,
-  },
-  {
-    id: "google/gemini-3-flash-preview",
-    name: "Gemini 3 Flash",
     contextWindow: 1000000,
   },
   // Zhipu AI
@@ -165,13 +175,15 @@ function extractContent(data: unknown): string {
   if (choices && choices.length > 0) {
     const first = choices[0];
     const message = first.message as Record<string, unknown> | undefined;
-    if (message && typeof message.content === "string") {
-      return message.content;
+    if (message) {
+      const extracted = normalizeContent(message.content);
+      if (extracted) return extracted;
     }
 
     const delta = first.delta as Record<string, unknown> | undefined;
-    if (delta && typeof delta.content === "string") {
-      return delta.content;
+    if (delta) {
+      const extracted = normalizeContent(delta.content);
+      if (extracted) return extracted;
     }
   }
 
@@ -211,12 +223,8 @@ function extractChatResponse(data: unknown): ChatResponse {
   let toolCalls: ToolCall[] | undefined;
 
   if (message) {
-    // Extract content
-    if (typeof message.content === "string") {
-      content = message.content;
-    } else if (message.content === null) {
-      content = null;
-    }
+    // Extract content (handles string, array-of-parts for Gemini, null)
+    content = normalizeContent(message.content);
 
     // Extract tool_calls
     const rawToolCalls = message.tool_calls as
