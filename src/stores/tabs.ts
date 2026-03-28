@@ -1,4 +1,5 @@
 import { createStore } from "solid-js/store";
+import { generateId } from "@/lib/uuid";
 
 export interface Tab {
   id: string;
@@ -28,7 +29,7 @@ export function openTab(filePath: string, content: string = ""): string {
     return existing.id;
   }
 
-  const id = crypto.randomUUID();
+  const id = generateId();
   const fileName = filePath.split("/").pop() || filePath;
 
   setTabsState("tabs", (tabs) => [

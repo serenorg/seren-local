@@ -8,6 +8,7 @@ import {
   isRateLimitError,
   performAgentFallback,
 } from "@/lib/rate-limit-fallback";
+import { generateId } from "@/lib/uuid";
 
 type UnlistenFn = () => void;
 
@@ -630,7 +631,7 @@ export const acpStore = {
 
     // Add user message
     const userMessage: AgentMessage = {
-      id: crypto.randomUUID(),
+      id: generateId(),
       type: "user",
       content: prompt,
       timestamp: Date.now(),
@@ -719,7 +720,7 @@ export const acpStore = {
 
             // Show recovery indicator so the user knows what happened
             const recoveryMsg: AgentMessage = {
-              id: crypto.randomUUID(),
+              id: generateId(),
               type: "assistant",
               content:
                 "Agent session restarted due to inactivity timeout. Retrying your message...",
@@ -1190,7 +1191,7 @@ Summary:`;
           // User-initiated cancellation: record in chat history but don't
           // show the persistent error banner (it's not a real error).
           const cancelMsg: AgentMessage = {
-            id: crypto.randomUUID(),
+            id: generateId(),
             type: "error",
             content: event.data.error,
             timestamp: Date.now(),
@@ -1232,7 +1233,7 @@ Summary:`;
           // Add error message to notify user
           if (timedOutPermissions.length > 0) {
             const timeoutMsg: AgentMessage = {
-              id: crypto.randomUUID(),
+              id: generateId(),
               type: "error",
               content:
                 "Permission request timed out after 5 minutes. " +
@@ -1366,7 +1367,7 @@ Summary:`;
     // Flush accumulated streaming content so tool cards appear in correct chronological order
     if (session.streamingThinking) {
       const thinkingMsg: AgentMessage = {
-        id: crypto.randomUUID(),
+        id: generateId(),
         type: "thought",
         content: session.streamingThinking,
         timestamp: Date.now(),
@@ -1379,7 +1380,7 @@ Summary:`;
     }
     if (session.streamingContent) {
       const contentMsg: AgentMessage = {
-        id: crypto.randomUUID(),
+        id: generateId(),
         type: "assistant",
         content: session.streamingContent,
         timestamp: Date.now(),
@@ -1396,7 +1397,7 @@ Summary:`;
 
     // Add tool call message
     const message: AgentMessage = {
-      id: crypto.randomUUID(),
+      id: generateId(),
       type: "tool",
       content: toolCall.title,
       timestamp: Date.now(),
@@ -1430,7 +1431,7 @@ Summary:`;
 
   handleDiff(sessionId: string, diff: DiffEvent) {
     const message: AgentMessage = {
-      id: crypto.randomUUID(),
+      id: generateId(),
       type: "diff",
       content: `Modified: ${diff.path}`,
       timestamp: Date.now(),
@@ -1475,7 +1476,7 @@ Summary:`;
     // Finalize thinking content if any
     if (session.streamingThinking) {
       const thinkingMessage: AgentMessage = {
-        id: crypto.randomUUID(),
+        id: generateId(),
         type: "thought",
         content: session.streamingThinking,
         timestamp: Date.now(),
@@ -1495,7 +1496,7 @@ Summary:`;
         : undefined;
 
       const message: AgentMessage = {
-        id: crypto.randomUUID(),
+        id: generateId(),
         type: "assistant",
         content: session.streamingContent,
         timestamp: Date.now(),
@@ -1529,7 +1530,7 @@ Summary:`;
 
   addErrorMessage(sessionId: string, error: string) {
     const message: AgentMessage = {
-      id: crypto.randomUUID(),
+      id: generateId(),
       type: "error",
       content: error,
       timestamp: Date.now(),

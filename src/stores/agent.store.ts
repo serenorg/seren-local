@@ -20,6 +20,7 @@ import {
   setAgentConversationTitle as setAgentConversationTitleDb,
 } from "@/lib/bridge";
 import { isLikelyAuthError } from "@/lib/auth-errors";
+import { generateId } from "@/lib/uuid";
 import { refreshAccessToken } from "@/services/auth";
 import {
   isPromptTooLongError,
@@ -1592,7 +1593,7 @@ Summary:`;
       setState("sessions", newSessionId, "compactedSummary", compactedSummary);
 
       const compactionNotice: AgentMessage = {
-        id: crypto.randomUUID(),
+        id: generateId(),
         type: "assistant",
         content: `Context compacted: ${toCompact.length} earlier messages summarized to keep the session active. The ${toPreserve.length} most recent messages are shown below.`,
         timestamp: Date.now(),
@@ -1813,7 +1814,7 @@ Summary:`;
     setState("sessions", sessionId, "compactRetryAttempted", false);
 
     const userMessage: AgentMessage = {
-      id: crypto.randomUUID(),
+      id: generateId(),
       type: "user",
       content: options?.displayContent ?? prompt,
       timestamp: Date.now(),
@@ -1931,7 +1932,7 @@ Summary:`;
                 "[AgentStore] Agent unresponsive after cancel -- spawned fresh session, skipping retry",
               );
               const cancelMsg: AgentMessage = {
-                id: crypto.randomUUID(),
+                id: generateId(),
                 type: "assistant",
                 content: "Session restarted after cancellation.",
                 timestamp: Date.now(),
@@ -1946,7 +1947,7 @@ Summary:`;
               }
             } else {
               const recoveryMsg: AgentMessage = {
-                id: crypto.randomUUID(),
+                id: generateId(),
                 type: "assistant",
                 content:
                   "Agent session restarted due to inactivity timeout. Retrying your message...",
@@ -2494,7 +2495,7 @@ Summary:`;
 
         if (String(event.data.error).includes("Task cancelled")) {
           const cancelMsg: AgentMessage = {
-            id: crypto.randomUUID(),
+            id: generateId(),
             type: "error",
             content: event.data.error,
             timestamp: Date.now(),
@@ -2535,7 +2536,7 @@ Summary:`;
 
           if (timedOutPermissions.length > 0) {
             const timeoutMsg: AgentMessage = {
-              id: crypto.randomUUID(),
+              id: generateId(),
               type: "error",
               content:
                 "Permission request timed out after 5 minutes. " +
@@ -2660,7 +2661,7 @@ Summary:`;
     }
 
     const userMsg: AgentMessage = {
-      id: crypto.randomUUID(),
+      id: generateId(),
       type: "user",
       content: session.pendingUserMessage,
       timestamp: session.pendingUserMessageTimestamp ?? Date.now(),
@@ -2780,7 +2781,7 @@ Summary:`;
     flushChunkBuf(sessionId);
     if (session.streamingThinking) {
       const thinkingMsg: AgentMessage = {
-        id: crypto.randomUUID(),
+        id: generateId(),
         type: "thought",
         content: session.streamingThinking,
         timestamp: session.streamingThinkingTimestamp ?? Date.now(),
@@ -2796,7 +2797,7 @@ Summary:`;
     }
     if (session.streamingContent) {
       const contentMsg: AgentMessage = {
-        id: crypto.randomUUID(),
+        id: generateId(),
         type: "assistant",
         content: session.streamingContent,
         timestamp: session.streamingContentTimestamp ?? Date.now(),
@@ -2818,7 +2819,7 @@ Summary:`;
     session.pendingToolCalls.set(toolCall.toolCallId, toolCall);
 
     const message: AgentMessage = {
-      id: crypto.randomUUID(),
+      id: generateId(),
       type: "tool",
       content: toolCall.title,
       timestamp: Date.now(),
@@ -2914,7 +2915,7 @@ Summary:`;
     if (session.skipHistoryReplay) return;
 
     const nextMessage: AgentMessage = {
-      id: crypto.randomUUID(),
+      id: generateId(),
       type: "diff",
       content: `Modified: ${diff.path}`,
       timestamp: Date.now(),
@@ -3034,7 +3035,7 @@ Summary:`;
 
     if (session.streamingThinking) {
       const thinkingMessage: AgentMessage = {
-        id: crypto.randomUUID(),
+        id: generateId(),
         type: "thought",
         content: session.streamingThinking,
         timestamp: session.streamingThinkingTimestamp ?? Date.now(),
@@ -3068,7 +3069,7 @@ Summary:`;
         : undefined;
 
       const message: AgentMessage = {
-        id: crypto.randomUUID(),
+        id: generateId(),
         type: "assistant",
         content: session.streamingContent,
         timestamp: session.streamingContentTimestamp ?? Date.now(),
@@ -3173,7 +3174,7 @@ Summary:`;
         buildForkBootstrapContext(session, forkedMessages) ?? undefined;
     }
 
-    const newConversationId = crypto.randomUUID();
+    const newConversationId = generateId();
     const forkTitle = `Fork of ${session.title ?? "Agent"}`;
     try {
       await createAgentConversation(
@@ -3223,7 +3224,7 @@ Summary:`;
     const prefixedError = `[${agentLabel}] ${error}`;
 
     const message: AgentMessage = {
-      id: crypto.randomUUID(),
+      id: generateId(),
       type: "error",
       content: prefixedError,
       timestamp: Date.now(),

@@ -14,6 +14,7 @@ import {
   saveMessage as saveMessageDb,
   updateConversation as updateConversationDb,
 } from "@/lib/bridge";
+import { generateId } from "@/lib/uuid";
 import type { UnifiedMessage } from "@/types/conversation";
 import { deserializeMetadata, serializeMetadata } from "@/types/conversation";
 
@@ -139,7 +140,7 @@ export const conversationStore = {
     model: string,
     projectRoot?: string,
   ): Promise<Conversation> {
-    const id = crypto.randomUUID();
+    const id = generateId();
 
     try {
       await createConversationDb(id, title, model, undefined, projectRoot);

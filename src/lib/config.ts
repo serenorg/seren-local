@@ -9,8 +9,9 @@
  */
 function resolveApiBase(): string {
   if (import.meta.env.VITE_SEREN_API_URL) return import.meta.env.VITE_SEREN_API_URL;
-  // When served from the runtime, proxy through it to avoid CORS
-  if (typeof window !== "undefined" && window.location.hostname === "127.0.0.1") {
+  // When served from the runtime (any host — localhost or LAN IP), proxy
+  // through it to bypass browser CORS restrictions against api.serendb.com.
+  if (typeof window !== "undefined" && window.location.port === "19420") {
     return `${window.location.origin}/api`;
   }
   return "https://api.serendb.com";

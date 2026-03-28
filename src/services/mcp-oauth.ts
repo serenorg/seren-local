@@ -5,7 +5,7 @@ import { isRuntimeConnected, runtimeInvoke } from "@/lib/bridge";
 import { appFetch } from "@/lib/fetch";
 
 const MCP_OAUTH_BASE =
-  typeof window !== "undefined" && window.location.hostname === "127.0.0.1"
+  typeof window !== "undefined" && window.location.port === "19420"
     ? `${window.location.origin}/mcp`
     : "https://mcp.serendb.com";
 // MCP server uses dynamic client registration
