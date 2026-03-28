@@ -20,6 +20,7 @@ import { getCompletions, parseCommand } from "@/lib/commands/parser";
 import type { CommandContext } from "@/lib/commands/types";
 import { collapseDirectoryListings } from "@/lib/directory-listing";
 import { openExternalLink } from "@/lib/external-link";
+import { generateId } from "@/lib/uuid";
 import { pickAndReadImages } from "@/lib/images/attachments";
 import type { ImageAttachment } from "@/lib/providers/types";
 import { escapeHtmlWithLinks, renderMarkdown } from "@/lib/render-markdown";
@@ -474,7 +475,7 @@ export const ChatContent: Component<ChatContentProps> = (_props) => {
     images?: ImageAttachment[],
   ) => {
     const userMessage: Message = {
-      id: crypto.randomUUID(),
+      id: generateId(),
       role: "user",
       content: messageContent,
       images,
@@ -487,7 +488,7 @@ export const ChatContent: Component<ChatContentProps> = (_props) => {
     await chatStore.persistMessage(userMessage);
 
     const context = buildContext();
-    const assistantId = crypto.randomUUID();
+    const assistantId = generateId();
 
     const useTools = areToolsAvailable();
     const session: ActiveStreamingSession = useTools

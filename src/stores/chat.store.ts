@@ -14,6 +14,7 @@ import {
   updateConversation as updateConversationDb,
 } from "@/lib/bridge";
 import type { ProviderId } from "@/lib/providers/types";
+import { generateId } from "@/lib/uuid";
 import {
   estimateConversationTokens,
   getModelContextLimit,
@@ -226,7 +227,7 @@ export const chatStore = {
    * Create a new conversation and switch to it.
    */
   async createConversation(title = "New Chat"): Promise<Conversation> {
-    const id = crypto.randomUUID();
+    const id = generateId();
     const model = state.selectedModel;
     const provider = null; // Will be determined from model
 
@@ -620,7 +621,7 @@ Summary:`;
     const conversation = await this.createConversation(title);
 
     const userMessage: Message = {
-      id: crypto.randomUUID(),
+      id: generateId(),
       role: "user",
       content: initialMessage,
       timestamp: Date.now(),

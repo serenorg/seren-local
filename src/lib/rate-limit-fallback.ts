@@ -4,6 +4,7 @@
 import type { AgentType } from "@/services/acp";
 import type { AgentMessage } from "@/stores/acp.store";
 import type { Message } from "@/services/chat";
+import { generateId } from "@/lib/uuid";
 
 /** Patterns that indicate an agent has hit a rate limit. */
 const RATE_LIMIT_PATTERNS = [
@@ -191,7 +192,7 @@ export function buildRedirectMessage(
       : `${agentName} agent hit its rate limit.`;
 
   return {
-    id: crypto.randomUUID(),
+    id: generateId(),
     role: "system",
     content:
       `${reasonText} ` +

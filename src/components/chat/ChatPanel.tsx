@@ -14,6 +14,7 @@ import { VoiceInputButton } from "@/components/chat/VoiceInputButton";
 import { ResizableTextarea } from "@/components/common/ResizableTextarea";
 import { FileTree } from "@/components/sidebar/FileTree";
 import { openExternalLink } from "@/lib/external-link";
+import { generateId } from "@/lib/uuid";
 import {
   loadDirectoryChildren,
   openFileInTab,
@@ -420,7 +421,7 @@ export const ChatPanel: Component<ChatPanelProps> = (_props) => {
     if (!trimmed) return;
 
     const userMessage: Message = {
-      id: crypto.randomUUID(),
+      id: generateId(),
       role: "user",
       content: trimmed,
       timestamp: Date.now(),
@@ -432,7 +433,7 @@ export const ChatPanel: Component<ChatPanelProps> = (_props) => {
     await chatStore.persistMessage(userMessage);
 
     const context = buildContext();
-    const assistantId = crypto.randomUUID();
+    const assistantId = generateId();
 
     // Use tool-aware streaming if tools are available (Seren provider)
     const useTools = areToolsAvailable();
