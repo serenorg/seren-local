@@ -1,5 +1,6 @@
 // ABOUTME: Local runtime server for Seren Local.
-// ABOUTME: HTTP + WebSocket server on localhost serving embedded SPA with token-authenticated JSON-RPC.
+// ABOUTME: HTTP + WebSocket server serving embedded SPA with token-authenticated JSON-RPC.
+// ABOUTME: Supports --host/--port CLI flags for remote access with token-gated /health.
 
 import { randomBytes, createHash } from "node:crypto";
 import { exec } from "node:child_process";
@@ -20,8 +21,42 @@ const APP_VERSION: string = (require("../package.json") as { version: string }).
 import { handleMessage } from "./rpc";
 import { checkForUpdates } from "./update-check";
 
-const PORT = Number(process.env.SEREN_PORT) || 19420;
-const NO_OPEN = process.argv.includes("--no-open");
+import { parseCliArgs, isLoopbackAddr, isLocalhostHost } from "./cli";
+
+function printUsage(): void {
+  console.log(`
+  Seren Local Runtime v${APP_VERSION}
+
+  Usage: serendesktop [options]
+
+  Options:
+    --host, -H <ip>   Listen address (default: 127.0.0.1, env: SEREN_HOST)
+    --port, -p <num>   Listen port    (default: 19420, env: SEREN_PORT)
+    --no-open          Don't auto-open browser
+    --help, -h         Show this help and exit
+
+  Environment:
+    SEREN_HOST            Listen address override
+    SEREN_PORT            Listen port override
+    SEREN_RUNTIME_TOKEN   Fixed auth token (default: random per session)
+
+  Examples:
+    serendesktop                         # localhost only
+    serendesktop --host 0.0.0.0          # all interfaces (remote access)
+    serendesktop --host 0.0.0.0 -p 8080  # custom port
+`);
+}
+
+const CLI = parseCliArgs();
+
+if (CLI.help) {
+  printUsage();
+  process.exit(0);
+}
+
+const HOST = CLI.host;
+const PORT = CLI.port;
+const NO_OPEN = CLI.noOpen;
 
 // SECURITY: Generate a random auth token at startup.
 // Only the health endpoint (localhost-only) exposes this token.
@@ -138,9 +173,6 @@ function openBrowser(url: string): void {
   });
 }
 
-function isLocalhost(addr: string | undefined): boolean {
-  return addr === "127.0.0.1" || addr === "::1" || addr === "::ffff:127.0.0.1";
-}
 
 // ── API Proxy ───────────────────────────────────────────────────────
 // Forwards /api/* requests to the Seren Gateway, bypassing browser CORS.
@@ -200,8 +232,10 @@ function proxyToGateway(req: IncomingMessage, res: ServerResponse, host: string)
 }
 
 const httpServer = createServer((req, res) => {
-  // SECURITY: Only allow localhost connections
-  if (!isLocalhost(req.socket.remoteAddress)) {
+  // SECURITY: When bound to localhost, reject non-local connections.
+  // When bound to a non-localhost address (e.g. 0.0.0.0), allow remote
+  // connections — the WebSocket auth token is the security boundary.
+  if (isLocalhostHost(HOST) && !isLoopbackAddr(req.socket.remoteAddress)) {
     res.writeHead(403);
     res.end("Forbidden: only localhost connections allowed");
     return;
@@ -230,9 +264,15 @@ const httpServer = createServer((req, res) => {
     return;
   }
 
+  // SECURITY: Only expose auth token to loopback clients.
+  // Remote clients get /health for status but must obtain the token
+  // from the server console or SEREN_RUNTIME_TOKEN env var.
   if (req.url === "/health") {
+    const fromLoopback = isLoopbackAddr(req.socket.remoteAddress);
+    const body: Record<string, string> = { status: "ok", version: APP_VERSION, buildHash: BUILD_HASH };
+    if (fromLoopback) body.token = AUTH_TOKEN;
     res.writeHead(200, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ status: "ok", version: APP_VERSION, token: AUTH_TOKEN, buildHash: BUILD_HASH }));
+    res.end(JSON.stringify(body));
     return;
   }
 
@@ -253,8 +293,9 @@ const wss = new WebSocketServer({ server: httpServer });
 const authenticatedSockets = new WeakSet<WebSocket>();
 
 wss.on("connection", (ws, req) => {
-  // SECURITY: Verify localhost
-  if (!isLocalhost(req.socket.remoteAddress)) {
+  // SECURITY: When bound to localhost, reject non-local WebSocket upgrades.
+  // When bound to 0.0.0.0, the auth token handshake is the security boundary.
+  if (isLocalhostHost(HOST) && !isLoopbackAddr(req.socket.remoteAddress)) {
     ws.close(4003, "Forbidden");
     return;
   }
@@ -314,17 +355,26 @@ initChatDb(join(dataDir, "conversations.db"));
 
 registerAllHandlers();
 
-httpServer.listen(PORT, "127.0.0.1", () => {
-  const url = `http://127.0.0.1:${PORT}`;
+httpServer.listen(PORT, HOST, () => {
+  const url = `http://${HOST}:${PORT}`;
   const hasSpa = existsSync(join(PUBLIC_DIR, "index.html"));
+
+  if (!isLocalhostHost(HOST)) {
+    console.warn("[Seren Local] ⚠  WARNING: Binding to non-localhost address.");
+    console.warn("[Seren Local]    The auth token is the ONLY security boundary.");
+    console.warn("[Seren Local]    /health will NOT expose the token to remote clients.");
+    console.warn(`[Seren Local]    Auth token: ${AUTH_TOKEN}`);
+    console.warn("[Seren Local]    Set SEREN_RUNTIME_TOKEN for a stable token across restarts.\n");
+  }
+
   console.log(`[Seren Local] Listening on ${url}`);
   if (hasSpa) {
     console.log(`[Seren Local] Serving app at ${url}`);
-    if (!NO_OPEN) openBrowser(url);
+    if (!NO_OPEN && isLocalhostHost(HOST)) openBrowser(url);
   } else {
     console.log("[Seren Local] No embedded SPA found (runtime/public/). Run build:embed to bundle the app.");
   }
   checkForUpdates();
 });
 
-export { httpServer, wss, PORT, AUTH_TOKEN };
+export { httpServer, wss, HOST, PORT, AUTH_TOKEN };
