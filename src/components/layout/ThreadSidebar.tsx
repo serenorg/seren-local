@@ -62,7 +62,7 @@ export const ThreadSidebar: Component<ThreadSidebarProps> = (props) => {
 
   onMount(() => {
     document.addEventListener("mousedown", handleClickOutside);
-    void skillsStore.refreshInstalled();
+    void skillsStore.refresh();
   });
 
   onCleanup(() => {
