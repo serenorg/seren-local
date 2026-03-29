@@ -3,11 +3,11 @@
 
 import { isRuntimeConnected, runtimeInvoke } from "@/lib/bridge";
 import { appFetch } from "@/lib/fetch";
+import { isServedByRuntime } from "@/lib/runtime-detect";
 
-const MCP_OAUTH_BASE =
-  typeof window !== "undefined" && window.location.port === "19420"
-    ? `${window.location.origin}/mcp`
-    : "https://mcp.serendb.com";
+const MCP_OAUTH_BASE = isServedByRuntime()
+  ? `${window.location.origin}/mcp`
+  : "https://mcp.serendb.com";
 // MCP server uses dynamic client registration
 const MCP_CLIENT_NAME = "Seren Desktop";
 // Use loopback redirect - webviews can intercept HTTP navigations but not custom schemes

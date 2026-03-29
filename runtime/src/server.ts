@@ -100,17 +100,18 @@ const MIME_TYPES: Record<string, string> = {
 };
 
 /**
- * Serve the index.html with the build hash injected as a meta tag.
- * This allows the SPA to detect stale cached versions and auto-reload.
+ * Serve the index.html with runtime metadata injected as meta tags.
+ * - seren-build-hash: lets the SPA detect stale cache and auto-reload
+ * - seren-runtime-token: auth token for WebSocket, delivered same-origin
+ *   (no /health fetch needed — works for remote access too)
  */
 function serveHtml(res: import("node:http").ServerResponse): boolean {
   const indexPath = join(PUBLIC_DIR, "index.html");
   try {
     let html = readFileSync(indexPath, "utf-8");
-    // Inject build hash so the SPA can detect stale cache
     html = html.replace(
       "<head>",
-      `<head><meta name="seren-build-hash" content="${BUILD_HASH}">`,
+      `<head><meta name="seren-build-hash" content="${BUILD_HASH}"><meta name="seren-runtime-token" content="${AUTH_TOKEN}">`,
     );
     res.writeHead(200, {
       "Content-Type": "text/html; charset=utf-8",
