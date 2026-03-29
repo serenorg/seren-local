@@ -40,6 +40,7 @@ export const ThreadSidebar: Component<ThreadSidebarProps> = (props) => {
   const [spawning, setSpawning] = createSignal(false);
   const [showCreateMenu, setShowCreateMenu] = createSignal(false);
   const [showCatalog, setShowCatalog] = createSignal(false);
+  const [skillsReady, setSkillsReady] = createSignal(false);
   let launcherRef: HTMLDivElement | undefined;
   let searchInputRef: HTMLInputElement | undefined;
 
@@ -62,7 +63,10 @@ export const ThreadSidebar: Component<ThreadSidebarProps> = (props) => {
 
   onMount(() => {
     document.addEventListener("mousedown", handleClickOutside);
-    void skillsStore.refresh();
+    skillsStore.refresh().then(
+      () => setSkillsReady(true),
+      () => setSkillsReady(true),
+    );
   });
 
   onCleanup(() => {
@@ -694,7 +698,9 @@ export const ThreadSidebar: Component<ThreadSidebarProps> = (props) => {
                     Back to skills
                   </button>
                   <span class="text-[11px] text-muted-foreground/50">
-                    {skillsStore.available.length} available
+                    {skillsReady()
+                      ? `${skillsStore.available.length} available`
+                      : "Loading catalog..."}
                   </span>
                 </div>
                 <div class="max-h-[300px] overflow-y-auto">
@@ -755,12 +761,19 @@ export const ThreadSidebar: Component<ThreadSidebarProps> = (props) => {
             {/* Skills list — active thread skills */}
             <Show when={!showCatalog()}>
               <div class="mt-2 max-h-[300px] overflow-y-auto">
+                <Show when={!skillsReady() && launcherQuery().trim()}>
+                  <div class="w-full px-3 py-4 text-[13px] text-center text-muted-foreground">
+                    Loading skills catalog...
+                  </div>
+                </Show>
                 <Show
                   when={filteredSkills().length > 0}
                   fallback={
-                    <div class="w-full px-3 py-4 text-[13px] text-center text-muted-foreground">
-                      No matching skills
-                    </div>
+                    <Show when={skillsReady()}>
+                      <div class="w-full px-3 py-4 text-[13px] text-center text-muted-foreground">
+                        {launcherQuery().trim() ? "No matching skills" : "No active skills"}
+                      </div>
+                    </Show>
                   }
                 >
                   <For each={filteredSkills()}>

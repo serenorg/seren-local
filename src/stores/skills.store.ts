@@ -587,9 +587,6 @@ export const skillsStore = {
    * Pass skipCache=true to bypass the localStorage cache (e.g. user-triggered refresh).
    */
   async refreshAvailable(skipCache = false): Promise<void> {
-    setState("isLoading", true);
-    setState("error", null);
-
     try {
       const available = await skills.fetchAllSkills(skipCache);
       setState("available", available);
@@ -599,8 +596,6 @@ export const skillsStore = {
         err instanceof Error ? err.message : "Failed to load skills";
       setState("error", message);
       console.error("[SkillsStore] Error loading available skills:", err);
-    } finally {
-      setState("isLoading", false);
     }
   },
 
@@ -608,9 +603,6 @@ export const skillsStore = {
    * Refresh installed skills from the file system.
    */
   async refreshInstalled(): Promise<void> {
-    setState("isLoading", true);
-    setState("error", null);
-
     try {
       const fileTree = getFileTreeState();
       const projectRoot = fileTree.rootPath;
@@ -629,8 +621,6 @@ export const skillsStore = {
         err instanceof Error ? err.message : "Failed to load installed skills";
       setState("error", message);
       console.error("[SkillsStore] Error loading installed skills:", err);
-    } finally {
-      setState("isLoading", false);
     }
   },
 
@@ -662,6 +652,9 @@ export const skillsStore = {
       failed: 0,
     };
 
+    setState("isLoading", true);
+    setState("error", null);
+    try {
     await Promise.all([
       this.refreshAvailable(skipCache),
       this.refreshInstalled(),
@@ -820,6 +813,9 @@ export const skillsStore = {
     }
 
     return summary;
+    } finally {
+      setState("isLoading", false);
+    }
   },
 
   /**
@@ -916,8 +912,14 @@ export const skillsStore = {
    * Clear the skills index cache and refresh.
    */
   async clearCacheAndRefresh(): Promise<void> {
-    skills.clearCache();
-    await this.refreshAvailable();
+    setState("isLoading", true);
+    setState("error", null);
+    try {
+      skills.clearCache();
+      await this.refreshAvailable();
+    } finally {
+      setState("isLoading", false);
+    }
   },
 
   hideSkill(slug: string): void {
