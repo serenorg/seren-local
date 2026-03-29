@@ -1,17 +1,17 @@
 // ABOUTME: Centralized configuration for the Seren Gateway API.
 // ABOUTME: All API calls must use these values for consistency and security.
 
+import { isServedByRuntime } from "@/lib/runtime-detect";
+
 /**
  * Seren Gateway API base URL.
- * When running from the local runtime (localhost:19420), API calls are proxied
- * through the runtime to bypass browser CORS restrictions.
- * NOTE: Seren Gateway API does NOT use a version prefix.
+ * When served by the runtime, API calls are proxied through it to bypass
+ * browser CORS restrictions. Detection uses server-injected meta tag —
+ * works for any host (localhost, LAN IP, custom port).
  */
 function resolveApiBase(): string {
   if (import.meta.env.VITE_SEREN_API_URL) return import.meta.env.VITE_SEREN_API_URL;
-  // When served from the runtime (any host — localhost or LAN IP), proxy
-  // through it to bypass browser CORS restrictions against api.serendb.com.
-  if (typeof window !== "undefined" && window.location.port === "19420") {
+  if (isServedByRuntime()) {
     return `${window.location.origin}/api`;
   }
   return "https://api.serendb.com";

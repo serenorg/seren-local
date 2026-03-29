@@ -4,11 +4,11 @@
 import { getSerenApiKey } from "@/lib/bridge";
 import { mcpClient } from "@/lib/mcp/client";
 import type { McpTool, McpToolResult } from "@/lib/mcp/types";
+import { isServedByRuntime } from "@/lib/runtime-detect";
 
-const MCP_GATEWAY_URL =
-  typeof window !== "undefined" && window.location.port === "19420"
-    ? `${window.location.origin}/mcp/mcp`
-    : "https://mcp.serendb.com/mcp";
+const MCP_GATEWAY_URL = isServedByRuntime()
+  ? `${window.location.origin}/mcp/mcp`
+  : "https://mcp.serendb.com/mcp";
 const SEREN_MCP_SERVER_NAME = "seren-gateway";
 
 // Cache configuration

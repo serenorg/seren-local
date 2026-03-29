@@ -78,10 +78,31 @@ const DB_VERSION = 1;
 const CONVERSATIONS_STORE = "conversations";
 const MESSAGES_STORE = "messages";
 
-const RUNTIME_PORT = 19420;
-const RUNTIME_HTTP_URL = `http://127.0.0.1:${RUNTIME_PORT}`;
-const RUNTIME_WS_URL = `ws://127.0.0.1:${RUNTIME_PORT}`;
 const RPC_TIMEOUT_MS = 30_000;
+
+/**
+ * Resolve the runtime HTTP and WS URLs.
+ * When served by the runtime, use the same origin (works for any host/port).
+ * Otherwise fall back to localhost:19420 for dev/CDN scenarios.
+ */
+function resolveRuntimeUrls(): { http: string; ws: string } {
+  if (typeof window !== "undefined") {
+    // Check for runtime-injected meta tag (definitive detection)
+    const meta = document.querySelector('meta[name="seren-runtime-token"]');
+    if (meta) {
+      const origin = window.location.origin;
+      const wsProto = window.location.protocol === "https:" ? "wss:" : "ws:";
+      return {
+        http: origin,
+        ws: `${wsProto}//${window.location.host}`,
+      };
+    }
+  }
+  // Fallback for dev server or CDN-hosted SPA
+  return { http: "http://127.0.0.1:19420", ws: "ws://127.0.0.1:19420" };
+}
+
+const { http: RUNTIME_HTTP_URL, ws: RUNTIME_WS_URL } = resolveRuntimeUrls();
 
 // ============================================================================
 // Runtime connection (WebSocket JSON-RPC with token auth)
@@ -137,35 +158,65 @@ function getEmbeddedBuildHash(): string | null {
 }
 
 /**
- * Fetch the auth token from the runtime's health endpoint.
- * Also checks the server's build hash against the SPA's embedded version.
- * If they don't match, the SPA is stale and we force a hard reload.
+ * Get the auth token for the runtime WebSocket connection.
+ *
+ * Primary: read from `<meta name="seren-runtime-token">` injected by the
+ * runtime into served HTML. This works for any host/port (remote or local).
+ *
+ * Fallback: fetch from /health endpoint (dev server scenario where the SPA
+ * is served by Vite but the runtime is running separately on localhost).
  */
 async function fetchRuntimeToken(): Promise<string | null> {
+  // Primary: meta tag (same-origin, no network request)
+  const meta = document.querySelector('meta[name="seren-runtime-token"]');
+  const metaToken = meta?.getAttribute("content") ?? null;
+  if (metaToken) {
+    // Still check for stale SPA via build hash
+    await checkStaleSpa();
+    return metaToken;
+  }
+
+  // Fallback: /health endpoint (dev mode — SPA on Vite, runtime on localhost)
   try {
     const res = await fetch(`${RUNTIME_HTTP_URL}/health`);
     if (!res.ok) return null;
     const data = await res.json();
-
-    // Detect stale SPA: compare server build hash with what's in our HTML
-    const embeddedHash = getEmbeddedBuildHash();
-    if (data.buildHash && embeddedHash && data.buildHash !== embeddedHash) {
-      console.log("[Bridge] Stale SPA detected — forcing reload", {
-        server: data.buildHash,
-        embedded: embeddedHash,
-      });
-      // Clear caches and force reload
-      if ("caches" in window) {
-        const keys = await caches.keys();
-        await Promise.all(keys.map((k) => caches.delete(k)));
-      }
-      window.location.reload();
-      return null;
-    }
-
+    await checkStaleSpa(data.buildHash);
     return data.token ?? null;
   } catch {
     return null;
+  }
+}
+
+/**
+ * Compare build hashes and force-reload if the SPA is stale.
+ * When called with a server hash, uses that; otherwise fetches from /health.
+ */
+async function checkStaleSpa(serverHash?: string): Promise<void> {
+  const embeddedHash = getEmbeddedBuildHash();
+  if (!embeddedHash) return;
+
+  let remoteHash = serverHash;
+  if (!remoteHash) {
+    try {
+      const res = await fetch(`${RUNTIME_HTTP_URL}/health`);
+      if (res.ok) {
+        const data = await res.json();
+        remoteHash = data.buildHash;
+      }
+    } catch { /* ignore */ }
+  }
+
+  if (remoteHash && remoteHash !== embeddedHash) {
+    console.log("[Bridge] Stale SPA detected — forcing reload", {
+      server: remoteHash,
+      embedded: embeddedHash,
+    });
+    if ("caches" in window) {
+      const keys = await caches.keys();
+      await Promise.all(keys.map((k) => caches.delete(k)));
+    }
+    window.location.reload();
   }
 }
 
