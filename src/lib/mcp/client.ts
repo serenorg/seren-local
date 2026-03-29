@@ -375,7 +375,7 @@ function createMcpClient() {
     const id = ++httpRpcId;
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
-      Accept: "application/json",
+      Accept: "application/json, text/event-stream",
     };
     if (conn.authToken) {
       headers.Authorization = `Bearer ${conn.authToken}`;
@@ -455,6 +455,7 @@ function createMcpClient() {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          Accept: "application/json, text/event-stream",
           ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
           ...(httpConnections.get(serverName)?.sessionId
             ? {

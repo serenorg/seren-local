@@ -24,7 +24,6 @@ import { StatusBar } from "@/components/common/StatusBar";
 import { EditorContent } from "@/components/editor/EditorContent";
 import { X402PaymentApproval } from "@/components/mcp/X402PaymentApproval";
 import { GatewayToolApproval } from "@/components/gateway/GatewayToolApproval";
-import { OpenClawApprovalManager } from "@/components/settings/OpenClawApproval";
 import { SettingsPanel } from "@/components/settings/SettingsPanel";
 import { DatabasePanel } from "@/components/sidebar/DatabasePanel";
 import { FileExplorer } from "@/components/sidebar/FileExplorer";
@@ -34,10 +33,6 @@ import { shortcuts } from "@/lib/shortcuts";
 import { Phase3Playground } from "@/playground/Phase3Playground";
 import { initAutoTopUp } from "@/services/autoTopUp";
 import { getPendingOAuthProvider, handleOAuthCallback } from "@/services/oauth";
-import {
-  startOpenClawAgent,
-  stopOpenClawAgent,
-} from "@/services/openclaw-agent";
 import { telemetry } from "@/services/telemetry";
 import {
   authStore,
@@ -47,7 +42,6 @@ import {
 } from "@/stores/auth.store";
 import { autocompleteStore } from "@/stores/autocomplete.store";
 import { chatStore } from "@/stores/chat.store";
-import { openclawStore } from "@/stores/openclaw.store";
 import { providerStore } from "@/stores/provider.store";
 import { loadAllSettings } from "@/stores/settings.store";
 import { updaterStore } from "@/stores/updater.store";
@@ -147,21 +141,13 @@ function App() {
     }) as EventListener;
     window.addEventListener("seren:open-panel", onOpenPanel);
 
-    // Listen for OpenClaw settings open request (from sidebar status indicator)
+    // Listen for settings open request (from sidebar status indicator)
     const onOpenSettings = () => setOverlayPanel("settings");
     window.addEventListener("seren:open-settings", onOpenSettings);
-
-    // Initialize OpenClaw store (load setup state + event listeners) before agent
-    openclawStore.init();
-
-    // Start OpenClaw message agent
-    startOpenClawAgent();
   });
 
   onCleanup(() => {
     shortcuts.destroy();
-    stopOpenClawAgent();
-    openclawStore.destroy();
   });
 
   // Store cleanup function for auto top-up
@@ -298,7 +284,6 @@ function App() {
         <DailyClaimPopup />
         <X402PaymentApproval />
         <GatewayToolApproval />
-        <OpenClawApprovalManager />
         <AboutDialog />
       </div>
     </Show>

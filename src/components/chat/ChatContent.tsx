@@ -473,11 +473,12 @@ export const ChatContent: Component<ChatContentProps> = (_props) => {
   const sendMessageImmediate = async (
     messageContent: string,
     images?: ImageAttachment[],
+    displayContent?: string,
   ) => {
     const userMessage: Message = {
       id: generateId(),
       role: "user",
-      content: messageContent,
+      content: displayContent ?? messageContent,
       images,
       timestamp: Date.now(),
       model: chatStore.selectedModel,

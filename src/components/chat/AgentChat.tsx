@@ -300,17 +300,74 @@ export const AgentChat: Component<AgentChatProps> = (props) => {
     await acpStore.sendPrompt(trimmed, context);
   };
 
-  // Process queued messages when agent becomes ready
-  createEffect(() => {
-    if (isReady() && messageQueue().length > 0) {
-      const [nextMessage, ...remaining] = messageQueue();
-      setMessageQueue(remaining);
-      console.log("[AgentChat] Processing queued message:", nextMessage);
-      setTimeout(() => {
-        acpStore.sendPrompt(nextMessage);
-      }, 100);
+  // Guard flag prevents concurrent queue processing
+  let queueDraining = false;
+
+  const processNextQueuedMessage = async () => {
+    if (queueDraining) return;
+    if (!isReady()) return;
+
+    // Don't process queued messages while compaction is in progress —
+    // the session will be terminated and re-spawned, so any sendPrompt
+    // call would fail with "Session terminated" and the message would be
+    // lost. The isReady effect will re-trigger once the new session is up.
+    if (acpStore.activeSession?.isCompacting) return;
+
+    const queue = messageQueue();
+    if (queue.length === 0) return;
+
+    queueDraining = true;
+    const [nextMessage, ...remaining] = queue;
+    setMessageQueue(remaining);
+    console.log("[AgentChat] Processing queued message:", nextMessage);
+
+    try {
+      await acpStore.sendPrompt(nextMessage);
+    } catch (error) {
+      // If the session was terminated (e.g. by compaction), re-queue the
+      // message at the front so it survives the session transition and
+      // gets delivered once the new session is ready.
+      const msg = error instanceof Error ? error.message : String(error);
+      if (
+        msg.includes("Session terminated") ||
+        msg.includes("not found") ||
+        msg.includes("Worker thread dropped")
+      ) {
+        console.warn(
+          "[AgentChat] Re-queuing message after session termination:",
+          nextMessage,
+        );
+        setMessageQueue((prev) => [nextMessage, ...prev]);
+      } else {
+        console.error("[AgentChat] Queued message failed:", error);
+      }
     }
-  });
+
+    queueDraining = false;
+    // After the prompt completes, promptComplete has already set status
+    // back to "ready" — only continue draining if there are more messages.
+    processNextQueuedMessage();
+  };
+
+  // Trigger queue drain when agent becomes ready.
+  // Guard against compaction: the session briefly reports "ready" during
+  // the compaction flow before being terminated — processing queued messages
+  // in that window causes "Session terminated" errors and message loss.
+  createEffect(
+    on(
+      isReady,
+      (ready) => {
+        if (
+          ready &&
+          !acpStore.activeSession?.isCompacting &&
+          messageQueue().length > 0
+        ) {
+          processNextQueuedMessage();
+        }
+      },
+      { defer: true },
+    ),
+  );
 
   const handleCancel = async () => {
     // Clear queued messages so they don't auto-send after cancellation

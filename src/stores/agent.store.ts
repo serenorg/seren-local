@@ -1626,8 +1626,8 @@ Summary:`;
         .join("\n\n");
 
       const seedPrompt = preservedContext
-        ? `Here is a summary of our prior conversation:\n\n${summary}\n\nHere are the most recent messages:\n\n${preservedContext}\n\nContinue from where we left off. The user may send a new message shortly.`
-        : `Here is a summary of our prior conversation:\n\n${summary}\n\nContinue from where we left off. The user may send a new message shortly.`;
+        ? `Here is a summary of our prior conversation:\n\n${summary}\n\nHere are the most recent messages:\n\n${preservedContext}\n\nThis context was restored after automatic compaction. Briefly confirm you have this context (1-2 sentences summarizing where we left off), then wait for the user's next message. Do not read files, edit code, or use any tools until the user sends a new message.`
+        : `Here is a summary of our prior conversation:\n\n${summary}\n\nThis context was restored after automatic compaction. Briefly confirm you have this context (1-2 sentences summarizing where we left off), then wait for the user's next message. Do not read files, edit code, or use any tools until the user sends a new message.`;
 
       await waitForSessionReady(newSessionId);
 
@@ -2410,6 +2410,13 @@ Summary:`;
               `(${Math.round((inputTokens / ctxSize) * 100)}% of ${ctxSize.toLocaleString()} context)`,
             );
           }
+        }
+
+        // A successful prompt completion proves the session is healthy.
+        // Clear any stale error (e.g. auth-expired banner after re-login).
+        if (!isHistoryReplay && state.sessions[sessionId]?.error) {
+          setState("sessions", sessionId, "error", null);
+          setState("error", null);
         }
 
         setState(

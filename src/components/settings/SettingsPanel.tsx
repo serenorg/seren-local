@@ -24,7 +24,6 @@ import {
 } from "@/stores/settings.store";
 import { claimDaily, walletState } from "@/stores/wallet.store";
 import { OAuthLogins } from "./OAuthLogins";
-import { OpenClawSettings } from "./OpenClawSettings";
 import { ProviderSettings } from "./ProviderSettings";
 import { SearchableModelSelect } from "./SearchableModelSelect";
 
@@ -38,8 +37,7 @@ type SettingsSection =
   | "indexing"
   | "appearance"
   | "general"
-  | "mcp"
-  | "openclaw";
+  | "mcp";
 
 interface SettingsPanelProps {
   onSignInClick?: () => void;
@@ -131,7 +129,6 @@ export const SettingsPanel: Component<SettingsPanelProps> = (props) => {
     { id: "appearance", label: "Appearance", icon: "🎨" },
     { id: "general", label: "General", icon: "⚙️" },
     { id: "mcp", label: "MCP Servers", icon: "🔌" },
-    { id: "openclaw", label: "OpenClaw", icon: "🦞" },
   ];
 
   const handleOpenSection = (event: Event) => {
@@ -1286,9 +1283,6 @@ export const SettingsPanel: Component<SettingsPanelProps> = (props) => {
           </section>
         </Show>
 
-        <Show when={activeSection() === "openclaw"}>
-          <OpenClawSettings />
-        </Show>
       </main>
 
       <Show when={showResetConfirm()}>

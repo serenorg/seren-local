@@ -2,7 +2,7 @@
 // ABOUTME: Provides one-click update that restarts the server with the new version.
 
 import { createStore } from "solid-js/store";
-import { runtimeInvoke } from "@/lib/bridge";
+import { isRuntimeConnected, runtimeInvoke, onRuntimeEvent } from "@/lib/bridge";
 
 export type UpdateStatus = "idle" | "checking" | "available" | "installing" | "error";
 
@@ -33,8 +33,21 @@ export const updaterStore = {
     return state;
   },
 
-  /** Check for updates on startup. Non-blocking — failures are silent. */
+  /** Check for updates on startup. Defers until runtime is connected. */
   async initUpdater(): Promise<void> {
+    if (!isRuntimeConnected()) {
+      // Runtime not ready yet — wait for connection, then check
+      const unsub = onRuntimeEvent("runtime:connected", () => {
+        unsub();
+        this._doCheck();
+      });
+      return;
+    }
+    await this._doCheck();
+  },
+
+  /** Perform the actual update check via runtime RPC. */
+  async _doCheck(): Promise<void> {
     try {
       setState("status", "checking");
       const info = await runtimeInvoke<UpdateInfo>("check_for_update");
