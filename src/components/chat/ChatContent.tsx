@@ -16,7 +16,7 @@ import {
 import { SignIn } from "@/components/auth/SignIn";
 import { VoiceInputButton } from "@/components/chat/VoiceInputButton";
 import { collapseBuildOutput } from "@/lib/build-output";
-import { getCompletions, parseCommand } from "@/lib/commands/parser";
+import { getCompletions, matchSkillCommand, parseCommand } from "@/lib/commands/parser";
 import type { CommandContext } from "@/lib/commands/types";
 import { collapseDirectoryListings } from "@/lib/directory-listing";
 import { openExternalLink } from "@/lib/external-link";
@@ -25,6 +25,7 @@ import { pickAndReadImages } from "@/lib/images/attachments";
 import type { ImageAttachment } from "@/lib/providers/types";
 import { escapeHtmlWithLinks, renderMarkdown } from "@/lib/render-markdown";
 import { catalog, type Publisher } from "@/services/catalog";
+import { skills } from "@/services/skills";
 import {
   areToolsAvailable,
   CHAT_MAX_RETRIES,
@@ -444,6 +445,39 @@ export const ChatContent: Component<ChatContentProps> = (_props) => {
     // Check for slash commands first
     if (trimmed.startsWith("/") && images.length === 0) {
       if (executeSlashCommand(trimmed)) return;
+
+      // Check if the slash command matches an installed skill
+      const skillMatch = matchSkillCommand(trimmed);
+      if (skillMatch) {
+        const { skill, args } = skillMatch;
+
+        setInput("");
+        setHistoryIndex(-1);
+        setSavedInput("");
+
+        let skillContent: string | null = null;
+        try {
+          skillContent = await skills.readContent(skill);
+        } catch {
+          // Skill content unavailable — send as plain text
+        }
+
+        const directive = skillContent
+          ? [
+              `<skill-invocation name="${skill.slug}">`,
+              `The user has invoked the /${skill.slug} skill. Execute it by following the skill instructions below.`,
+              args ? `\nUser request: ${args}` : "",
+              `\n${skillContent}`,
+              `</skill-invocation>`,
+            ].join("\n")
+          : args
+            ? `/${skill.slug} ${args}`
+            : `/${skill.slug}`;
+
+        const displayText = args ? `/${skill.slug} ${args}` : `/${skill.slug}`;
+        await sendMessageImmediate(directive, undefined, displayText);
+        return;
+      }
     }
 
     // If using Seren provider and not authenticated, prompt sign-in
