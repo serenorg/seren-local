@@ -1,12 +1,24 @@
 // ABOUTME: Memory service for storing and retrieving conversation memories.
-// ABOUTME: Lightweight stub wrapping API calls with authentication and project context.
+// ABOUTME: Calls memory.serendb.com via the runtime's /memory/* proxy route.
 
-import { API_BASE } from "@/lib/config";
 import { appFetch } from "@/lib/fetch";
 import { getToken } from "@/lib/bridge";
+import { isServedByRuntime } from "@/lib/runtime-detect";
 import { authStore } from "@/stores/auth.store";
 import { projectStore } from "@/stores/project.store";
 import { settingsStore } from "@/stores/settings.store";
+
+/**
+ * Resolve the memory service base URL.
+ * When served by the runtime, use the /memory proxy (avoids CORS).
+ * Otherwise call memory.serendb.com directly.
+ */
+function memoryBase(): string {
+  if (isServedByRuntime()) {
+    return `${window.location.origin}/memory`;
+  }
+  return "https://memory.serendb.com";
+}
 
 export interface RecallResult {
   content: string;
@@ -51,7 +63,7 @@ export async function rememberMemory(
 
   const projectId = getProjectId();
 
-  const resp = await appFetch(`${API_BASE}/memory/remember`, {
+  const resp = await appFetch(`${memoryBase()}/remember`, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${token}`,
@@ -88,15 +100,14 @@ export async function recallMemories(
     const params = new URLSearchParams({ query, limit: String(limit) });
     if (projectId) params.set("project_id", projectId);
 
-    const resp = await appFetch(`${API_BASE}/memory/recall?${params}`, {
+    const resp = await appFetch(`${memoryBase()}/recall?${params}`, {
       headers: { Authorization: `Bearer ${token}` },
     });
 
     if (!resp.ok) return [];
     const json = await resp.json();
     return json.data ?? [];
-  } catch (error) {
-    console.warn("[Memory] Failed to recall memories:", error);
+  } catch {
     return [];
   }
 }
@@ -117,7 +128,7 @@ export async function syncMemories(): Promise<SyncResult | null> {
   const projectId = getProjectId();
 
   try {
-    const resp = await appFetch(`${API_BASE}/memory/sync`, {
+    const resp = await appFetch(`${memoryBase()}/sync`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${token}`,
@@ -153,15 +164,14 @@ export async function bootstrapMemoryContext(): Promise<string | null> {
     const params = new URLSearchParams();
     if (projectId) params.set("project_id", projectId);
 
-    const resp = await appFetch(`${API_BASE}/memory/bootstrap?${params}`, {
+    const resp = await appFetch(`${memoryBase()}/bootstrap?${params}`, {
       headers: { Authorization: `Bearer ${token}` },
     });
 
     if (!resp.ok) return null;
     const json = await resp.json();
     return json.data ?? null;
-  } catch (error) {
-    console.warn("[Memory] Failed to bootstrap memory context:", error);
+  } catch {
     return null;
   }
 }
@@ -184,8 +194,8 @@ export async function storeConversationTurn(
 
   try {
     await rememberMemory(`${combinedContent}${metadata}`, "semantic");
-  } catch (error) {
-    console.error("[Memory] Failed to store conversation turn:", error);
+  } catch {
+    // Best-effort — don't log noise for a background operation
   }
 }
 
@@ -212,7 +222,7 @@ export async function storeAssistantResponse(
 
   try {
     await rememberMemory(`${content}${metadata}`, "semantic");
-  } catch (error) {
-    console.error("[Memory] Failed to store assistant response:", error);
+  } catch {
+    // Best-effort
   }
 }

@@ -180,9 +180,10 @@ function openBrowser(url: string): void {
 
 const GATEWAY_HOST = "api.serendb.com";
 const MCP_GATEWAY_HOST = "mcp.serendb.com";
+const MEMORY_HOST = "memory.serendb.com";
 
 function proxyToGateway(req: IncomingMessage, res: ServerResponse, host: string): void {
-  const targetPath = (req.url || "").replace(/^\/(api|mcp)/, "");
+  const targetPath = (req.url || "").replace(/^\/(api|mcp|memory)/, "");
 
   // Collect request body
   const chunks: Buffer[] = [];
@@ -262,6 +263,12 @@ const httpServer = createServer((req, res) => {
   // Proxy /mcp/* to MCP Gateway
   if (req.url?.startsWith("/mcp/") || req.url === "/mcp") {
     proxyToGateway(req, res, MCP_GATEWAY_HOST);
+    return;
+  }
+
+  // Proxy /memory/* to Memory service
+  if (req.url?.startsWith("/memory/") || req.url === "/memory") {
+    proxyToGateway(req, res, MEMORY_HOST);
     return;
   }
 
