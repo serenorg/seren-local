@@ -25,7 +25,7 @@ import {
   skills as skillsService,
 } from "@/services/skills";
 import { agentStore } from "@/stores/agent.store";
-import { skillsStore } from "@/stores/skills.store";
+import { type RefreshSummary, skillsStore } from "@/stores/skills.store";
 import { threadStore } from "@/stores/thread.store";
 
 interface SkillsExplorerProps {
@@ -64,6 +64,7 @@ export const SkillsExplorer: Component<SkillsExplorerProps> = (props) => {
   const [actionInProgress, setActionInProgress] = createSignal<string | null>(
     null,
   );
+  const [refreshStatus, setRefreshStatus] = createSignal<string | null>(null);
   const [overflowMenuId, setOverflowMenuId] = createSignal<string | null>(null);
   const [installWarning, setInstallWarning] = createSignal<{
     slug: string;
@@ -332,9 +333,23 @@ export const SkillsExplorer: Component<SkillsExplorerProps> = (props) => {
   };
 
   const handleRefreshAll = async () => {
-    await skillsStore.refresh(true);
+    const summary = await skillsStore.refresh(true);
     await refreshAllSyncStatuses();
+    showRefreshStatus(summary);
   };
+
+  function showRefreshStatus(summary: RefreshSummary) {
+    let message: string;
+    if (summary.updated > 0) {
+      message = `${summary.updated} skill${summary.updated === 1 ? "" : "s"} updated`;
+    } else if (summary.failed > 0) {
+      message = `Refresh failed for ${summary.failed} skill${summary.failed === 1 ? "" : "s"}`;
+    } else {
+      message = "All skills up to date";
+    }
+    setRefreshStatus(message);
+    setTimeout(() => setRefreshStatus(null), 4000);
+  }
 
   const handleRefreshInstalledSkill = async (skill: InstalledSkill) => {
     const cachedStatus = syncStatusFor(skill);
@@ -616,6 +631,13 @@ export const SkillsExplorer: Component<SkillsExplorerProps> = (props) => {
           </button>
         </div>
       </div>
+
+      {/* Refresh status feedback */}
+      <Show when={refreshStatus()}>
+        <div class="px-3 py-1.5 text-xs text-muted-foreground bg-surface-2/50 border-b border-border animate-[fadeIn_0.15s_ease-out]">
+          {refreshStatus()}
+        </div>
+      </Show>
 
       {/* Create dialog */}
       <Show when={showCreateDialog()}>

@@ -2,9 +2,6 @@
 // ABOUTME: Handles tool call parsing, execution, and result formatting.
 
 import { onRuntimeEvent, runtimeInvoke } from "@/lib/bridge";
-
-type UnlistenFn = () => void;
-
 import { mcpClient } from "@/lib/mcp/client";
 import type { ToolCall, ToolResult } from "@/lib/providers/types";
 import { type PaymentRequirements, parsePaymentRequirements } from "@/lib/x402";
@@ -13,7 +10,6 @@ import { x402Service } from "@/services/x402";
 import {
   parseGatewayToolName,
   parseMcpToolName,
-  parseOpenClawToolName,
 } from "./definitions";
 import { getApprovalRequirement, requiresApproval } from "./approval-config";
 
@@ -24,47 +20,6 @@ interface FileEntry {
   name: string;
   path: string;
   is_directory: boolean;
-}
-
-// No approval timeout — users may need time to review operations.
-// Channel cleanup handles session termination (sender drops, receiver gets Err).
-
-function parseOpenClawApprovalError(
-  message: string,
-): { approvalId: string } | null {
-  const trimmed = message.trim();
-  const jsonStart = trimmed.indexOf("{");
-  if (jsonStart === -1) return null;
-  const json = trimmed.slice(jsonStart);
-  try {
-    const parsed = JSON.parse(json) as unknown;
-    if (
-      typeof parsed === "object" &&
-      parsed != null &&
-      "code" in parsed &&
-      (parsed as { code?: unknown }).code === "approval_required" &&
-      "approvalId" in parsed
-    ) {
-      const approvalId = (parsed as { approvalId?: unknown }).approvalId;
-      if (typeof approvalId === "string" && approvalId.length > 0) {
-        return { approvalId };
-      }
-    }
-  } catch {
-    // Not JSON
-  }
-  return null;
-}
-
-async function waitForOpenClawApproval(approvalId: string): Promise<boolean> {
-  return new Promise((resolve) => {
-    const unlisten = onRuntimeEvent("openclaw://approval-response", (payload) => {
-      const data = payload as { id: string; approved: boolean };
-      if (data.id !== approvalId) return;
-      unlisten?.();
-      resolve(data.approved);
-    });
-  });
 }
 
 /**
@@ -184,16 +139,6 @@ export async function executeTool(toolCall: ToolCall): Promise<ToolResult> {
       );
     }
 
-    // Check if this is an OpenClaw tool call (openclaw__toolName)
-    const openclawInfo = parseOpenClawToolName(name);
-    if (openclawInfo) {
-      return await executeOpenClawTool(
-        toolCall.id,
-        openclawInfo.toolName,
-        args,
-      );
-    }
-
     // Otherwise, handle local file tools
     let result: unknown;
 
@@ -279,124 +224,6 @@ export async function executeTool(toolCall: ToolCall): Promise<ToolResult> {
     return {
       tool_call_id: toolCall.id,
       content: `Error: ${message}`,
-      is_error: true,
-    };
-  }
-}
-
-/**
- * Execute an OpenClaw tool call via Tauri IPC.
- */
-async function executeOpenClawTool(
-  toolCallId: string,
-  toolName: string,
-  args: Record<string, unknown>,
-): Promise<ToolResult> {
-  try {
-    switch (toolName) {
-      case "send_message": {
-        const channel = args.channel as string;
-        const to = args.to as string;
-        const message = args.message as string;
-        if (!channel || !to || !message) {
-          return {
-            tool_call_id: toolCallId,
-            content: "Missing required parameters: channel, to, message",
-            is_error: true,
-          };
-        }
-        let result: string;
-        try {
-          result = await runtimeInvoke<string>("openclaw_send", {
-            channel,
-            to,
-            message,
-          });
-        } catch (error) {
-          const errorMessage =
-            error instanceof Error ? error.message : String(error);
-          const approval = parseOpenClawApprovalError(errorMessage);
-          if (!approval) throw error;
-
-          const approved = await waitForOpenClawApproval(approval.approvalId);
-          if (!approved) {
-            return {
-              tool_call_id: toolCallId,
-              content: "Message was not approved.",
-              is_error: true,
-            };
-          }
-
-          result = await runtimeInvoke<string>("openclaw_send", {
-            channel,
-            to,
-            message,
-          });
-        }
-        return {
-          tool_call_id: toolCallId,
-          content: result || "Message sent successfully.",
-          is_error: false,
-        };
-      }
-      case "list_channels": {
-        const channels = await runtimeInvoke<
-          Array<{
-            id: string;
-            platform: string;
-            displayName: string;
-            status: string;
-          }>
-        >("openclaw_list_channels");
-        return {
-          tool_call_id: toolCallId,
-          content: JSON.stringify(channels, null, 2),
-          is_error: false,
-        };
-      }
-      case "channel_status": {
-        const channelId = args.channel as string;
-        if (!channelId) {
-          return {
-            tool_call_id: toolCallId,
-            content: "Missing required parameter: channel",
-            is_error: true,
-          };
-        }
-        const allChannels = await runtimeInvoke<
-          Array<{
-            id: string;
-            platform: string;
-            displayName: string;
-            status: string;
-          }>
-        >("openclaw_list_channels");
-        const found = allChannels.find((c) => c.id === channelId);
-        if (!found) {
-          return {
-            tool_call_id: toolCallId,
-            content: `Channel not found: ${channelId}`,
-            is_error: true,
-          };
-        }
-        return {
-          tool_call_id: toolCallId,
-          content: JSON.stringify(found, null, 2),
-          is_error: false,
-        };
-      }
-      default:
-        return {
-          tool_call_id: toolCallId,
-          content: `Unknown OpenClaw tool: ${toolName}`,
-          is_error: true,
-        };
-    }
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    return {
-      tool_call_id: toolCallId,
-      content: `OpenClaw tool error: ${message}`,
       is_error: true,
     };
   }

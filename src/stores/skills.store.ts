@@ -1,6 +1,7 @@
 // ABOUTME: Skills store for managing skills state in the UI.
 // ABOUTME: Handles available skills, installed skills, and thread/project/global resolution.
 
+import { runtimeInvoke } from "@/lib/bridge";
 import { createStore } from "solid-js/store";
 import type {
   InstalledSkill,
@@ -18,6 +19,18 @@ import { getFileTreeState } from "@/stores/fileTree";
 
 const ENABLED_SKILLS_KEY = "seren:enabled_skills";
 const HIDDEN_SKILLS_KEY = "seren:hidden_skills";
+
+/**
+ * Summary returned by refresh() so callers can display user feedback.
+ */
+export interface RefreshSummary {
+  updated: number;
+  alreadyCurrent: number;
+  failed: number;
+}
+
+/** Concurrency guard: in-flight refresh promise so concurrent calls coalesce. */
+let activeRefreshPromise: Promise<RefreshSummary> | null = null;
 
 /**
  * Load enabled skills state from localStorage.
@@ -624,8 +637,31 @@ export const skillsStore = {
   /**
    * Refresh all skills (available and installed).
    * Pass skipCache=true for user-triggered refreshes that should bypass cache.
+   * Concurrent calls coalesce — the second caller gets the first caller's result.
    */
-  async refresh(skipCache = false): Promise<void> {
+  async refresh(skipCache = false): Promise<RefreshSummary> {
+    if (activeRefreshPromise) {
+      console.info("[SkillsStore] Refresh already in progress, coalescing");
+      return activeRefreshPromise;
+    }
+
+    const promise = this._refreshInner(skipCache);
+    activeRefreshPromise = promise;
+    try {
+      return await promise;
+    } finally {
+      activeRefreshPromise = null;
+    }
+  },
+
+  /** @internal — the actual refresh logic, called only by refresh(). */
+  async _refreshInner(skipCache: boolean): Promise<RefreshSummary> {
+    const summary: RefreshSummary = {
+      updated: 0,
+      alreadyCurrent: 0,
+      failed: 0,
+    };
+
     await Promise.all([
       this.refreshAvailable(skipCache),
       this.refreshInstalled(),
@@ -659,20 +695,49 @@ export const skillsStore = {
     let autoRefreshed = 0;
     for (const skill of state.installed) {
       if (!isUpstreamManagedSkill(skill)) continue;
+      if (skill.syncState?.upstreamDeleted) continue;
       try {
         const status = await skills.inspectSyncStatus(skill);
         if (!status || status.hasLocalChanges) continue;
         if (status.updateAvailable || status.state === "bootstrap-required") {
           await skills.refreshInstalledSkill(skill);
           autoRefreshed++;
+          summary.updated++;
           console.info("[SkillsStore] Auto-refreshed stale skill:", skill.slug);
+        } else {
+          summary.alreadyCurrent++;
         }
       } catch (err) {
-        console.warn(
-          "[SkillsStore] Failed to check/refresh skill:",
-          skill.slug,
-          err,
-        );
+        const is404 = err instanceof Error && err.message.includes(": 404");
+        if (is404 && skill.syncState) {
+          // Upstream skill was deleted — mark as orphaned so we stop retrying.
+          skill.syncState.upstreamDeleted = true;
+          try {
+            await runtimeInvoke("write_skill_file", {
+              skillsDir: skill.skillsDir,
+              slug: skill.dirName,
+              relativePath: ".seren-sync.json",
+              content: JSON.stringify(skill.syncState),
+            });
+          } catch (writeErr) {
+            console.warn(
+              "[SkillsStore] Failed to persist orphan state:",
+              skill.slug,
+              writeErr,
+            );
+          }
+          console.info(
+            "[SkillsStore] Upstream skill deleted, marked orphaned:",
+            skill.slug,
+          );
+        } else {
+          summary.failed++;
+          console.warn(
+            "[SkillsStore] Failed to check/refresh skill:",
+            skill.slug,
+            err,
+          );
+        }
       }
     }
     if (autoRefreshed > 0) {
@@ -753,6 +818,8 @@ export const skillsStore = {
     if (renamedDirs > 0) {
       await this.refreshInstalled();
     }
+
+    return summary;
   },
 
   /**
