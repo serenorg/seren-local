@@ -82,12 +82,32 @@ export async function renamePath(
 
 /**
  * Open a folder picker dialog and load the selected folder into the file tree.
+ * Falls back to a browser prompt if the native dialog is unavailable
+ * (e.g. headless server, remote access without display).
  */
 export async function openFolder(): Promise<string | null> {
   if (!isRuntimeConnected()) {
     throw new Error("This operation requires the local runtime to be running");
   }
-  const selected = await runtimeInvoke<string | null>("open_folder_dialog", {});
+
+  // Try native OS dialog first (works on localhost with display)
+  let selected: string | null = null;
+  try {
+    selected = await runtimeInvoke<string | null>("open_folder_dialog", {});
+  } catch {
+    // Native dialog failed — fall through to prompt
+  }
+
+  // Fallback: browser prompt for remote users or headless servers
+  if (!selected) {
+    const typed = window.prompt(
+      "Enter the absolute path to a folder on the server:",
+      "/home",
+    );
+    if (typed && typed.trim()) {
+      selected = typed.trim();
+    }
+  }
 
   if (selected && typeof selected === "string") {
     await loadFolder(selected);
