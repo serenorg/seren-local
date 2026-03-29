@@ -129,8 +129,8 @@ export async function syncMemories(): Promise<SyncResult | null> {
     if (!resp.ok) return null;
     const json = await resp.json();
     return json.data ?? null;
-  } catch (error) {
-    console.warn("[Memory] Failed to sync memories:", error);
+  } catch {
+    // Memory sync is best-effort — endpoint may not exist yet
     return null;
   }
 }

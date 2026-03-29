@@ -406,7 +406,30 @@ function createMcpClient() {
       throw new Error(`MCP HTTP error ${response.status}: ${text}`);
     }
 
-    const data = await response.json();
+    // Handle SSE responses: the server may respond with text/event-stream
+    // when the Accept header includes it. Parse SSE to extract the JSON-RPC result.
+    const contentType = response.headers.get("Content-Type") ?? "";
+    let data: { error?: { message?: string }; result?: unknown };
+
+    if (contentType.includes("text/event-stream")) {
+      const text = await response.text();
+      // Extract the last `data:` line that contains the JSON-RPC response
+      const lines = text.split("\n");
+      let lastData: string | null = null;
+      for (const line of lines) {
+        if (line.startsWith("data:")) {
+          const payload = line.slice(5).trim();
+          if (payload && payload !== "[DONE]") lastData = payload;
+        }
+      }
+      if (!lastData) {
+        throw new Error("MCP SSE response contained no data");
+      }
+      data = JSON.parse(lastData);
+    } else {
+      data = await response.json();
+    }
+
     if (data.error) {
       throw new Error(data.error.message || "MCP RPC error");
     }
