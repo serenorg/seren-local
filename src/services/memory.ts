@@ -1,5 +1,5 @@
 // ABOUTME: Memory service for storing and retrieving conversation memories.
-// ABOUTME: Calls memory.serendb.com via the runtime's /memory/* proxy route.
+// ABOUTME: Uses MCP JSON-RPC protocol against memory.serendb.com/mcp (via /memory proxy).
 
 import { appFetch } from "@/lib/fetch";
 import { getToken } from "@/lib/bridge";
@@ -8,17 +8,7 @@ import { authStore } from "@/stores/auth.store";
 import { projectStore } from "@/stores/project.store";
 import { settingsStore } from "@/stores/settings.store";
 
-/**
- * Resolve the memory service base URL.
- * When served by the runtime, use the /memory proxy (avoids CORS).
- * Otherwise call memory.serendb.com directly.
- */
-function memoryBase(): string {
-  if (isServedByRuntime()) {
-    return `${window.location.origin}/memory`;
-  }
-  return "https://memory.serendb.com";
-}
+// ── Types ───────────────────────────────────────────────────────────
 
 export interface RecallResult {
   content: string;
@@ -32,23 +22,97 @@ export interface SyncResult {
   errors: string[];
 }
 
+// ── Helpers ─────────────────────────────────────────────────────────
+
 /**
- * Check if memory feature is enabled and user is authenticated.
+ * Resolve the memory service base URL.
+ * When served by the runtime, use the /memory proxy (avoids CORS).
+ * Otherwise call memory.serendb.com directly.
  */
+function memoryBase(): string {
+  if (isServedByRuntime()) {
+    return `${window.location.origin}/memory`;
+  }
+  return "https://memory.serendb.com";
+}
+
 function isMemoryAvailable(): boolean {
   return settingsStore.get("memoryEnabled") && authStore.isAuthenticated;
 }
 
-/**
- * Get the current project ID for memory operations.
- */
 function getProjectId(): string | null {
   return projectStore.activeProject?.id ?? null;
 }
 
+let mcpRpcId = 0;
+
 /**
- * Store a memory to the cloud (and local cache).
- * Automatically includes project context if available.
+ * Call an MCP tool on the memory server via JSON-RPC.
+ * Protocol: POST /mcp with { method: "tools/call", params: { name, arguments } }
+ * Response may be JSON or SSE — handles both.
+ */
+async function callMemoryTool(
+  toolName: string,
+  args: Record<string, unknown>,
+): Promise<string> {
+  const token = await getToken();
+  if (!token) throw new Error("Not authenticated");
+
+  const url = `${memoryBase()}/mcp`;
+  const id = ++mcpRpcId;
+
+  const resp = await appFetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json, text/event-stream",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id,
+      method: "tools/call",
+      params: { name: toolName, arguments: args },
+    }),
+  });
+
+  if (!resp.ok) {
+    const body = await resp.text().catch(() => "");
+    throw new Error(`Memory MCP error ${resp.status}: ${body}`);
+  }
+
+  // Handle SSE or JSON response
+  const contentType = resp.headers.get("Content-Type") ?? "";
+  let data: { result?: { content?: Array<{ text?: string }> }; error?: { message?: string } };
+
+  if (contentType.includes("text/event-stream")) {
+    const text = await resp.text();
+    let lastData: string | null = null;
+    for (const line of text.split("\n")) {
+      if (line.startsWith("data:")) {
+        const payload = line.slice(5).trim();
+        if (payload && payload !== "[DONE]") lastData = payload;
+      }
+    }
+    if (!lastData) throw new Error("Memory MCP SSE response contained no data");
+    data = JSON.parse(lastData);
+  } else {
+    data = await resp.json();
+  }
+
+  if (data.error) {
+    throw new Error(data.error.message || "Memory MCP RPC error");
+  }
+
+  // Extract text from MCP tools/call response:
+  // { result: { content: [{ type: "text", text: "..." }] } }
+  return data.result?.content?.[0]?.text ?? "";
+}
+
+// ── Public API ──────────────────────────────────────────────────────
+
+/**
+ * Store a memory via the cloud MCP remember tool.
  */
 export async function rememberMemory(
   content: string,
@@ -58,55 +122,30 @@ export async function rememberMemory(
     throw new Error("Memory feature not available - enable it in settings");
   }
 
-  const token = await getToken();
-  if (!token) throw new Error("Not authenticated");
-
+  const args: Record<string, unknown> = { content, memory_type: memoryType };
   const projectId = getProjectId();
+  if (projectId) args.project_id = projectId;
 
-  const resp = await appFetch(`${memoryBase()}/remember`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ content, memory_type: memoryType, project_id: projectId }),
-  });
-
-  if (!resp.ok) {
-    throw new Error(`Memory remember failed: ${resp.status}`);
-  }
-
-  const json = await resp.json();
-  return json.data?.id ?? "";
+  return await callMemoryTool("remember", args);
 }
 
 /**
- * Search for memories matching a query.
+ * Search memories via the cloud MCP recall tool.
  */
 export async function recallMemories(
   query: string,
   limit = 5,
 ): Promise<RecallResult[]> {
-  if (!isMemoryAvailable()) {
-    return [];
-  }
-
-  const token = await getToken();
-  if (!token) return [];
-
-  const projectId = getProjectId();
+  if (!isMemoryAvailable()) return [];
 
   try {
-    const params = new URLSearchParams({ query, limit: String(limit) });
-    if (projectId) params.set("project_id", projectId);
+    const args: Record<string, unknown> = { query, limit };
+    const projectId = getProjectId();
+    if (projectId) args.project_id = projectId;
 
-    const resp = await appFetch(`${memoryBase()}/recall?${params}`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-
-    if (!resp.ok) return [];
-    const json = await resp.json();
-    return json.data ?? [];
+    const text = await callMemoryTool("recall", args);
+    if (!text) return [];
+    return JSON.parse(text) as RecallResult[];
   } catch {
     return [];
   }
@@ -114,63 +153,37 @@ export async function recallMemories(
 
 /**
  * Sync local memory cache with cloud.
- * Pushes pending memories and pulls new ones.
+ * In the browser there is no local SQLite cache, so sync is a no-op.
+ * The desktop uses SyncEngine (push/pull via REST) backed by a local DB.
  */
 export async function syncMemories(): Promise<SyncResult | null> {
-  if (!isMemoryAvailable()) {
-    return null;
-  }
-
-  const token = await getToken();
-  if (!token) return null;
-
-  const userId = authStore.user?.id ?? null;
-  const projectId = getProjectId();
-
-  try {
-    const resp = await appFetch(`${memoryBase()}/sync`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ user_id: userId, project_id: projectId }),
-    });
-
-    if (!resp.ok) return null;
-    const json = await resp.json();
-    return json.data ?? null;
-  } catch {
-    // Memory sync is best-effort — endpoint may not exist yet
-    return null;
-  }
+  // No local cache in the browser — nothing to push or pull.
+  return null;
 }
 
 /**
  * Bootstrap memory context for system prompt injection.
- * This is called automatically in chat.ts.
+ * Uses the MCP session_bootstrap tool.
  */
 export async function bootstrapMemoryContext(): Promise<string | null> {
-  if (!isMemoryAvailable()) {
-    return null;
-  }
-
-  const token = await getToken();
-  if (!token) return null;
-
-  const projectId = getProjectId();
+  if (!isMemoryAvailable()) return null;
 
   try {
-    const params = new URLSearchParams();
-    if (projectId) params.set("project_id", projectId);
+    const args: Record<string, unknown> = {};
+    const projectId = getProjectId();
+    if (projectId) args.project_id = projectId;
 
-    const resp = await appFetch(`${memoryBase()}/bootstrap?${params}`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
+    const text = await callMemoryTool("session_bootstrap", args);
+    if (!text) return null;
 
-    if (!resp.ok) return null;
-    const json = await resp.json();
-    return json.data ?? null;
+    // session_bootstrap returns JSON with an assembled_prompt field
+    try {
+      const parsed = JSON.parse(text);
+      return parsed.assembled_prompt ?? text;
+    } catch {
+      // If it's not JSON, use the text directly
+      return text;
+    }
   } catch {
     return null;
   }
@@ -178,16 +191,13 @@ export async function bootstrapMemoryContext(): Promise<string | null> {
 
 /**
  * Store a conversation turn (user message + assistant response).
- * This should be called after each completed assistant response.
  */
 export async function storeConversationTurn(
   userMessage: string,
   assistantMessage: string,
   context?: { model?: string; timestamp?: number },
 ): Promise<void> {
-  if (!isMemoryAvailable()) {
-    return;
-  }
+  if (!isMemoryAvailable()) return;
 
   const combinedContent = `User: ${userMessage}\n\nAssistant: ${assistantMessage}`;
   const metadata = context ? `\n\nModel: ${context.model || "unknown"}` : "";
@@ -195,29 +205,23 @@ export async function storeConversationTurn(
   try {
     await rememberMemory(`${combinedContent}${metadata}`, "semantic");
   } catch {
-    // Best-effort — don't log noise for a background operation
+    // Best-effort
   }
 }
 
 /**
- * Convenience function to store just an assistant response.
+ * Store just an assistant response.
  */
 export async function storeAssistantResponse(
   response: string,
   context?: { model?: string; userQuery?: string },
 ): Promise<void> {
-  if (!isMemoryAvailable()) {
-    return;
-  }
-
-  if (!response.trim()) {
-    return;
-  }
+  if (!isMemoryAvailable()) return;
+  if (!response.trim()) return;
 
   const content = context?.userQuery
     ? `User: ${context.userQuery}\n\nAssistant: ${response}`
     : `Assistant: ${response}`;
-
   const metadata = context?.model ? `\n\nModel: ${context.model}` : "";
 
   try {
