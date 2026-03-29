@@ -7,14 +7,21 @@ import { join } from "node:path";
 
 import { emit } from "../events.js";
 import { needsRlm, processRlm, splitContentAndQuestion } from "./rlm.js";
-import { selectRelevantTools, type OpenAITool } from "./tool-relevance.js";
+import {
+  selectRelevantTools,
+  extractMcpPublisher,
+  type OpenAITool,
+} from "./tool-relevance.js";
 import {
   route,
   isReroutableError,
   isContextOverflowError,
+  isNetworkTransportError,
   getLargeContextFallback,
+  getTimeoutFallback,
   rerouteOnFailure,
   MAX_REROUTE_ATTEMPTS,
+  MAX_NETWORK_RETRIES,
 } from "./router.js";
 import type {
   ImageAttachment,
@@ -224,6 +231,9 @@ async function executeWithReroute(params: {
   let routing = { ...params.routing };
   const triedModels: string[] = [routing.model_id];
   let rerouteCount = 0;
+  let sameModelRetryCount = 0;
+  const MAX_SAME_MODEL_RETRIES = 1;
+  let networkRetryCount = 0;
 
   // Whether the user explicitly selected a model (limits reroute scope)
   const userExplicitlySelected = Boolean(capabilities.selected_model);
@@ -239,10 +249,17 @@ async function executeWithReroute(params: {
     // Load skill content from disk
     const skillContent = await loadSkillContent(routing.selected_skills);
 
-    // Select relevant tools via BM25
+    // Extract publishers whose tools were called in recent conversation turns.
+    // This feeds conversation-aware boosting (Phase 3) of tool relevance.
+    const recentPublishers = extractRecentPublishers(history);
+
+    // Select relevant tools via BM25 with model-aware budgets,
+    // publisher-set scoping, and conversation-aware boosting.
     const relevantTools = selectRelevantTools(
       prompt,
       capabilities.tool_definitions as unknown as OpenAITool[],
+      routing.model_id,
+      recentPublishers,
     );
 
     // Emit transition event
@@ -260,6 +277,7 @@ async function executeWithReroute(params: {
       skillContent,
       images,
       routing,
+      relevantTools,
     );
 
     try {
@@ -286,6 +304,32 @@ async function executeWithReroute(params: {
       const errorMessage = err instanceof Error ? err.message : String(err);
       console.error(`[Orchestrator] Worker error: ${errorMessage}`);
 
+      // ── Network transport errors ────────────────────────────────────
+      // Connection refused, DNS, TLS, etc. should be retried on the
+      // same model with exponential backoff -- rerouting won't help
+      // since all models share the same gateway endpoint.
+      if (isNetworkTransportError(errorMessage)) {
+        networkRetryCount++;
+        if (networkRetryCount <= MAX_NETWORK_RETRIES) {
+          const backoffMs = 2 ** networkRetryCount * 1000; // 2s, 4s, 8s, 16s, 32s
+          console.warn(
+            `[Orchestrator] Network error (attempt ${networkRetryCount}/${MAX_NETWORK_RETRIES}), ` +
+            `retrying in ${backoffMs}ms: ${errorMessage}`,
+          );
+          await sleep(backoffMs);
+          continue;
+        }
+        console.error(
+          `[Orchestrator] Network error persists after ${MAX_NETWORK_RETRIES} retries, giving up: ${errorMessage}`,
+        );
+        const errorEvent: WorkerEventError = { type: "error", message: errorMessage };
+        emitOrchestratorEvent(conversationId, errorEvent);
+        return;
+      }
+
+      // Reset network retry counter on non-network outcomes
+      networkRetryCount = 0;
+
       // Check if this error is eligible for reroute
       if (!isReroutableError(errorMessage)) {
         const errorEvent: WorkerEventError = {
@@ -296,20 +340,9 @@ async function executeWithReroute(params: {
         return;
       }
 
-      if (rerouteCount >= MAX_REROUTE_ATTEMPTS) {
-        console.warn(
-          `[Orchestrator] Max reroute attempts (${MAX_REROUTE_ATTEMPTS}) exhausted`,
-        );
-        const errorEvent: WorkerEventError = {
-          type: "error",
-          message: errorMessage,
-        };
-        emitOrchestratorEvent(conversationId, errorEvent);
-        return;
-      }
-
-      // Context-overflow errors: reroute to a large-context model
-      // regardless of whether the user explicitly selected a model
+      // ── Context-overflow errors ─────────────────────────────────────
+      // Reroute to a large-context model regardless of whether the user
+      // explicitly selected a model.
       if (isContextOverflowError(errorMessage)) {
         const fallback = getLargeContextFallback(triedModels);
         if (fallback) {
@@ -330,6 +363,7 @@ async function executeWithReroute(params: {
           routing = { ...routing, model_id: fallback };
           triedModels.push(fallback);
           rerouteCount++;
+          await sleep(1000);
           continue;
         }
 
@@ -345,10 +379,64 @@ async function executeWithReroute(params: {
         return;
       }
 
-      // Standard transient errors: reroute to a different model
+      // ── User-selected model: timeout fallback chain ────────────────
+      // For 408 timeouts: Opus -> Sonnet -> Haiku, then retry same model once.
       if (userExplicitlySelected) {
-        // When user explicitly selected a model, don't reroute to a different one
-        // (except for context overflow handled above)
+        const isTimeoutError =
+          errorMessage.includes("408") || errorMessage.includes("Request Timeout");
+
+        // Try cascading to a faster model on timeout (Opus -> Sonnet -> Haiku)
+        if (isTimeoutError) {
+          const fallback = getTimeoutFallback(routing.model_id);
+          if (fallback) {
+            const fromModel = routing.model_id;
+            console.log(
+              `[Orchestrator] 408 timeout on ${fromModel}, falling back to faster model: ${fallback}`,
+            );
+
+            const rerouteEvent: WorkerEventReroute = {
+              type: "reroute",
+              from_model: fromModel,
+              to_model: fallback,
+              reason: "Switched to faster model due to timeout",
+            };
+            emitOrchestratorEvent(conversationId, rerouteEvent);
+
+            routing = { ...routing, model_id: fallback };
+            triedModels.push(fallback);
+            await sleep(2000);
+            continue;
+          }
+        }
+
+        // No faster model available, or non-timeout error: retry same model once
+        if (sameModelRetryCount >= MAX_SAME_MODEL_RETRIES) {
+          console.warn(
+            `[Orchestrator] Transient error on explicitly-selected model ${routing.model_id} ` +
+            `after ${sameModelRetryCount} retry, giving up: ${errorMessage}`,
+          );
+          const errorEvent: WorkerEventError = {
+            type: "error",
+            message: errorMessage,
+          };
+          emitOrchestratorEvent(conversationId, errorEvent);
+          return;
+        }
+
+        sameModelRetryCount++;
+        console.log(
+          `[Orchestrator] Retrying explicitly-selected model ${routing.model_id} ` +
+          `(attempt ${sameModelRetryCount}/${MAX_SAME_MODEL_RETRIES}): ${errorMessage}`,
+        );
+        await sleep(2000);
+        continue;
+      }
+
+      // ── Auto-selected model: reroute to a different model ──────────
+      if (rerouteCount >= MAX_REROUTE_ATTEMPTS) {
+        console.warn(
+          `[Orchestrator] Max reroute attempts (${MAX_REROUTE_ATTEMPTS}) exhausted`,
+        );
         const errorEvent: WorkerEventError = {
           type: "error",
           message: errorMessage,
@@ -390,6 +478,7 @@ async function executeWithReroute(params: {
       routing = { ...routing, model_id: fallbackModel };
       triedModels.push(fallbackModel);
       rerouteCount++;
+      await sleep(2000);
     }
   }
 }
@@ -597,7 +686,8 @@ async function processSSEStream(
 
 /**
  * Build the messages array for the Gateway chat completions request.
- * Prepends skill content as system context and appends images.
+ * Prepends skill content and tool publisher inventory as system context
+ * and appends images.
  */
 function buildMessages(
   prompt: string,
@@ -605,20 +695,25 @@ function buildMessages(
   skillContent: string,
   images: ImageAttachment[],
   routing: RoutingDecision,
+  tools: OpenAITool[] = [],
 ): Array<{ role: string; content: unknown }> {
   const messages: Array<{ role: string; content: unknown }> = [];
 
-  // System message with skill context
+  // System prompt: base + tool inventory + skill content.
+  // The tool inventory ensures the model knows about ALL connected services,
+  // not just the skills matched by the classifier.
   const systemParts: string[] = ["You are a helpful AI assistant."];
-  if (skillContent) {
-    systemParts.push(
-      "",
-      "## Relevant Skills",
-      "",
-      skillContent,
-    );
+
+  const toolInventory = buildToolInventory(tools);
+  if (toolInventory) {
+    systemParts.push(toolInventory);
   }
-  messages.push({ role: "system", content: systemParts.join("\n") });
+
+  if (skillContent) {
+    systemParts.push(skillContent);
+  }
+
+  messages.push({ role: "system", content: systemParts.join("\n\n") });
 
   // Conversation history
   for (const msg of history) {
@@ -644,6 +739,69 @@ function buildMessages(
   }
 
   return messages;
+}
+
+/**
+ * Build a tool publisher inventory from the actual tools being sent.
+ *
+ * Extracts publisher names from gateway/MCP tool naming conventions and
+ * produces a system prompt section that tells the model exactly which
+ * services it has access to. This prevents the model from denying access
+ * to tools that are in its function definitions but not mentioned in the
+ * Active Skills section.
+ */
+function buildToolInventory(tools: OpenAITool[]): string {
+  const publisherTools = new Map<string, string[]>();
+  const localTools: string[] = [];
+
+  for (const tool of tools) {
+    const name = tool.function?.name;
+    if (!name) continue;
+
+    const publisher = extractMcpPublisher(name);
+    if (publisher) {
+      if (!publisherTools.has(publisher)) {
+        publisherTools.set(publisher, []);
+      }
+      publisherTools.get(publisher)!.push(name);
+    } else {
+      localTools.push(name);
+    }
+  }
+
+  if (publisherTools.size === 0 && localTools.length === 0) {
+    return "";
+  }
+
+  const lines: string[] = [
+    "# Available Tools",
+    "",
+    "You have access to ALL tools listed in your function definitions. " +
+    "Always check your available tools before saying you cannot perform an action.",
+    "",
+  ];
+
+  if (publisherTools.size > 0) {
+    lines.push("## Connected Services", "");
+
+    // Sort for deterministic output.
+    const sorted = [...publisherTools.entries()].sort((a, b) =>
+      a[0].localeCompare(b[0]),
+    );
+    for (const [publisher, pubTools] of sorted) {
+      lines.push(`- **${publisher}** (${pubTools.length} tools)`);
+    }
+    lines.push("");
+  }
+
+  if (localTools.length > 0) {
+    lines.push(
+      `## Local Tools\n\n${localTools.length} core tools: ${localTools.join(", ")}`,
+      "",
+    );
+  }
+
+  return lines.join("\n");
 }
 
 // ---------------------------------------------------------------------------
@@ -690,6 +848,34 @@ function classifyTask(
 ): TaskClassification {
   const lower = prompt.toLowerCase();
 
+  // Match relevant skills via keyword overlap
+  const relevantSkills: string[] = [];
+  for (const skill of capabilities.installed_skills) {
+    const skillText =
+      `${skill.name} ${skill.description} ${skill.tags.join(" ")}`.toLowerCase();
+    const promptTerms = lower.split(/\s+/).filter((t) => t.length > 3);
+    const overlap = promptTerms.filter((t) => skillText.includes(t)).length;
+    if (overlap >= 2) {
+      relevantSkills.push(skill.slug);
+    }
+  }
+
+  // ── Rule 0: Skill invocation ──────────────────────────────────────
+  // The frontend wraps invoked skills in <skill-invocation> tags with
+  // the full SKILL.md content inlined. This MUST be checked before any
+  // keyword rules because the SKILL.md body contains code keywords,
+  // numbered lists, and other patterns that would cause misclassification
+  // and unwanted decomposition.
+  if (prompt.includes("<skill-invocation")) {
+    return {
+      task_type: "skill_execution",
+      requires_tools: true,
+      requires_file_system: false,
+      complexity: "simple",
+      relevant_skills: relevantSkills,
+    };
+  }
+
   // Detect task type
   let taskType = "general";
   let requiresTools = false;
@@ -718,6 +904,27 @@ function classifyTask(
     requiresFileSystem = true;
   }
 
+  // Explicit publisher request signals (intentional phrases only)
+  const publisherSignals = [
+    "use publisher",
+    "use publishers",
+    "use the publisher",
+    "use the publishers",
+    "use any publisher",
+    "use any of the publisher",
+    "use any of the publishers",
+    "with publisher",
+    "with publishers",
+    "using publisher",
+    "using publishers",
+    "via publisher",
+    "via publishers",
+  ];
+  if (taskType === "general" && publisherSignals.some((s) => lower.includes(s))) {
+    taskType = "research";
+    requiresTools = true;
+  }
+
   // Tool-use signals
   const toolSignals = [
     "search the web",
@@ -729,10 +936,16 @@ function classifyTask(
     "find online",
     "perplexity",
     "firecrawl",
+    "search for",
+    "latest",
+    "current",
+    "recent",
+    "developments",
+    "find out",
   ];
   if (toolSignals.some((s) => lower.includes(s))) {
     requiresTools = true;
-    if (taskType === "general") taskType = "tool_use";
+    if (taskType === "general") taskType = "research";
   }
 
   // Complexity estimation
@@ -742,18 +955,6 @@ function classifyTask(
     complexity = "complex";
   } else if (wordCount > 50) {
     complexity = "moderate";
-  }
-
-  // Match relevant skills via keyword overlap
-  const relevantSkills: string[] = [];
-  for (const skill of capabilities.installed_skills) {
-    const skillText =
-      `${skill.name} ${skill.description} ${skill.tags.join(" ")}`.toLowerCase();
-    const promptTerms = lower.split(/\s+/).filter((t) => t.length > 3);
-    const overlap = promptTerms.filter((t) => skillText.includes(t)).length;
-    if (overlap >= 2) {
-      relevantSkills.push(skill.slug);
-    }
   }
 
   return {
@@ -768,6 +969,48 @@ function classifyTask(
 // ---------------------------------------------------------------------------
 // Event helpers
 // ---------------------------------------------------------------------------
+
+/** Promise-based sleep for exponential backoff. */
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Extract unique publisher names from tool calls in recent conversation messages.
+ * Scans assistant messages for tool_calls[].function.name and extracts publisher
+ * names using the mcp__<publisher>__ / gateway__<publisher>__ convention.
+ */
+function extractRecentPublishers(
+  history: Array<{ role: string; content: string }>,
+): string[] {
+  const publishers: string[] = [];
+  const seen = new Set<string>();
+
+  // Walk history in reverse (most recent first)
+  for (let i = history.length - 1; i >= 0; i--) {
+    const msg = history[i] as Record<string, unknown>;
+    if (msg.role !== "assistant") continue;
+
+    const toolCalls = msg.tool_calls as
+      | Array<Record<string, unknown>>
+      | undefined;
+    if (!toolCalls) continue;
+
+    for (const tc of toolCalls) {
+      const fn = tc.function as Record<string, unknown> | undefined;
+      const name = fn?.name as string | undefined;
+      if (!name) continue;
+
+      const publisher = extractMcpPublisher(name);
+      if (publisher && !seen.has(publisher)) {
+        seen.add(publisher);
+        publishers.push(publisher);
+      }
+    }
+  }
+
+  return publishers;
+}
 
 /** Emit an orchestrator event to all connected WebSocket clients. */
 function emitOrchestratorEvent(

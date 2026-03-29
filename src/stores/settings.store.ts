@@ -72,6 +72,9 @@ export interface Settings {
   // Voice settings
   voiceAutoSubmit: boolean;
 
+  // Memory settings
+  memoryEnabled: boolean;
+
   // General settings
   telemetryEnabled: boolean;
 }
@@ -122,6 +125,8 @@ const DEFAULT_SETTINGS: Settings = {
   agentAutoApproveReads: true,
   // Voice
   voiceAutoSubmit: true,
+  // Memory
+  memoryEnabled: true,
   // General
   telemetryEnabled: true,
 };

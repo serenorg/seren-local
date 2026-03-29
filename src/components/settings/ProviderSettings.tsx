@@ -11,9 +11,29 @@ import {
   supportsOAuth,
 } from "@/lib/providers/types";
 import { cancelOAuthFlow, startOAuthFlow } from "@/services/oauth";
+import { allowsSerenAgent } from "@/services/organization-policy";
+import { authStore } from "@/stores/auth.store";
 import { providerStore } from "@/stores/provider.store";
 
 export const ProviderSettings: Component = () => {
+  if (
+    !allowsSerenAgent(authStore.privateChatPolicy) ||
+    (authStore.privateChatPolicy?.disable_external_model_providers &&
+      authStore.privateChatPolicy?.disable_seren_models)
+  ) {
+    return (
+      <section>
+        <h3 class="m-0 mb-2 text-[1.3rem] font-semibold text-foreground">
+          AI Providers
+        </h3>
+        <p class="m-0 text-muted-foreground leading-normal">
+          Your organization does not allow the standard Seren Agent lane, so
+          local provider configuration is disabled by policy.
+        </p>
+      </section>
+    );
+  }
+
   const [selectedProvider, setSelectedProvider] =
     createSignal<ProviderId | null>(null);
   const [apiKeyInput, setApiKeyInput] = createSignal("");

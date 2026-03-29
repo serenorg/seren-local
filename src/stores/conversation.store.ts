@@ -205,6 +205,35 @@ export const conversationStore = {
     );
   },
 
+  async updateConversationSelection(
+    id: string,
+    selectedModel: string,
+    selectedProvider: ProviderId | null,
+  ) {
+    try {
+      await updateConversationDb(
+        id,
+        undefined,
+        selectedModel,
+        selectedProvider ?? undefined,
+      );
+    } catch (error) {
+      console.warn("Failed to update conversation selection", error);
+    }
+
+    setState("conversations", (convos) =>
+      convos.map((c) =>
+        c.id === id
+          ? {
+              ...c,
+              selected_model: selectedModel,
+              selected_provider: selectedProvider,
+            }
+          : c,
+      ),
+    );
+  },
+
   // === Message management ===
 
   addMessage(message: UnifiedMessage) {

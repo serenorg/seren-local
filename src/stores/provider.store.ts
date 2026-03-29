@@ -16,6 +16,9 @@ import {
   PROVIDER_CONFIGS,
 } from "@/lib/providers/types";
 
+/** Sentinel value for automatic model selection by the orchestrator. */
+export const AUTO_MODEL_ID = "auto";
+
 const PROVIDER_SETTINGS_KEY = "seren_provider_settings";
 
 /**
@@ -95,6 +98,7 @@ const DEFAULT_MODELS: Record<ProviderId, ProviderModel[]> = {
       contextWindow: 1000000,
     },
   ],
+  "seren-private": [],
   anthropic: [
     {
       id: "claude-sonnet-4-20250514",
@@ -146,7 +150,7 @@ const DEFAULT_MODELS: Record<ProviderId, ProviderModel[]> = {
 
 const DEFAULT_STATE: ProviderState = {
   activeProvider: "seren",
-  activeModel: "anthropic/claude-opus-4.5",
+  activeModel: AUTO_MODEL_ID,
   configuredProviders: ["seren"],
   oauthProviders: [],
   providerModels: { ...DEFAULT_MODELS },
@@ -256,7 +260,7 @@ async function configureProvider(
   apiKey: string,
   validateFn?: (providerId: ProviderId, apiKey: string) => Promise<boolean>,
 ): Promise<boolean> {
-  if (providerId === "seren") {
+  if (providerId === "seren" || providerId === "seren-private") {
     return false; // Can't configure Seren with API key
   }
 
@@ -306,7 +310,7 @@ async function configureProvider(
  * @param providerId - The provider that was authenticated via OAuth
  */
 async function configureOAuthProvider(providerId: ProviderId): Promise<void> {
-  if (providerId === "seren") {
+  if (providerId === "seren" || providerId === "seren-private") {
     return; // Seren doesn't use OAuth
   }
 
@@ -326,7 +330,7 @@ async function configureOAuthProvider(providerId: ProviderId): Promise<void> {
  * @returns "oauth" if configured via OAuth, "api_key" if via API key, null if not configured
  */
 function getAuthType(providerId: ProviderId): AuthType {
-  if (providerId === "seren") {
+  if (providerId === "seren" || providerId === "seren-private") {
     return null; // Seren uses session auth, not API key or OAuth
   }
 
@@ -345,7 +349,7 @@ function getAuthType(providerId: ProviderId): AuthType {
  * Remove a provider's configuration (API key or OAuth).
  */
 async function removeProvider(providerId: ProviderId): Promise<void> {
-  if (providerId === "seren") {
+  if (providerId === "seren" || providerId === "seren-private") {
     return; // Can't remove Seren
   }
 
@@ -383,7 +387,7 @@ function isProviderConfigured(providerId: ProviderId): boolean {
  * Get the API key for a provider (if configured).
  */
 async function getApiKey(providerId: ProviderId): Promise<string | null> {
-  if (providerId === "seren") {
+  if (providerId === "seren" || providerId === "seren-private") {
     return null; // Seren uses auth token, not API key
   }
   return await getProviderKey(providerId);
@@ -393,7 +397,10 @@ async function getApiKey(providerId: ProviderId): Promise<string | null> {
  * Set the active provider.
  */
 function setActiveProvider(providerId: ProviderId): void {
-  if (!state.configuredProviders.includes(providerId)) {
+  if (
+    providerId !== "seren-private" &&
+    !state.configuredProviders.includes(providerId)
+  ) {
     return; // Can't activate unconfigured provider
   }
 
@@ -478,6 +485,9 @@ export const providerStore = {
   },
   get isLoading() {
     return state.isLoading;
+  },
+  get isAutoModel() {
+    return state.activeModel === AUTO_MODEL_ID;
   },
 
   // Functions

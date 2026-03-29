@@ -12,8 +12,15 @@ import {
 } from "solid-js";
 import { openFolder } from "@/lib/files/service";
 import type { InstalledSkill, Skill } from "@/lib/skills";
+import {
+  allowsClaudeAgent,
+  allowsCodexAgent,
+  allowsSerenAgent,
+  allowsSerenPrivateAgent,
+} from "@/services/organization-policy";
 import { skills as skillsService } from "@/services/skills";
 import { agentStore } from "@/stores/agent.store";
+import { authStore } from "@/stores/auth.store";
 import { fileTreeState } from "@/stores/fileTree";
 import { skillsStore } from "@/stores/skills.store";
 import { type Thread, threadStore } from "@/stores/thread.store";
@@ -72,6 +79,17 @@ export const ThreadSidebar: Component<ThreadSidebarProps> = (props) => {
     setSpawning(true);
     try {
       await threadStore.createChatThread();
+    } finally {
+      setSpawning(false);
+    }
+  };
+
+  const handleNewPrivateChat = async () => {
+    setShowLauncher(false);
+    setLauncherQuery("");
+    setSpawning(true);
+    try {
+      await threadStore.createChatThread("New Private Chat");
     } finally {
       setSpawning(false);
     }
@@ -357,20 +375,37 @@ export const ThreadSidebar: Component<ThreadSidebarProps> = (props) => {
         <Show when={showLauncher()}>
           <div class="absolute top-[calc(100%+4px)] left-3 right-3 bg-surface-2 border border-border rounded-lg z-20 shadow-lg animate-[slideDown_150ms_ease] overflow-hidden py-1">
             {/* Seren Agent (Chat) */}
-            <button
-              type="button"
-              class="flex items-center gap-2.5 w-full py-2 px-3 bg-transparent border-none rounded-md text-foreground text-[13px] cursor-pointer transition-colors duration-100 hover:bg-surface-3 text-left"
-              onClick={handleNewChat}
-            >
-              <span class="text-[14px]">{"\u{1F4AC}"}</span>
-              <span class="font-medium">Seren Agent</span>
-            </button>
+            <Show when={allowsSerenAgent(authStore.privateChatPolicy)}>
+              <button
+                type="button"
+                class="flex items-center gap-2.5 w-full py-2 px-3 bg-transparent border-none rounded-md text-foreground text-[13px] cursor-pointer transition-colors duration-100 hover:bg-surface-3 text-left"
+                onClick={handleNewChat}
+              >
+                <span class="text-[14px]">{"\u{1F4AC}"}</span>
+                <span class="font-medium">Seren Agent</span>
+              </button>
+            </Show>
+
+            {/* Seren Agent (Private) */}
+            <Show when={allowsSerenPrivateAgent(authStore.privateChatPolicy)}>
+              <button
+                type="button"
+                class="flex items-center gap-2.5 w-full py-2 px-3 bg-transparent border-none rounded-md text-foreground text-[13px] cursor-pointer transition-colors duration-100 hover:bg-surface-3 text-left"
+                onClick={handleNewPrivateChat}
+              >
+                <span class="text-[14px]">{"\u{1F512}"}</span>
+                <span class="font-medium">Seren Agent (Private)</span>
+              </button>
+            </Show>
 
             {/* Claude Agent */}
             <Show
-              when={agentStore.availableAgents.some(
-                (a) => a.type === "claude-code" && a.available,
-              )}
+              when={
+                allowsClaudeAgent(authStore.privateChatPolicy) &&
+                agentStore.availableAgents.some(
+                  (a) => a.type === "claude-code" && a.available,
+                )
+              }
             >
               <button
                 type="button"
@@ -394,9 +429,12 @@ export const ThreadSidebar: Component<ThreadSidebarProps> = (props) => {
 
             {/* Codex Agent */}
             <Show
-              when={agentStore.availableAgents.some(
-                (a) => a.type === "codex" && a.available,
-              )}
+              when={
+                allowsCodexAgent(authStore.privateChatPolicy) &&
+                agentStore.availableAgents.some(
+                  (a) => a.type === "codex" && a.available,
+                )
+              }
             >
               <button
                 type="button"

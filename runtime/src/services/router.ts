@@ -45,6 +45,9 @@ const REROUTABLE_STATUS_CODES: number[] = [408, 429, 502, 503, 504];
 /** Maximum number of reroute attempts before giving up. */
 export const MAX_REROUTE_ATTEMPTS = 2;
 
+/** Maximum number of retries for network transport errors before giving up. */
+export const MAX_NETWORK_RETRIES = 5;
+
 // ---------------------------------------------------------------------------
 // Human-readable names
 // ---------------------------------------------------------------------------
@@ -335,6 +338,33 @@ function buildReason(
 }
 
 // ---------------------------------------------------------------------------
+// Timeout fallback chain
+// ---------------------------------------------------------------------------
+
+/**
+ * Returns the next faster model in the fallback chain for 408 timeout errors.
+ * Opus -> Sonnet -> Haiku -> undefined
+ */
+export function getTimeoutFallback(currentModel: string): string | undefined {
+  // Opus variants fallback to Sonnet
+  if (
+    currentModel === "anthropic/claude-opus-4" ||
+    currentModel === "anthropic/claude-opus-4.5" ||
+    currentModel === "anthropic/claude-opus-4.6"
+  ) {
+    return "anthropic/claude-sonnet-4.5";
+  }
+  // Sonnet variants fallback to Haiku
+  if (
+    currentModel === "anthropic/claude-sonnet-4" ||
+    currentModel === "anthropic/claude-sonnet-4.5"
+  ) {
+    return "anthropic/claude-haiku-4.5";
+  }
+  return undefined;
+}
+
+// ---------------------------------------------------------------------------
 // Reroutable error detection
 // ---------------------------------------------------------------------------
 
@@ -368,6 +398,33 @@ export function isReroutableError(errorMessage: string): boolean {
 
   return REROUTABLE_STATUS_CODES.some((code) =>
     errorMessage.includes(String(code)),
+  );
+}
+
+/**
+ * Check whether an error is a network transport failure (not an HTTP status error).
+ *
+ * These errors occur when the HTTP request cannot be sent at all -- DNS resolution
+ * failure, connection refused, TLS handshake error, stream reset, etc.  They should
+ * be retried on the **same model** with exponential backoff rather than rerouted to a
+ * different model, because all models share the same gateway endpoint.
+ */
+export function isNetworkTransportError(errorMessage: string): boolean {
+  const lower = errorMessage.toLowerCase();
+  return (
+    lower.includes("error sending request") ||
+    lower.includes("connection refused") ||
+    lower.includes("connection reset") ||
+    lower.includes("dns error") ||
+    lower.includes("timed out") ||
+    lower.includes("connection closed before message completed") ||
+    lower.includes("broken pipe") ||
+    lower.includes("network is unreachable") ||
+    lower.includes("fetch failed") ||
+    lower.includes("econnrefused") ||
+    lower.includes("econnreset") ||
+    lower.includes("etimedout") ||
+    lower.includes("enotfound")
   );
 }
 

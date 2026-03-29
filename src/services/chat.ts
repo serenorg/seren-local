@@ -1,7 +1,7 @@
 // ABOUTME: Chat service supporting streaming completions with multi-provider routing.
 // ABOUTME: Routes requests through provider abstraction for Seren, Anthropic, OpenAI, Gemini.
 
-import { toDataUrl } from "@/lib/images/attachments";
+import { isTextMime, toDataUrl } from "@/lib/images/attachments";
 import { retrieveCodeContext } from "@/lib/indexing/context-retrieval";
 import {
   buildChatRequest,
@@ -10,17 +10,22 @@ import {
 } from "@/lib/providers";
 import { sendMessageWithTools as sendWithTools } from "@/lib/providers/seren";
 import type {
+  Attachment,
   ChatMessageWithTools,
   ChatResponse,
   ContentBlock,
-  ImageAttachment,
   ToolCall,
   ToolResult,
 } from "@/lib/providers/types";
 import { executeTools, getAllTools } from "@/lib/tools";
+import { getGatewayTools } from "@/services/mcp-gateway";
+import { storeAssistantResponse } from "@/services/memory";
+import { authStore } from "@/stores/auth.store";
+import { conversationStore } from "@/stores/conversation.store";
 import { fileTreeState } from "@/stores/fileTree";
 import { providerStore } from "@/stores/provider.store";
 import { settingsStore } from "@/stores/settings.store";
+import { skillsStore } from "@/stores/skills.store";
 
 export type ChatRole = "user" | "assistant" | "system";
 
@@ -39,7 +44,7 @@ export interface Message {
   id: string;
   role: ChatRole;
   content: string;
-  images?: ImageAttachment[];
+  images?: Attachment[];
   thinking?: string;
   model?: string;
   timestamp: number;
@@ -59,7 +64,34 @@ const INITIAL_DELAY = 1000;
 const TRANSIENT_STATUS_CODES = ["408", "429", "500", "502", "503", "504"];
 
 /**
+ * Check if an error is a network transport failure (not an HTTP status error).
+ *
+ * These errors occur when the HTTP request cannot be sent at all -- DNS resolution
+ * failure, connection refused, TLS handshake error, stream reset, etc.
+ * They should be retried with backoff since they are typically transient.
+ */
+function isNetworkTransportError(message: string): boolean {
+  const lower = message.toLowerCase();
+  return (
+    lower.includes("fetch failed") ||
+    lower.includes("error sending request") ||
+    lower.includes("connection refused") ||
+    lower.includes("connection reset") ||
+    lower.includes("dns error") ||
+    lower.includes("timed out") ||
+    lower.includes("connection closed before message completed") ||
+    lower.includes("broken pipe") ||
+    lower.includes("network is unreachable") ||
+    lower.includes("econnrefused") ||
+    lower.includes("econnreset") ||
+    lower.includes("etimedout") ||
+    lower.includes("enotfound")
+  );
+}
+
+/**
  * Check if an error is transient and should be retried.
+ * Includes both HTTP status code errors and network transport failures.
  */
 function isTransientError(message: string): boolean {
   if (
@@ -68,6 +100,10 @@ function isTransientError(message: string): boolean {
     message.includes("API key")
   ) {
     return false;
+  }
+  // Network transport errors are always retryable
+  if (isNetworkTransportError(message)) {
+    return true;
   }
   return TRANSIENT_STATUS_CODES.some((code) => message.includes(code));
 }
@@ -147,12 +183,13 @@ export async function sendMessageWithRetry(
   model: string,
   context: ChatContext | undefined,
   onRetry?: (attempt: number) => void,
+  history?: Message[],
 ): Promise<string> {
   let lastError: Error | null = null;
 
   for (let attempt = 1; attempt <= CHAT_MAX_RETRIES; attempt++) {
     try {
-      return await sendMessage(content, model, context);
+      return await sendMessage(content, model, context, history);
     } catch (error) {
       lastError = error as Error;
 
@@ -218,27 +255,98 @@ export type ToolStreamEvent =
     };
 
 /**
- * Build multimodal content blocks from text and optional images.
+ * Check if a MIME type is supported for vision/multimodal content blocks.
+ * Anthropic API only supports: image/jpeg, image/png, image/gif, image/webp
+ */
+function isVisionCompatibleMime(mimeType: string): boolean {
+  return ["image/jpeg", "image/png", "image/gif", "image/webp"].includes(
+    mimeType,
+  );
+}
+
+/**
+ * Build multimodal content blocks from text and optional attachments.
+ * - Vision-compatible images (jpg, png, gif, webp) become image_url content blocks
+ * - PDFs become document content blocks (Anthropic format)
+ * - Text/code files are inlined as code blocks
+ * - Other formats (SVG, etc.) are noted as unsupported
  */
 function buildUserContent(
   text: string,
-  images?: ImageAttachment[],
+  attachments?: Attachment[],
 ): string | ContentBlock[] {
-  if (!images || images.length === 0) {
+  if (!attachments || attachments.length === 0) {
     return text;
   }
 
+  // Separate files by type
+  const visionImages: Attachment[] = [];
+  const pdfDocuments: Attachment[] = [];
+  const inlinedParts: string[] = [];
+  const unsupportedFiles: string[] = [];
+
+  for (const att of attachments) {
+    if (isTextMime(att.mimeType)) {
+      // Decode base64 text and inline as a code block
+      const decoded = atob(att.base64);
+      const ext = att.name.split(".").pop() || "";
+      inlinedParts.push(`\`\`\`${ext} (${att.name})\n${decoded}\n\`\`\``);
+    } else if (att.mimeType === "application/pdf") {
+      // PDFs use document content blocks (Anthropic format)
+      pdfDocuments.push(att);
+    } else if (isVisionCompatibleMime(att.mimeType)) {
+      // Vision-compatible image formats
+      visionImages.push(att);
+    } else {
+      // SVGs and other unsupported formats
+      unsupportedFiles.push(`${att.name} (${att.mimeType})`);
+    }
+  }
+
+  // Build text parts
+  const textParts: string[] = [];
+  if (inlinedParts.length > 0) {
+    textParts.push(inlinedParts.join("\n\n"));
+  }
+  if (unsupportedFiles.length > 0) {
+    textParts.push(
+      `[Note: The following files cannot be processed: ${unsupportedFiles.join(", ")}. Supported formats: images (jpg, png, gif, webp), PDFs, and text/code files.]`,
+    );
+  }
+  textParts.push(text);
+
+  const fullText = textParts.join("\n\n");
+
+  // If no media files, return plain text
+  if (visionImages.length === 0 && pdfDocuments.length === 0) {
+    return fullText;
+  }
+
+  // Build content blocks for images and PDFs
   const blocks: ContentBlock[] = [];
 
-  // Add image blocks first so the model sees them before the text
-  for (const img of images) {
+  // Add PDF documents first
+  for (const att of pdfDocuments) {
     blocks.push({
-      type: "image_url",
-      image_url: { url: toDataUrl(img) },
+      type: "document",
+      source: {
+        type: "base64",
+        media_type: "application/pdf",
+        data: att.base64,
+      },
     });
   }
 
-  blocks.push({ type: "text", text });
+  // Add vision-compatible images
+  for (const att of visionImages) {
+    blocks.push({
+      type: "image_url",
+      image_url: { url: toDataUrl(att) },
+    });
+  }
+
+  // Add text content last
+  blocks.push({ type: "text", text: fullText });
 
   return blocks;
 }
@@ -260,26 +368,36 @@ export async function* streamMessageWithTools(
   context?: ChatContext,
   enableTools = true,
   history: Message[] = [],
-  images?: ImageAttachment[],
+  images?: Attachment[],
 ): AsyncGenerator<ToolStreamEvent> {
   // Build initial messages array
   const messages: ChatMessageWithTools[] = [];
 
-  // Get tools if enabled, with model-specific limits (moved before system message for conditional content)
-  const tools = enableTools ? getAllTools(model) : undefined;
-  const toolCount = tools?.length ?? 0;
+  // Build Seren MCP publishers context dynamically based on active toolset
+  // This ensures the LLM only knows about publishers that are actually available
+  const buildPublishersContext = (): string => {
+    const allGatewayTools = getGatewayTools();
 
-  // Seren MCP publishers context - added to all prompts to prevent confusion
-  const serenPublishersContext =
-    "\n\nIMPORTANT - Seren MCP Publishers Context:\n" +
-    "This application connects to Seren MCP publishers - third-party data services accessible through Seren. " +
-    "When users mention publisher names like 'Apollo', 'Perplexity', 'Firecrawl', etc., they are referring to Seren MCP publishers, NOT general technologies with similar names:\n" +
-    "- Apollo = Sales intelligence platform for contacts/leads (NOT Apollo GraphQL)\n" +
-    "- Perplexity = AI-powered search and research tool\n" +
-    "- Firecrawl = Web scraping and crawling service\n" +
-    "Always interpret publisher references in the Seren MCP context unless the user explicitly asks about the technology/framework itself.";
+    // Get unique publisher slugs from available tools
+    const publishers = [...new Set(allGatewayTools.map((t) => t.publisher))];
+
+    if (publishers.length === 0) {
+      return ""; // No publishers available, don't add context
+    }
+
+    const publisherList = publishers.join(", ");
+    return (
+      "\n\nIMPORTANT - Available Seren MCP Publishers:\n" +
+      "This application connects to Seren MCP publishers - third-party data services. " +
+      `You have access to the following publishers: ${publisherList}. ` +
+      "ONLY use tools from these publishers. Do NOT suggest or attempt to use publishers that are not in this list. " +
+      "When users mention publisher names, interpret them in the Seren MCP context unless they explicitly ask about the technology/framework itself."
+    );
+  };
+  const serenPublishersContext = buildPublishersContext();
 
   // Build system message - conditional based on actual tool availability
+  const toolCount = enableTools ? getAllTools(model).length : 0;
   let systemContent: string;
 
   if (toolCount > 0) {
@@ -295,7 +413,7 @@ export async function* streamMessageWithTools(
       "'https://html.duckduckgo.com/html/?q=your+search+terms' to find information.\n" +
       "- For fetching web pages: use seren_web_fetch with the page URL.\n" +
       "- Chain tool calls when needed: search first to find URLs, then fetch those URLs for full content.\n" +
-      "- NEVER say 'I cannot browse the web' or 'I need a URL' — you CAN search by constructing search engine URLs." +
+      "- NEVER say 'I cannot browse the web' or 'I need a URL' — you CAN search by constructing search engine URLs.\n" +
       serenPublishersContext;
   } else {
     // No tools available - don't claim tool capabilities
@@ -305,6 +423,16 @@ export async function* streamMessageWithTools(
       "You can help with code questions, explanations, and provide code snippets, but cannot directly read or write files." +
       serenPublishersContext;
   }
+
+  // Add Seren product identity context
+  systemContent +=
+    "\n\nIMPORTANT — Seren Product Identity:\n" +
+    '"Seren" refers to the Seren platform at https://www.serendb.com — a serverless Postgres database platform with AI agents, ' +
+    "MCP tool integration, and a publisher marketplace. It is NOT seren.xyz or any other project. " +
+    "When users ask about Seren, always answer in the context of SerenDB (https://www.serendb.com). " +
+    "Key Seren concepts: SerenBucks (billing credits), Publishers (third-party data services), " +
+    "Skills (installable prompt-based capabilities from the seren-skills repo), " +
+    "Gateway API (AI model access), MCP servers (tool integration), and Seren Desktop (this application).";
 
   // Add user-provided context if available
   if (context) {
@@ -331,6 +459,32 @@ export async function* streamMessageWithTools(
     console.warn("[Chat] Failed to retrieve semantic context:", error);
   }
 
+  // Inject enabled skills content
+  try {
+    const skillsContent = await skillsStore.getThreadSkillsContent(
+      fileTreeState.rootPath,
+      conversationStore.activeConversationId,
+    );
+    if (skillsContent) {
+      systemContent += skillsContent;
+    }
+  } catch (error) {
+    console.warn("[Chat] Failed to retrieve skills content:", error);
+  }
+
+  // Inject memory context if enabled and authenticated
+  if (settingsStore.get("memoryEnabled") && authStore.isAuthenticated) {
+    try {
+      const { bootstrapMemoryContext } = await import("@/services/memory");
+      const memoryContext = await bootstrapMemoryContext();
+      if (memoryContext) {
+        systemContent += memoryContext;
+      }
+    } catch (error) {
+      console.warn("[Chat] Failed to retrieve memory context:", error);
+    }
+  }
+
   // Add system message to messages array
   messages.push({ role: "system", content: systemContent });
 
@@ -343,6 +497,9 @@ export async function* streamMessageWithTools(
 
   // Add current user message (with images if attached)
   messages.push({ role: "user", content: buildUserContent(content, images) });
+
+  // Get tools if enabled, with model-specific limits
+  const tools = enableTools ? getAllTools(model) : undefined;
 
   // Get max iterations from settings (0 = unlimited)
   const maxIterations = settingsStore.get("chatMaxToolIterations");
@@ -403,16 +560,29 @@ export async function* streamMessageWithTools(
         continue;
       }
 
-      // No tool calls, we're done
       console.log(
         "[streamMessageWithTools] No tool_calls, completing with content length:",
         fullContent.length,
       );
+
+      // Store conversation to memory if enabled
+      storeAssistantResponse(fullContent, {
+        model,
+        userQuery: content,
+      }).catch((err) => {
+        console.warn("[streamMessageWithTools] Failed to store memory:", err);
+      });
+
       yield { type: "complete", finalContent: fullContent };
       return;
     }
 
     // Yield tool calls for UI
+    const toolNames = response.tool_calls.map((tc) => tc.function.name);
+    console.log(
+      `[streamMessageWithTools] Iteration ${iteration}: tool_calls =`,
+      toolNames,
+    );
     yield { type: "tool_calls", toolCalls: response.tool_calls };
 
     // Add assistant message with tool_calls to history
@@ -425,6 +595,16 @@ export async function* streamMessageWithTools(
     // Execute tools
     const results = await executeTools(response.tool_calls);
     hasExecutedTools = true;
+
+    // Log tool execution results
+    for (const result of results) {
+      if (result.is_error) {
+        console.warn(
+          `[streamMessageWithTools] Tool error: ${result.tool_call_id}`,
+          result.content.substring(0, 200),
+        );
+      }
+    }
 
     // Yield results for UI
     yield { type: "tool_results", results };
@@ -442,6 +622,11 @@ export async function* streamMessageWithTools(
   }
 
   // If we hit max iterations, yield an event that allows the user to continue
+  if (!fullContent.trim()) {
+    console.warn(
+      `[streamMessageWithTools] Hit iteration limit (${maxIterations}) with empty content`,
+    );
+  }
   yield {
     type: "iteration_limit",
     currentIteration: maxIterations,
@@ -469,6 +654,8 @@ export async function* continueToolIteration(
 ): AsyncGenerator<ToolStreamEvent> {
   const { messages, model, tools, fullContent: existingContent } = state;
   let fullContent = existingContent;
+  let hasExecutedTools = false;
+  let hasNudged = false;
 
   for (let i = 0; i < additionalIterations; i++) {
     console.log("[continueToolIteration] Iteration:", i);
@@ -486,6 +673,32 @@ export async function* continueToolIteration(
     }
 
     if (!response.tool_calls || response.tool_calls.length === 0) {
+      if (hasExecutedTools && !fullContent.trim() && !hasNudged) {
+        hasNudged = true;
+        console.warn(
+          "[continueToolIteration] Empty response after tool execution — nudging model to complete task",
+        );
+        messages.push({
+          role: "assistant",
+          content: response.content || "",
+        });
+        messages.push({
+          role: "user",
+          content:
+            "You called tools but did not provide a response or complete the requested task. " +
+            "Please review the tool results above and either complete the task using the appropriate tools, " +
+            "or explain what happened.",
+        });
+        continue;
+      }
+
+      // Store conversation to memory if enabled
+      storeAssistantResponse(fullContent, {
+        model,
+      }).catch((err) => {
+        console.warn("[continueToolIteration] Failed to store memory:", err);
+      });
+
       yield { type: "complete", finalContent: fullContent };
       return;
     }
@@ -499,6 +712,7 @@ export async function* continueToolIteration(
     });
 
     const results = await executeTools(response.tool_calls);
+    hasExecutedTools = true;
     yield { type: "tool_results", results };
 
     for (const result of results) {
@@ -527,8 +741,26 @@ export async function* continueToolIteration(
 
 /**
  * Check if tools are available for the current provider.
- * Currently only Seren provider supports tools.
+ * Verifies both provider support AND actual tool availability.
  */
 export function areToolsAvailable(): boolean {
-  return providerStore.activeProvider === "seren";
+  // Only Seren provider supports tools
+  if (providerStore.activeProvider !== "seren") {
+    return false;
+  }
+
+  // Actually check if we have tools - this prevents making claims
+  // about tool access when tools aren't actually available
+  const tools = getAllTools();
+  return tools.length > 0;
+}
+
+/**
+ * Get the count of available tools (for conditional system prompts).
+ */
+export function getAvailableToolCount(): number {
+  if (providerStore.activeProvider !== "seren") {
+    return 0;
+  }
+  return getAllTools().length;
 }
