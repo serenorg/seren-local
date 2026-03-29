@@ -4,6 +4,15 @@
 import { isRuntimeConnected, runtimeInvoke } from "@/lib/bridge";
 import type { ImageAttachment } from "@/lib/providers/types";
 
+/** Check whether a MIME type represents a text/code file. */
+export function isTextMime(mimeType: string): boolean {
+  return (
+    mimeType.startsWith("text/") ||
+    mimeType === "application/json" ||
+    mimeType === "application/xml"
+  );
+}
+
 const SUPPORTED_EXTENSIONS = ["png", "jpg", "jpeg", "gif", "webp"];
 const MAX_BASE64_SIZE = 27 * 1024 * 1024; // ~20MB file = ~27MB base64
 

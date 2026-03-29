@@ -3,7 +3,23 @@
 
 import { API_BASE } from "@/lib/config";
 import { appFetch } from "@/lib/fetch";
+import type { ProviderId } from "@/lib/providers/types";
 import { getToken } from "@/services/auth";
+
+export const SEREN_CLOUD_AGENT_PUBLISHER_SLUG = "seren-models";
+export const SEREN_PRIVATE_CLOUD_AGENT_PUBLISHER_SLUG =
+  "seren-private-models";
+
+export function getCloudAgentPublisherForProvider(
+  providerId: ProviderId | null | undefined,
+): string | null {
+  switch (providerId) {
+    case "seren":
+      return SEREN_CLOUD_AGENT_PUBLISHER_SLUG;
+    default:
+      return null;
+  }
+}
 
 // ── Types ────────────────────────────────────────────────────────────────────
 

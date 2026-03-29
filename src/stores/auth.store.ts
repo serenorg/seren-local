@@ -14,6 +14,10 @@ import {
   isLoggedIn,
 } from "@/services/auth";
 import { initializeGateway, resetGateway } from "@/services/mcp-gateway";
+import {
+  type OrganizationPrivateChatPolicy,
+  getDefaultOrganizationPrivateChatPolicy,
+} from "@/services/organization-policy";
 
 export interface User {
   id: string;
@@ -27,6 +31,7 @@ interface AuthState {
   isAuthenticated: boolean;
   /** Whether MCP Gateway is connected */
   mcpConnected: boolean;
+  privateChatPolicy: OrganizationPrivateChatPolicy | null;
 }
 
 const [state, setState] = createStore<AuthState>({
@@ -34,6 +39,7 @@ const [state, setState] = createStore<AuthState>({
   isLoading: true,
   isAuthenticated: false,
   mcpConnected: false,
+  privateChatPolicy: null,
 });
 
 /**
@@ -88,6 +94,16 @@ async function initializeMcpInBackground(): Promise<void> {
   }
 }
 
+async function loadPrivateChatPolicy(): Promise<void> {
+  try {
+    const policy = await getDefaultOrganizationPrivateChatPolicy();
+    setState("privateChatPolicy", policy);
+  } catch (error) {
+    console.warn("[Auth Store] Failed to load private chat policy:", error);
+    setState("privateChatPolicy", null);
+  }
+}
+
 /**
  * Check authentication status on app startup.
  * If authenticated, fetches API key (if needed) and initializes MCP Gateway.
@@ -99,6 +115,8 @@ export async function checkAuth(): Promise<void> {
     setState("isAuthenticated", authenticated);
 
     if (authenticated) {
+      await loadPrivateChatPolicy();
+
       // Ensure we have an API key for MCP (create if not stored)
       const hasApiKey = await ensureApiKey();
       if (!hasApiKey) {
@@ -125,6 +143,8 @@ export async function setAuthenticated(user: User): Promise<void> {
     isAuthenticated: true,
     isLoading: false,
   });
+
+  await loadPrivateChatPolicy();
 
   // Ensure we have an API key for MCP authentication
   const hasApiKey = await ensureApiKey();
@@ -162,6 +182,7 @@ export async function logout(): Promise<void> {
     isAuthenticated: false,
     isLoading: false,
     mcpConnected: false,
+    privateChatPolicy: null,
   });
 }
 
@@ -170,7 +191,11 @@ export async function logout(): Promise<void> {
  * Used by /login command and session expiration handlers.
  */
 export function promptLogin(): void {
-  setState({ isAuthenticated: false, user: null });
+  setState({
+    isAuthenticated: false,
+    user: null,
+    privateChatPolicy: null,
+  });
 }
 
 export const authStore = state;

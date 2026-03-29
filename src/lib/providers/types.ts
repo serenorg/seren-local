@@ -4,7 +4,12 @@
 /**
  * Supported LLM provider identifiers.
  */
-export type ProviderId = "seren" | "anthropic" | "openai" | "gemini";
+export type ProviderId =
+  | "seren"
+  | "seren-private"
+  | "anthropic"
+  | "openai"
+  | "gemini";
 
 /**
  * Authentication method for a provider.
@@ -100,18 +105,39 @@ export interface ImageContentBlock {
 }
 
 /**
- * Content block for multimodal messages.
+ * Document content block for PDFs (Anthropic-native format).
+ * Used when sending PDFs through content blocks to Anthropic API.
  */
-export type ContentBlock = TextContentBlock | ImageContentBlock;
+export interface DocumentContentBlock {
+  type: "document";
+  source: {
+    type: "base64";
+    media_type: "application/pdf";
+    data: string; // raw base64 without data URL prefix
+  };
+}
 
 /**
- * Image attachment metadata stored with messages.
+ * Content block for multimodal messages.
+ * Supports text, images (OpenAI format), and documents (Anthropic format).
  */
-export interface ImageAttachment {
+export type ContentBlock =
+  | TextContentBlock
+  | ImageContentBlock
+  | DocumentContentBlock;
+
+/**
+ * File attachment metadata stored with messages.
+ * Supports images, PDFs, and text/code files.
+ */
+export interface Attachment {
   name: string;
   mimeType: string;
   base64: string; // raw base64 without data URL prefix
 }
+
+/** @deprecated Use Attachment instead */
+export type ImageAttachment = Attachment;
 
 /**
  * Message format for chat requests.
@@ -273,6 +299,14 @@ export const PROVIDER_CONFIGS: Record<ProviderId, ProviderConfig> = {
     id: "seren",
     name: "Seren Models",
     description: "Use your SerenBucks balance to access multiple AI models",
+    authMethod: "none",
+    baseUrl: "https://api.serendb.com",
+    docsUrl: "https://docs.serendb.com",
+  },
+  "seren-private": {
+    id: "seren-private",
+    name: "Seren Private Models",
+    description: "Organization-managed private models via seren-private-models",
     authMethod: "none",
     baseUrl: "https://api.serendb.com",
     docsUrl: "https://docs.serendb.com",

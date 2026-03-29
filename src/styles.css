@@ -56,6 +56,9 @@ code {
   --warning: #dcdcaa;
 
   /* Surface levels */
+  --surface-0: #0f1623;
+  --surface-1: #151d2e;
+  --surface-2: #1c2640;
   --surface-3: #2a2d2e;
 
   /* Border and input */
@@ -77,6 +80,14 @@ code {
   --scrollbar-track: #1e1e1e;
   --scrollbar-thumb: #444444;
   --scrollbar-thumb-hover: #555555;
+
+  /* Shadows */
+  --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.6);
+
+  /* Layout dimensions */
+  --sidebar-width: 280px;
+  --titlebar-height: 40px;
+  --slide-panel-width: 480px;
 
   /* Radius */
   --radius: 0.375rem;
@@ -102,6 +113,9 @@ code {
   --color-destructive-foreground: var(--destructive-foreground);
   --color-success: var(--success);
   --color-warning: var(--warning);
+  --color-surface-0: var(--surface-0);
+  --color-surface-1: var(--surface-1);
+  --color-surface-2: var(--surface-2);
   --color-surface-3: var(--surface-3);
   --color-border: var(--border);
   --color-border-hover: var(--border-hover);
@@ -210,6 +224,15 @@ code {
   }
   to {
     opacity: 1;
+  }
+}
+
+@keyframes slideInRight {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
   }
 }
 

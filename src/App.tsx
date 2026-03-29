@@ -1,37 +1,25 @@
-// ABOUTME: Main application component with three-column resizable layout.
-// ABOUTME: FileTree | Editor | Chat with draggable separators.
+// ABOUTME: Main application component with AppShell layout (ThreadSidebar + ThreadContent + SlidePanel).
+// ABOUTME: Initializes auth, wallet, memory, telemetry, and updater services.
 
 import {
   createEffect,
-  createSignal,
-  Match,
   onCleanup,
   onMount,
   Show,
-  Switch,
   untrack,
 } from "solid-js";
-import { SignIn } from "@/components/auth/SignIn";
-import { CatalogPanel } from "@/components/catalog";
-import { ChatContent } from "@/components/chat/ChatContent";
-// MCP OAuth dialog removed - now using API key auth flow
 import { AboutDialog } from "@/components/common/AboutDialog";
 import { UpdateIndicator } from "@/components/common/UpdateIndicator";
-import { Header, type Panel } from "@/components/common/Header";
 import { LowBalanceModal } from "@/components/common/LowBalanceWarning";
-import { ResizableLayout } from "@/components/common/ResizableLayout";
-import { StatusBar } from "@/components/common/StatusBar";
-import { EditorContent } from "@/components/editor/EditorContent";
 import { X402PaymentApproval } from "@/components/mcp/X402PaymentApproval";
 import { GatewayToolApproval } from "@/components/gateway/GatewayToolApproval";
-import { SettingsPanel } from "@/components/settings/SettingsPanel";
-import { DatabasePanel } from "@/components/sidebar/DatabasePanel";
-import { FileExplorer } from "@/components/sidebar/FileExplorer";
 import { DailyClaimPopup } from "@/components/wallet/DailyClaimPopup";
+import { AppShell } from "@/components/layout/AppShell";
 import { connectToRuntime, storeOAuthCredentials } from "@/lib/bridge";
 import { shortcuts } from "@/lib/shortcuts";
 import { Phase3Playground } from "@/playground/Phase3Playground";
 import { initAutoTopUp } from "@/services/autoTopUp";
+import { syncMemories } from "@/services/memory";
 import { getPendingOAuthProvider, handleOAuthCallback } from "@/services/oauth";
 import { telemetry } from "@/services/telemetry";
 import {
@@ -49,9 +37,9 @@ import {
   checkDailyClaim,
   resetWalletState,
   startAutoRefresh,
+  startDailyClaimPolling,
   stopAutoRefresh,
 } from "@/stores/wallet.store";
-import "@/components/common/ResizableLayout.css";
 import "./styles.css";
 
 // Initialize telemetry early to capture startup errors
@@ -61,11 +49,6 @@ function App() {
   if (shouldRenderPhase3Playground()) {
     return <Phase3Playground />;
   }
-
-  // Overlay panels (settings, catalog, database, account)
-  const [overlayPanel, setOverlayPanel] = createSignal<Panel | null>(null);
-  // Toggle editor visibility
-  const [showEditor, setShowEditor] = createSignal(false);
 
   onMount(async () => {
     // Handle OAuth callback if returning from provider authorization
@@ -109,41 +92,8 @@ function App() {
     // Sync chatStore with the active model from provider store
     chatStore.setModel(providerStore.activeModel);
 
-    // Initialize keyboard shortcuts
+    // Initialize keyboard shortcuts (AppShell registers its own panel shortcuts)
     shortcuts.init();
-    shortcuts.register("focusChat", () => {
-      // Chat is always visible, just focus it
-      setOverlayPanel(null);
-    });
-    shortcuts.register("openSettings", () => setOverlayPanel("settings"));
-    shortcuts.register("toggleSidebar", () => {
-      // Toggle catalog panel
-      setOverlayPanel((p) => (p === "catalog" ? null : "catalog"));
-    });
-    shortcuts.register("focusEditor", () => {
-      // Editor is always visible, just close overlays
-      setOverlayPanel(null);
-    });
-    shortcuts.register("closePanel", () => {
-      // Escape closes overlay panels
-      setOverlayPanel(null);
-    });
-
-    // Listen for slash command panel navigation
-    const onOpenPanel = ((e: CustomEvent) => {
-      const p = e.detail as string;
-      if (p === "editor") {
-        setShowEditor(true);
-        setOverlayPanel(null);
-      } else {
-        handlePanelChange(p as Panel);
-      }
-    }) as EventListener;
-    window.addEventListener("seren:open-panel", onOpenPanel);
-
-    // Listen for settings open request (from sidebar status indicator)
-    const onOpenSettings = () => setOverlayPanel("settings");
-    window.addEventListener("seren:open-settings", onOpenSettings);
   });
 
   onCleanup(() => {
@@ -170,6 +120,9 @@ function App() {
         // Store cleanup to prevent effect accumulation
         cleanupAutoTopUp = initAutoTopUp();
         checkDailyClaim();
+        startDailyClaimPolling();
+        // Push any locally-cached memories that failed to reach cloud (e.g. cold start)
+        void syncMemories();
       });
     } else {
       console.log("[App] User logged out, stopping services...");
@@ -190,37 +143,10 @@ function App() {
 
   const handleLoginSuccess = () => {
     setAuthenticated({ id: "", email: "", name: "" });
-    setOverlayPanel(null);
   };
 
   const handleLogout = async () => {
     await logout();
-  };
-
-  const handleSignInClick = () => {
-    setOverlayPanel("account");
-  };
-
-  const handlePanelChange = (panel: Panel) => {
-    if (panel === "chat") {
-      // Close overlays, keep editor state as is
-      setOverlayPanel(null);
-    } else if (panel === "editor") {
-      // Toggle editor visibility
-      setShowEditor(true);
-      setOverlayPanel(null);
-    } else {
-      // Settings, catalog, database, account are overlays
-      setOverlayPanel(panel);
-    }
-  };
-
-  // Get the "active" panel for header highlighting
-  // If an overlay is open, show that; if editor is visible, show "editor"; otherwise "chat"
-  const activePanel = () => {
-    const overlay = overlayPanel();
-    if (overlay) return overlay;
-    return showEditor() ? "editor" : "chat";
   };
 
   return (
@@ -233,59 +159,16 @@ function App() {
         </div>
       }
     >
-      <div class="flex flex-col h-full">
-        <Header
-          activePanel={activePanel()}
-          onPanelChange={handlePanelChange}
-          onLogout={handleLogout}
-          isAuthenticated={authStore.isAuthenticated}
-        />
-        <UpdateIndicator />
-        <main class="flex-1 overflow-hidden bg-transparent relative">
-          {/* Three-column resizable layout (always visible) */}
-          <ResizableLayout
-            left={<FileExplorer />}
-            center={<ChatContent onSignInClick={handleSignInClick} />}
-            right={
-              showEditor() ? (
-                <EditorContent onClose={() => setShowEditor(false)} />
-              ) : null
-            }
-            leftWidth={240}
-            rightWidth={500}
-            leftMinWidth={180}
-            leftMaxWidth={400}
-            rightMinWidth={400}
-            rightMaxWidth={900}
-          />
-
-          {/* Overlay panels */}
-          <Show when={overlayPanel()}>
-            <div class="absolute inset-0 bg-[#0d1117] z-10">
-              <Switch>
-                <Match when={overlayPanel() === "catalog"}>
-                  <CatalogPanel onSignInClick={handleSignInClick} />
-                </Match>
-                <Match when={overlayPanel() === "database"}>
-                  <DatabasePanel />
-                </Match>
-                <Match when={overlayPanel() === "settings"}>
-                  <SettingsPanel onSignInClick={handleSignInClick} />
-                </Match>
-                <Match when={overlayPanel() === "account"}>
-                  <SignIn onSuccess={handleLoginSuccess} />
-                </Match>
-              </Switch>
-            </div>
-          </Show>
-        </main>
-        <StatusBar />
-        <LowBalanceModal />
-        <DailyClaimPopup />
-        <X402PaymentApproval />
-        <GatewayToolApproval />
-        <AboutDialog />
-      </div>
+      <AppShell
+        onLoginSuccess={handleLoginSuccess}
+        onLogout={handleLogout}
+      />
+      <UpdateIndicator />
+      <LowBalanceModal />
+      <DailyClaimPopup />
+      <X402PaymentApproval />
+      <GatewayToolApproval />
+      <AboutDialog />
     </Show>
   );
 }
