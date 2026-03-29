@@ -103,13 +103,13 @@ export const ThreadSidebar: Component<ThreadSidebarProps> = (props) => {
     // Skills can only be toggled on an active thread
     const activeThread = threadStore.activeThread;
     if (!activeThread) {
-      console.warn("[ThreadSidebar] No active thread, cannot toggle skill");
+      window.alert("Create or select a thread first to add skills.");
       return;
     }
 
     const cwd = fileTreeState.rootPath;
     if (!cwd) {
-      console.warn("[ThreadSidebar] No project root, cannot toggle skill");
+      window.alert("Open a project folder first to use skills.");
       return;
     }
 
