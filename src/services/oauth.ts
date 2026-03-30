@@ -48,11 +48,20 @@ function generateRandomString(length: number): string {
  * Generate PKCE code challenge from verifier.
  */
 async function generateCodeChallenge(verifier: string): Promise<string> {
-  const encoder = new TextEncoder();
-  const data = encoder.encode(verifier);
-  const hash = await crypto.subtle.digest("SHA-256", data);
-  // Base64url encode the hash
-  const base64 = btoa(String.fromCharCode(...new Uint8Array(hash)));
+  const data = new TextEncoder().encode(verifier);
+  let hashBytes: Uint8Array;
+
+  if (typeof crypto !== "undefined" && crypto.subtle) {
+    const buf = await crypto.subtle.digest("SHA-256", data);
+    hashBytes = new Uint8Array(buf);
+  } else {
+    // Non-secure context fallback
+    const { sha256 } = await import("@/lib/sha256");
+    const hex = await sha256(verifier);
+    hashBytes = new Uint8Array(hex.match(/.{2}/g)!.map((b) => parseInt(b, 16)));
+  }
+
+  const base64 = btoa(String.fromCharCode(...hashBytes));
   return base64.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
