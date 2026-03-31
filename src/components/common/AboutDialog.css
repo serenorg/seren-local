@@ -97,3 +97,16 @@
 .about-btn-copy:hover {
   opacity: 0.9;
 }
+
+.about-check-result {
+  padding: 0 20px 8px;
+  font-size: 12px;
+}
+
+.about-check-result--available {
+  color: #3fb950;
+}
+
+.about-check-result--current {
+  color: var(--muted-foreground);
+}
