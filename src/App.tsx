@@ -28,6 +28,7 @@ import {
   logout,
   setAuthenticated,
 } from "@/stores/auth.store";
+import { agentStore } from "@/stores/agent.store";
 import { autocompleteStore } from "@/stores/autocomplete.store";
 import { chatStore } from "@/stores/chat.store";
 import { providerStore } from "@/stores/provider.store";
@@ -74,9 +75,11 @@ function App() {
     }
 
     // Try connecting to local runtime (non-blocking)
-    connectToRuntime().then((connected) => {
+    connectToRuntime().then(async (connected) => {
       if (connected) {
         console.log("[App] Local runtime connected");
+        // Initialize agent store — detects available agents (Claude, Codex)
+        await agentStore.initialize();
       }
     });
 

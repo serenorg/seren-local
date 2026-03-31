@@ -34,7 +34,7 @@ export function registerAllHandlers(): void {
   registerHandler("save_file_dialog", dialogs.saveFileDialog);
   registerHandler("reveal_in_file_manager", dialogs.revealInFileManager);
 
-  // ACP agent handlers
+  // ACP agent handlers (acp_* names)
   registerHandler("acp_spawn", acp.acpSpawn);
   registerHandler("acp_prompt", acp.acpPrompt);
   registerHandler("acp_cancel", acp.acpCancel);
@@ -49,6 +49,37 @@ export function registerAllHandlers(): void {
   registerHandler("acp_ensure_codex_cli", acp.acpEnsureCodexCli);
   registerHandler("acp_ensure_agent_cli", acp.acpEnsureAgentCli);
   registerHandler("acp_launch_login", acp.acpLaunchLogin);
+
+  // Provider aliases — providers.ts (ported from desktop) uses provider_* names.
+  // These map 1:1 to the acp_* handlers above.
+  registerHandler("provider_get_available_agents", acp.acpGetAvailableAgents);
+  registerHandler("provider_spawn", acp.acpSpawn);
+  registerHandler("provider_cancel", acp.acpCancel);
+  registerHandler("provider_terminate", acp.acpTerminate);
+  registerHandler("provider_list_sessions", acp.acpListSessions);
+  registerHandler("provider_set_permission_mode", acp.acpSetPermissionMode);
+  registerHandler("provider_respond_to_permission", acp.acpRespondToPermission);
+  registerHandler("provider_respond_to_diff_proposal", acp.acpRespondToDiffProposal);
+  registerHandler("provider_ensure_agent_cli", acp.acpEnsureAgentCli);
+  registerHandler("provider_check_agent_available", acp.acpCheckAgentAvailable);
+  registerHandler("provider_prompt", acp.acpPrompt);
+  registerHandler("provider_launch_login", acp.acpLaunchLogin);
+
+  // Provider commands with no ACP equivalent — stubs that return safe defaults
+  registerHandler("provider_native_fork_session", async (params: { sessionId: string }) => {
+    // Fork creates a new session from an existing one's context.
+    // Not yet implemented — return empty string to indicate no fork created.
+    return "";
+  });
+  registerHandler("provider_list_remote_sessions", async () => {
+    return { sessions: [], nextCursor: null };
+  });
+  registerHandler("provider_set_session_model", async () => {
+    return { ok: true };
+  });
+  registerHandler("provider_update_session_config_option", async () => {
+    return { ok: true };
+  });
 
   // OpenClaw messaging gateway handlers
   registerHandler("openclaw_start", openclaw.openclawStart);
