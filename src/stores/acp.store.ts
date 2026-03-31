@@ -377,7 +377,7 @@ export const acpStore = {
       // Ensure Claude CLI is installed before spawning
       if (resolvedAgentType === "claude-code") {
         const progressUnsub = onRuntimeEvent(
-          "acp://cli-install-progress",
+          "provider://cli-install-progress",
           (payload) => {
             const data = payload as { stage: string; message: string };
             setState("installStatus", data.message);
@@ -500,6 +500,51 @@ export const acpStore = {
       setState("isLoading", false);
       return null;
     }
+  },
+
+  /**
+   * Adopt a session that was already spawned by agentStore/provider.
+   * Sets up acpStore state and event subscriptions so AgentChat can render.
+   */
+  async adoptSession(info: AcpSessionInfo, cwd: string): Promise<void> {
+    if (state.sessions[info.id]) return; // already adopted
+
+    const session: ActiveSession = {
+      info: { ...info, status: "ready" as SessionStatus },
+      messages: [],
+      plan: [],
+      pendingToolCalls: new Map(),
+      streamingContent: "",
+      streamingThinking: "",
+      cwd,
+    };
+
+    setState("sessions", info.id, session);
+    setState("activeSessionId", info.id);
+
+    // Set up a ready promise (already resolved since the session is ready)
+    const readyPromiseObj = {
+      promise: Promise.resolve(),
+      resolve: () => {},
+    };
+    sessionReadyPromises.set(info.id, readyPromiseObj);
+
+    // Subscribe to all events for this session
+    if (!globalUnsubscribe) {
+      globalUnsubscribe = await acpService.subscribeToAllEvents((event) => {
+        const eventSessionId = event.data.sessionId;
+        if (!eventSessionId) return;
+        if (!state.sessions[eventSessionId]) return;
+        if (event.type !== "messageChunk") {
+          console.log("[ACP] Event received - type:", event.type, "sessionId:", eventSessionId);
+        }
+        this.handleSessionEvent(eventSessionId, event);
+      });
+    }
+
+    setState("isLoading", false);
+    setState("error", null);
+    console.log("[AcpStore] Adopted provider session:", info.id);
   },
 
   /**

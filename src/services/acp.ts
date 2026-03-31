@@ -151,7 +151,7 @@ export async function spawnAgent(
   thinking?: { enabled: boolean; maxTokens?: number },
 ): Promise<AcpSessionInfo> {
   requireRuntime();
-  return runtimeInvoke<AcpSessionInfo>("acp_spawn", {
+  return runtimeInvoke<AcpSessionInfo>("provider_spawn", {
     agentType,
     cwd,
     sandboxMode: sandboxMode ?? null,
@@ -168,7 +168,7 @@ export async function sendPrompt(
   context?: Array<{ text?: string }>,
 ): Promise<void> {
   requireRuntime();
-  return runtimeInvoke("acp_prompt", { sessionId, prompt, context }, { timeoutMs: null });
+  return runtimeInvoke("provider_prompt", { sessionId, prompt, context }, { timeoutMs: null });
 }
 
 /**
@@ -176,7 +176,7 @@ export async function sendPrompt(
  */
 export async function cancelPrompt(sessionId: string): Promise<void> {
   requireRuntime();
-  return runtimeInvoke("acp_cancel", { sessionId });
+  return runtimeInvoke("provider_cancel", { sessionId });
 }
 
 /**
@@ -184,7 +184,7 @@ export async function cancelPrompt(sessionId: string): Promise<void> {
  */
 export async function terminateSession(sessionId: string): Promise<void> {
   requireRuntime();
-  return runtimeInvoke("acp_terminate", { sessionId });
+  return runtimeInvoke("provider_terminate", { sessionId });
 }
 
 /**
@@ -192,7 +192,7 @@ export async function terminateSession(sessionId: string): Promise<void> {
  */
 export async function listSessions(): Promise<AcpSessionInfo[]> {
   requireRuntime();
-  return runtimeInvoke<AcpSessionInfo[]>("acp_list_sessions");
+  return runtimeInvoke<AcpSessionInfo[]>("provider_list_sessions");
 }
 
 /**
@@ -203,7 +203,7 @@ export async function setPermissionMode(
   mode: string,
 ): Promise<void> {
   requireRuntime();
-  return runtimeInvoke("acp_set_permission_mode", { sessionId, mode });
+  return runtimeInvoke("provider_set_permission_mode", { sessionId, mode });
 }
 
 /**
@@ -215,7 +215,7 @@ export async function respondToPermission(
   optionId: string,
 ): Promise<void> {
   requireRuntime();
-  return runtimeInvoke("acp_respond_to_permission", {
+  return runtimeInvoke("provider_respond_to_permission", {
     sessionId,
     requestId,
     optionId,
@@ -231,7 +231,7 @@ export async function respondToDiffProposal(
   accepted: boolean,
 ): Promise<void> {
   requireRuntime();
-  return runtimeInvoke("acp_respond_to_diff_proposal", {
+  return runtimeInvoke("provider_respond_to_diff_proposal", {
     sessionId,
     proposalId,
     accepted,
@@ -243,7 +243,7 @@ export async function respondToDiffProposal(
  */
 export async function getAvailableAgents(): Promise<AgentInfo[]> {
   requireRuntime();
-  return runtimeInvoke<AgentInfo[]>("acp_get_available_agents");
+  return runtimeInvoke<AgentInfo[]>("provider_get_available_agents");
 }
 
 /**
@@ -252,7 +252,7 @@ export async function getAvailableAgents(): Promise<AgentInfo[]> {
  */
 export async function ensureClaudeCli(): Promise<string> {
   requireRuntime();
-  return runtimeInvoke<string>("acp_ensure_claude_cli");
+  return runtimeInvoke<string>("provider_ensure_agent_cli");
 }
 
 /**
@@ -262,7 +262,7 @@ export async function checkAgentAvailable(
   agentType: AgentType,
 ): Promise<boolean> {
   requireRuntime();
-  return runtimeInvoke<boolean>("acp_check_agent_available", {
+  return runtimeInvoke<boolean>("provider_check_agent_available", {
     agentType,
   });
 }
@@ -272,16 +272,16 @@ export async function checkAgentAvailable(
 // ============================================================================
 
 const EVENT_CHANNELS = {
-  messageChunk: "acp://message-chunk",
-  toolCall: "acp://tool-call",
-  toolResult: "acp://tool-result",
-  diff: "acp://diff",
-  planUpdate: "acp://plan-update",
-  promptComplete: "acp://prompt-complete",
-  permissionRequest: "acp://permission-request",
-  diffProposal: "acp://diff-proposal",
-  sessionStatus: "acp://session-status",
-  error: "acp://error",
+  messageChunk: "provider://message-chunk",
+  toolCall: "provider://tool-call",
+  toolResult: "provider://tool-result",
+  diff: "provider://diff",
+  planUpdate: "provider://plan-update",
+  promptComplete: "provider://prompt-complete",
+  permissionRequest: "provider://permission-request",
+  diffProposal: "provider://diff-proposal",
+  sessionStatus: "provider://session-status",
+  error: "provider://error",
 } as const;
 
 type EventType = keyof typeof EVENT_CHANNELS;
