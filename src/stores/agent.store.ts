@@ -1184,6 +1184,17 @@ export const agentStore = {
       setState("isLoading", false);
       tempUnsubscribe();
 
+      // Bridge to acpStore so AgentChat can render the interactive session
+      try {
+        const { acpStore } = await import("@/stores/acp.store");
+        await acpStore.adoptSession(
+          { id: info.id, agentType: resolvedAgentType, cwd, status: "ready", createdAt: info.createdAt ?? new Date().toISOString() },
+          cwd,
+        );
+      } catch (bridgeErr) {
+        console.warn("[AgentStore] Failed to bridge session to acpStore:", bridgeErr);
+      }
+
       return info.id;
     } catch (error) {
       console.error(`[AgentStore] Spawn error (${agentDisplayName(resolvedAgentType)}):`, error);
