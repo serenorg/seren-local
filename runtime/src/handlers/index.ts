@@ -61,6 +61,7 @@ export async function registerAllHandlers(): Promise<void> {
   registerHandler("create_directory", fs.createDirectory);
   registerHandler("delete_path", fs.deletePath);
   registerHandler("rename_path", fs.renamePath);
+  registerHandler("get_home_dir", fs.getHomeDir);
 
   // Dialog handlers
   registerHandler("open_folder_dialog", dialogs.openFolderDialog);
