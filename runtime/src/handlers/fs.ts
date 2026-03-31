@@ -165,3 +165,7 @@ export async function renamePath(params: {
   const newP = await validatePathReal(params.newPath);
   await rename(oldP, newP);
 }
+
+export async function getHomeDir(): Promise<string> {
+  return home;
+}

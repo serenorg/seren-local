@@ -10,6 +10,7 @@ import {
   onMount,
   Show,
 } from "solid-js";
+import { runtimeInvoke } from "@/lib/bridge";
 import { openFolder } from "@/lib/files/service";
 import type { InstalledSkill, Skill } from "@/lib/skills";
 import {
@@ -418,8 +419,18 @@ export const ThreadSidebar: Component<ThreadSidebarProps> = (props) => {
                 onClick={async () => {
                   setShowLauncher(false);
                   setSpawnError(null);
-                  const cwd = fileTreeState.rootPath;
-                  if (!cwd) return;
+                  let cwd = fileTreeState.rootPath;
+                  if (!cwd) {
+                    try {
+                      cwd = await runtimeInvoke<string>("get_home_dir");
+                    } catch {
+                      cwd = null;
+                    }
+                  }
+                  if (!cwd) {
+                    setSpawnError("Could not determine a working directory.");
+                    return;
+                  }
                   setSpawning(true);
                   try {
                     const result = await threadStore.createAgentThread("claude-code", cwd);
@@ -453,8 +464,18 @@ export const ThreadSidebar: Component<ThreadSidebarProps> = (props) => {
                 onClick={async () => {
                   setShowLauncher(false);
                   setSpawnError(null);
-                  const cwd = fileTreeState.rootPath;
-                  if (!cwd) return;
+                  let cwd = fileTreeState.rootPath;
+                  if (!cwd) {
+                    try {
+                      cwd = await runtimeInvoke<string>("get_home_dir");
+                    } catch {
+                      cwd = null;
+                    }
+                  }
+                  if (!cwd) {
+                    setSpawnError("Could not determine a working directory.");
+                    return;
+                  }
                   setSpawning(true);
                   try {
                     const result = await threadStore.createAgentThread("codex", cwd);
