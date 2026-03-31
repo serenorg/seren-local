@@ -38,6 +38,7 @@ export const ThreadSidebar: Component<ThreadSidebarProps> = (props) => {
     Set<string | null>
   >(new Set());
   const [spawning, setSpawning] = createSignal(false);
+  const [spawnError, setSpawnError] = createSignal<string | null>(null);
   const [showCreateMenu, setShowCreateMenu] = createSignal(false);
   const [showCatalog, setShowCatalog] = createSignal(false);
   const [skillsReady, setSkillsReady] = createSignal(false);
@@ -416,11 +417,17 @@ export const ThreadSidebar: Component<ThreadSidebarProps> = (props) => {
                 class="flex items-center gap-2.5 w-full py-2 px-3 bg-transparent border-none rounded-md text-foreground text-[13px] cursor-pointer transition-colors duration-100 hover:bg-surface-3 text-left"
                 onClick={async () => {
                   setShowLauncher(false);
+                  setSpawnError(null);
                   const cwd = fileTreeState.rootPath;
                   if (!cwd) return;
                   setSpawning(true);
                   try {
-                    await threadStore.createAgentThread("claude-code", cwd);
+                    const result = await threadStore.createAgentThread("claude-code", cwd);
+                    if (!result) {
+                      setSpawnError(agentStore.error ?? "Failed to spawn Claude Agent");
+                    }
+                  } catch (err) {
+                    setSpawnError(err instanceof Error ? err.message : "Failed to spawn Claude Agent");
                   } finally {
                     setSpawning(false);
                   }
@@ -445,11 +452,17 @@ export const ThreadSidebar: Component<ThreadSidebarProps> = (props) => {
                 class="flex items-center gap-2.5 w-full py-2 px-3 bg-transparent border-none rounded-md text-foreground text-[13px] cursor-pointer transition-colors duration-100 hover:bg-surface-3 text-left"
                 onClick={async () => {
                   setShowLauncher(false);
+                  setSpawnError(null);
                   const cwd = fileTreeState.rootPath;
                   if (!cwd) return;
                   setSpawning(true);
                   try {
-                    await threadStore.createAgentThread("codex", cwd);
+                    const result = await threadStore.createAgentThread("codex", cwd);
+                    if (!result) {
+                      setSpawnError(agentStore.error ?? "Failed to spawn Codex Agent");
+                    }
+                  } catch (err) {
+                    setSpawnError(err instanceof Error ? err.message : "Failed to spawn Codex Agent");
                   } finally {
                     setSpawning(false);
                   }
@@ -462,6 +475,25 @@ export const ThreadSidebar: Component<ThreadSidebarProps> = (props) => {
           </div>
         </Show>
       </div>
+
+      {/* Agent spawn error banner */}
+      <Show when={spawnError()}>
+        <div class="mx-3 my-2 px-3 py-2 bg-destructive/10 border border-destructive/30 rounded-md text-[12px]">
+          <div class="flex items-start justify-between gap-2">
+            <div class="text-destructive break-words min-w-0">
+              {spawnError()}
+            </div>
+            <button
+              type="button"
+              class="shrink-0 text-muted-foreground hover:text-foreground bg-transparent border-none cursor-pointer text-[14px] leading-none"
+              onClick={() => setSpawnError(null)}
+              aria-label="Dismiss error"
+            >
+              x
+            </button>
+          </div>
+        </div>
+      </Show>
 
       {/* Skills section */}
       <div class="shrink-0 border-b border-border/40">
