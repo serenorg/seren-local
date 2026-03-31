@@ -16,7 +16,6 @@
     "seren",
     "serendb",
     "serendesktop",
-    "acp",
     "mcp",
     "ai-agent",
     "local-runtime",
@@ -41,7 +40,6 @@
     "node": ">=20.0.0"
   },
   "dependencies": {
-    "@agentclientprotocol/sdk": "^0.13.1",
     "better-sqlite3": "^12.6.2",
     "sqlite-vec": "0.1.7-alpha.2",
     "viem": "^2.45.1",

@@ -361,9 +361,8 @@ const dataDir = join(homedir(), ".seren-local");
 mkdirSync(dataDir, { recursive: true });
 initChatDb(join(dataDir, "conversations.db"));
 
-registerAllHandlers();
-
-httpServer.listen(PORT, HOST, () => {
+registerAllHandlers().then(() => {
+  httpServer.listen(PORT, HOST, () => {
   const url = `http://${HOST}:${PORT}`;
   const hasSpa = existsSync(join(PUBLIC_DIR, "index.html"));
 
@@ -383,6 +382,7 @@ httpServer.listen(PORT, HOST, () => {
     console.log("[Seren Local] No embedded SPA found (runtime/public/). Run build:embed to bundle the app.");
   }
   checkForUpdates();
+  });
 });
 
 export { httpServer, wss, HOST, PORT, AUTH_TOKEN };
