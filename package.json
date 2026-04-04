@@ -1,6 +1,6 @@
 {
   "name": "seren-local",
-  "version": "0.2.13",
+  "version": "0.2.14",
   "description": "Local AI agent platform — install once, runs in your browser",
   "type": "module",
   "scripts": {
