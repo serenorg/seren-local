@@ -12,6 +12,14 @@ import {
   deleteConversation,
   saveMessage,
   getMessages,
+  createAgentConversation,
+  getAgentConversations,
+  getAgentConversation,
+  setAgentConversationSessionId,
+  setAgentConversationTitle,
+  setAgentConversationModelId,
+  setAgentConversationMetadata,
+  archiveAgentConversation,
 } from "../../src/handlers/chat";
 
 beforeEach(() => {
@@ -150,5 +158,73 @@ describe("message CRUD", () => {
     // Should return the most recent 5 messages
     expect(msgs[0].content).toBe("msg 5");
     expect(msgs[4].content).toBe("msg 9");
+  });
+});
+
+describe("agent conversation CRUD", () => {
+  it("creates and retrieves an agent conversation", async () => {
+    const conv = await createAgentConversation({
+      id: "ac1",
+      title: "Claude Session",
+      agentType: "claude-code",
+      agentCwd: "/home/user/project",
+      projectRoot: "/home/user/project",
+      agentSessionId: "sess-123",
+    });
+    expect(conv.id).toBe("ac1");
+    expect(conv.agent_type).toBe("claude-code");
+    expect(conv.agent_session_id).toBe("sess-123");
+    expect(conv.is_archived).toBe(false);
+
+    const fetched = await getAgentConversation({ id: "ac1" });
+    expect(fetched).not.toBeNull();
+    expect(fetched!.title).toBe("Claude Session");
+    expect(fetched!.agent_cwd).toBe("/home/user/project");
+  });
+
+  it("lists agent conversations filtered by projectRoot", async () => {
+    await createAgentConversation({ id: "ac1", title: "A", agentType: "claude-code", projectRoot: "/proj/a" });
+    await new Promise((r) => setTimeout(r, 5));
+    await createAgentConversation({ id: "ac2", title: "B", agentType: "codex", projectRoot: "/proj/b" });
+    await new Promise((r) => setTimeout(r, 5));
+    await createAgentConversation({ id: "ac3", title: "C", agentType: "claude-code", projectRoot: "/proj/a" });
+
+    const all = await getAgentConversations({});
+    expect(all).toHaveLength(3);
+    expect(all[0].id).toBe("ac3"); // most recent first
+
+    const filtered = await getAgentConversations({ projectRoot: "/proj/a" });
+    expect(filtered).toHaveLength(2);
+    expect(filtered.every((c) => c.project_root === "/proj/a")).toBe(true);
+  });
+
+  it("excludes archived agent conversations", async () => {
+    await createAgentConversation({ id: "ac1", title: "Active", agentType: "claude-code" });
+    await createAgentConversation({ id: "ac2", title: "Archived", agentType: "claude-code" });
+    await archiveAgentConversation({ id: "ac2" });
+
+    const list = await getAgentConversations({});
+    expect(list).toHaveLength(1);
+    expect(list[0].id).toBe("ac1");
+  });
+
+  it("updates session id, title, model, and metadata", async () => {
+    await createAgentConversation({ id: "ac1", title: "Old", agentType: "claude-code" });
+
+    await setAgentConversationSessionId({ id: "ac1", agentSessionId: "new-sess" });
+    await setAgentConversationTitle({ id: "ac1", title: "New Title" });
+    await setAgentConversationModelId({ id: "ac1", agentModelId: "claude-opus-4-6" });
+    await setAgentConversationMetadata({ id: "ac1", agentMetadata: '{"key":"val"}' });
+
+    const fetched = await getAgentConversation({ id: "ac1" });
+    expect(fetched!.agent_session_id).toBe("new-sess");
+    expect(fetched!.title).toBe("New Title");
+    expect(fetched!.agent_model_id).toBe("claude-opus-4-6");
+    expect(fetched!.agent_metadata).toBe('{"key":"val"}');
+  });
+
+  it("returns null for non-existent agent conversation", async () => {
+    const fetched = await getAgentConversation({ id: "nope" });
+    expect(fetched).toBeNull();
   });
 });
