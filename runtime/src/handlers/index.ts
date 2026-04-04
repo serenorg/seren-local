@@ -1,18 +1,18 @@
 // ABOUTME: Registers all RPC handlers with the JSON-RPC router.
 // ABOUTME: Called once at server startup.
 
-import { registerHandler } from "../rpc.js";
 import { emit } from "../events.js";
-import { orchestrate, cancelOrchestration } from "../services/orchestrator.js";
+import { registerHandler } from "../rpc.js";
+import { cancelOrchestration, orchestrate } from "../services/orchestrator.js";
 import * as chat from "./chat.js";
 import * as dialogs from "./dialogs.js";
 import * as fs from "./fs.js";
 import * as indexing from "./indexing.js";
 import * as mcp from "./mcp.js";
 import * as openclaw from "./openclaw.js";
+import * as skills from "./skills.js";
 import * as sync from "./sync.js";
 import * as updater from "./updater.js";
-import * as skills from "./skills.js";
 import * as wallet from "./wallet.js";
 
 /**
@@ -26,7 +26,13 @@ async function registerProviderHandlers(): Promise<void> {
   const __dirname = dirname(__filename);
   // In dev: runtime/src/handlers/ → runtime/bin/browser-local/
   // In dist: runtime/dist/ → runtime/bin/browser-local/
-  const providersPath = join(__dirname, "..", "bin", "browser-local", "providers.mjs");
+  const providersPath = join(
+    __dirname,
+    "..",
+    "bin",
+    "browser-local",
+    "providers.mjs",
+  );
   const { createProviderHandlers } = await import(providersPath);
 
   const providerHandlers = createProviderHandlers({ emit });
@@ -36,17 +42,44 @@ async function registerProviderHandlers(): Promise<void> {
   registerHandler("provider_cancel", providerHandlers.cancelPrompt);
   registerHandler("provider_terminate", providerHandlers.terminateSession);
   registerHandler("provider_list_sessions", providerHandlers.listSessions);
-  registerHandler("provider_set_permission_mode", providerHandlers.setPermissionMode);
-  registerHandler("provider_respond_to_permission", providerHandlers.respondToPermission);
-  registerHandler("provider_respond_to_diff_proposal", providerHandlers.respondToDiffProposal);
-  registerHandler("provider_get_available_agents", providerHandlers.getAvailableAgents);
-  registerHandler("provider_check_agent_available", providerHandlers.checkAgentAvailable);
+  registerHandler(
+    "provider_set_permission_mode",
+    providerHandlers.setPermissionMode,
+  );
+  registerHandler(
+    "provider_respond_to_permission",
+    providerHandlers.respondToPermission,
+  );
+  registerHandler(
+    "provider_respond_to_diff_proposal",
+    providerHandlers.respondToDiffProposal,
+  );
+  registerHandler(
+    "provider_get_available_agents",
+    providerHandlers.getAvailableAgents,
+  );
+  registerHandler(
+    "provider_check_agent_available",
+    providerHandlers.checkAgentAvailable,
+  );
   registerHandler("provider_ensure_agent_cli", providerHandlers.ensureAgentCli);
   registerHandler("provider_launch_login", providerHandlers.launchLogin);
-  registerHandler("provider_list_remote_sessions", providerHandlers.listRemoteSessions);
-  registerHandler("provider_native_fork_session", providerHandlers.nativeForkSession);
-  registerHandler("provider_set_session_model", providerHandlers.setSessionModel);
-  registerHandler("provider_update_session_config_option", providerHandlers.updateSessionConfigOption);
+  registerHandler(
+    "provider_list_remote_sessions",
+    providerHandlers.listRemoteSessions,
+  );
+  registerHandler(
+    "provider_native_fork_session",
+    providerHandlers.nativeForkSession,
+  );
+  registerHandler(
+    "provider_set_session_model",
+    providerHandlers.setSessionModel,
+  );
+  registerHandler(
+    "provider_update_session_config_option",
+    providerHandlers.updateSessionConfigOption,
+  );
 }
 
 export async function registerAllHandlers(): Promise<void> {
@@ -79,7 +112,10 @@ export async function registerAllHandlers(): Promise<void> {
   registerHandler("openclaw_status", openclaw.openclawStatus);
   registerHandler("openclaw_list_channels", openclaw.openclawListChannels);
   registerHandler("openclaw_connect_channel", openclaw.openclawConnectChannel);
-  registerHandler("openclaw_disconnect_channel", openclaw.openclawDisconnectChannel);
+  registerHandler(
+    "openclaw_disconnect_channel",
+    openclaw.openclawDisconnectChannel,
+  );
   registerHandler("openclaw_set_trust", openclaw.openclawSetTrust);
   registerHandler("openclaw_send", openclaw.openclawSend);
   registerHandler("openclaw_grant_approval", openclaw.openclawGrantApproval);
@@ -135,36 +171,62 @@ export async function registerAllHandlers(): Promise<void> {
   registerHandler("save_message", chat.saveMessage);
   registerHandler("get_messages", chat.getMessages);
 
-  // Orchestrator handlers
-  registerHandler("orchestrate", async (params: {
-    conversationId: string;
-    prompt: string;
-    history: Array<{ role: string; content: string }>;
-    capabilities: Record<string, unknown>;
-    images?: Array<{ name: string; mime_type: string; base64: string }>;
-    gatewayBase?: string;
-    authToken: string;
-  }) => {
-    // Fire-and-forget: orchestration streams events over WebSocket,
-    // the RPC response just acknowledges the request was accepted.
-    orchestrate({
-      conversationId: params.conversationId,
-      prompt: params.prompt,
-      history: params.history,
-      capabilities: params.capabilities as any,
-      images: params.images,
-      gatewayBase: params.gatewayBase,
-      authToken: params.authToken,
-    }).catch((err) => {
-      console.error("[Orchestrator] Unhandled error:", err);
-    });
-    return { accepted: true };
-  });
+  // Agent conversation handlers
+  registerHandler("create_agent_conversation", chat.createAgentConversation);
+  registerHandler("get_agent_conversations", chat.getAgentConversations);
+  registerHandler("get_agent_conversation", chat.getAgentConversation);
+  registerHandler(
+    "set_agent_conversation_session_id",
+    chat.setAgentConversationSessionId,
+  );
+  registerHandler(
+    "set_agent_conversation_title",
+    chat.setAgentConversationTitle,
+  );
+  registerHandler(
+    "set_agent_conversation_model_id",
+    chat.setAgentConversationModelId,
+  );
+  registerHandler(
+    "set_agent_conversation_metadata",
+    chat.setAgentConversationMetadata,
+  );
+  registerHandler("archive_agent_conversation", chat.archiveAgentConversation);
 
-  registerHandler("cancel_orchestration", async (params: {
-    conversationId: string;
-  }) => {
-    const cancelled = cancelOrchestration(params.conversationId);
-    return { cancelled };
-  });
+  // Orchestrator handlers
+  registerHandler(
+    "orchestrate",
+    async (params: {
+      conversationId: string;
+      prompt: string;
+      history: Array<{ role: string; content: string }>;
+      capabilities: Record<string, unknown>;
+      images?: Array<{ name: string; mime_type: string; base64: string }>;
+      gatewayBase?: string;
+      authToken: string;
+    }) => {
+      // Fire-and-forget: orchestration streams events over WebSocket,
+      // the RPC response just acknowledges the request was accepted.
+      orchestrate({
+        conversationId: params.conversationId,
+        prompt: params.prompt,
+        history: params.history,
+        capabilities: params.capabilities as any,
+        images: params.images,
+        gatewayBase: params.gatewayBase,
+        authToken: params.authToken,
+      }).catch((err) => {
+        console.error("[Orchestrator] Unhandled error:", err);
+      });
+      return { accepted: true };
+    },
+  );
+
+  registerHandler(
+    "cancel_orchestration",
+    async (params: { conversationId: string }) => {
+      const cancelled = cancelOrchestration(params.conversationId);
+      return { cancelled };
+    },
+  );
 }
